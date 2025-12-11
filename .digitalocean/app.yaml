@@ -17,7 +17,7 @@ services:
   - name: backend
     environment_slug: node-js
     github:
-      repo: YOUR_GITHUB_USERNAME/YOUR_REPO_NAME
+      repo: ibrahim-abuznaid/Templates_Project
       branch: main
       deploy_on_push: true
     source_dir: /backend
@@ -66,7 +66,7 @@ services:
   - name: frontend
     environment_slug: node-js
     github:
-      repo: YOUR_GITHUB_USERNAME/YOUR_REPO_NAME
+      repo: ibrahim-abuznaid/Templates_Project
       branch: main
       deploy_on_push: true
     source_dir: /frontend
