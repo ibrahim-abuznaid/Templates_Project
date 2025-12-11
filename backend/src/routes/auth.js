@@ -1,0 +1,323 @@
+import express from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import db from '../database/db.js';
+import { authenticateToken } from '../middleware/auth.js';
+
+const router = express.Router();
+
+// Generate unique handle from username
+const generateHandle = (username) => {
+  let handle = username.toLowerCase().replace(/[^a-z0-9]/g, '');
+  let counter = 0;
+  let finalHandle = handle;
+  
+  while (db.prepare('SELECT id FROM users WHERE handle = ?').get(finalHandle)) {
+    counter++;
+    finalHandle = `${handle}${counter}`;
+  }
+  
+  return finalHandle;
+};
+
+// Login
+router.post('/login', (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+
+    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+
+    if (!user || !bcrypt.compareSync(password, user.password)) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        handle: user.handle,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get current user
+router.get('/me', authenticateToken, (req, res) => {
+  try {
+    const user = db.prepare('SELECT id, username, email, handle, role, created_at FROM users WHERE id = ?')
+      .get(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json(user);
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Register new user (admin only)
+router.post('/register', authenticateToken, (req, res) => {
+  try {
+    // Only admin can create new users
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can create new users' });
+    }
+
+    const { username, email, password, role } = req.body;
+
+    if (!username || !email || !password || !role) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+
+    if (!['admin', 'freelancer'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+
+    const hashedPassword = bcrypt.hashSync(password, 10);
+    const handle = generateHandle(username);
+
+    const result = db.prepare(`
+      INSERT INTO users (username, email, password, handle, role)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(username, email, hashedPassword, handle, role);
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: {
+        id: result.lastInsertRowid,
+        username,
+        email,
+        handle,
+        role
+      }
+    });
+  } catch (error) {
+    if (error.message.includes('UNIQUE constraint failed')) {
+      return res.status(400).json({ error: 'Username or email already exists' });
+    }
+    console.error('Register error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ===== INVITATION SYSTEM =====
+
+// Create invitation (admin only)
+router.post('/invitations', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can send invitations' });
+    }
+
+    const { email, role } = req.body;
+
+    if (!email || !role) {
+      return res.status(400).json({ error: 'Email and role are required' });
+    }
+
+    if (!['admin', 'freelancer'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+
+    // Check if user already exists
+    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    if (existingUser) {
+      return res.status(400).json({ error: 'User with this email already exists' });
+    }
+
+    // Check if invitation already exists
+    const existingInvite = db.prepare('SELECT id FROM invitations WHERE email = ? AND accepted_at IS NULL').get(email);
+    if (existingInvite) {
+      return res.status(400).json({ error: 'Invitation already sent to this email' });
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+
+    const result = db.prepare(`
+      INSERT INTO invitations (email, token, role, invited_by, expires_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(email, token, role, req.user.id, expiresAt);
+
+    res.status(201).json({
+      message: 'Invitation created successfully',
+      invitation: {
+        id: result.lastInsertRowid,
+        email,
+        role,
+        token,
+        expiresAt,
+        inviteLink: `/register?token=${token}`
+      }
+    });
+  } catch (error) {
+    console.error('Create invitation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get all invitations (admin only)
+router.get('/invitations', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can view invitations' });
+    }
+
+    const invitations = db.prepare(`
+      SELECT i.*, u.username as invited_by_name
+      FROM invitations i
+      LEFT JOIN users u ON i.invited_by = u.id
+      ORDER BY i.created_at DESC
+    `).all();
+
+    res.json(invitations);
+  } catch (error) {
+    console.error('Get invitations error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Check invitation token
+router.get('/invitations/check/:token', (req, res) => {
+  try {
+    const invitation = db.prepare(`
+      SELECT * FROM invitations 
+      WHERE token = ? AND accepted_at IS NULL AND expires_at > datetime('now')
+    `).get(req.params.token);
+
+    if (!invitation) {
+      return res.status(404).json({ error: 'Invalid or expired invitation' });
+    }
+
+    res.json({
+      email: invitation.email,
+      role: invitation.role
+    });
+  } catch (error) {
+    console.error('Check invitation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Accept invitation and create account
+router.post('/invitations/accept', (req, res) => {
+  try {
+    const { token, username, password } = req.body;
+
+    if (!token || !username || !password) {
+      return res.status(400).json({ error: 'Token, username, and password are required' });
+    }
+
+    const invitation = db.prepare(`
+      SELECT * FROM invitations 
+      WHERE token = ? AND accepted_at IS NULL AND expires_at > datetime('now')
+    `).get(token);
+
+    if (!invitation) {
+      return res.status(404).json({ error: 'Invalid or expired invitation' });
+    }
+
+    // Check if username already exists
+    const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+    if (existingUser) {
+      return res.status(400).json({ error: 'Username already taken' });
+    }
+
+    const hashedPassword = bcrypt.hashSync(password, 10);
+    const handle = generateHandle(username);
+
+    // Create user
+    const result = db.prepare(`
+      INSERT INTO users (username, email, password, handle, role)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(username, invitation.email, hashedPassword, handle, invitation.role);
+
+    // Mark invitation as accepted
+    db.prepare(`
+      UPDATE invitations SET accepted_at = CURRENT_TIMESTAMP WHERE id = ?
+    `).run(invitation.id);
+
+    const user = {
+      id: result.lastInsertRowid,
+      username,
+      email: invitation.email,
+      handle,
+      role: invitation.role
+    };
+
+    // Generate JWT token
+    const jwtToken = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.status(201).json({
+      message: 'Account created successfully',
+      token: jwtToken,
+      user
+    });
+  } catch (error) {
+    console.error('Accept invitation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete invitation (admin only)
+router.delete('/invitations/:id', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can delete invitations' });
+    }
+
+    const result = db.prepare('DELETE FROM invitations WHERE id = ?').run(req.params.id);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Invitation not found' });
+    }
+
+    res.json({ message: 'Invitation deleted' });
+  } catch (error) {
+    console.error('Delete invitation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get all users (for mentions) - returns only id, username, handle
+router.get('/users', authenticateToken, (req, res) => {
+  try {
+    const users = db.prepare(`
+      SELECT id, username, handle, role
+      FROM users
+      ORDER BY username
+    `).all();
+
+    res.json(users);
+  } catch (error) {
+    console.error('Get users error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+export default router;
+

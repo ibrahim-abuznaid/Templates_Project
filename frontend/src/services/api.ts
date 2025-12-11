@@ -1,0 +1,210 @@
+import type { AuthResponse, User, Idea, IdeaDetail, DepartmentSummary, DepartmentTemplate, Notification, Invitation, UserBasic, Invoice, InvoiceItem, PendingInvoiceSummary, Blocker, BlockerType, BlockerStatus, BlockerPriority, BlockerDiscussion } from '../types';
+import axios from 'axios';
+
+// Use environment variable in production, proxy in development
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Add auth token to requests
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Handle 401 responses
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Auth endpoints
+export const authApi = {
+  login: (username: string, password: string) =>
+    api.post<AuthResponse>('/auth/login', { username, password }),
+  
+  getCurrentUser: () =>
+    api.get<User>('/auth/me'),
+  
+  register: (data: { username: string; email: string; password: string; role: string }) =>
+    api.post<{ user: User }>('/auth/register', data),
+};
+
+// Ideas endpoints
+export const ideasApi = {
+  getAll: () =>
+    api.get<Idea[]>('/ideas'),
+  
+  getById: (id: number) =>
+    api.get<IdeaDetail>(`/ideas/${id}`),
+  
+  create: (data: { 
+    use_case: string; 
+    flow_name?: string;
+    short_description?: string; 
+    description?: string; 
+    department?: string;
+    tags?: string;
+    reviewer_name?: string;
+    price?: number 
+  }) =>
+    api.post<Idea>('/ideas', data),
+  
+  update: (id: number, data: Partial<Idea>) =>
+    api.put<Idea>(`/ideas/${id}`, data),
+  
+  delete: (id: number) =>
+    api.delete(`/ideas/${id}`),
+  
+  assign: (id: number, freelancerId: number) =>
+    api.post<Idea>(`/ideas/${id}/assign`, { freelancerId }),
+  
+  selfAssign: (id: number) =>
+    api.post<Idea>(`/ideas/${id}/self-assign`),
+  
+  addComment: (id: number, comment: string) =>
+    api.post(`/ideas/${id}/comments`, { comment }),
+  
+  getFreelancers: () =>
+    api.get<User[]>('/ideas/users/freelancers'),
+};
+
+// Department Views endpoints
+export const viewsApi = {
+  getDepartments: () =>
+    api.get<DepartmentSummary[]>('/views/departments'),
+  
+  getDepartmentTemplates: (department: string) =>
+    api.get<DepartmentTemplate[]>(`/views/departments/${encodeURIComponent(department)}/templates`),
+};
+
+// Notifications endpoints
+export const notificationsApi = {
+  getAll: () =>
+    api.get<Notification[]>('/notifications'),
+  
+  getUnreadCount: () =>
+    api.get<{ count: number }>('/notifications/unread-count'),
+  
+  markAsRead: (id: number) =>
+    api.put(`/notifications/${id}/read`),
+  
+  markAllAsRead: () =>
+    api.put('/notifications/mark-all-read'),
+  
+  delete: (id: number) =>
+    api.delete(`/notifications/${id}`),
+  
+  clearAll: () =>
+    api.delete('/notifications'),
+};
+
+// Invitations endpoints
+export const invitationsApi = {
+  getAll: () =>
+    api.get<Invitation[]>('/auth/invitations'),
+  
+  create: (email: string, role: string) =>
+    api.post<{ invitation: Invitation }>('/auth/invitations', { email, role }),
+  
+  check: (token: string) =>
+    api.get<{ email: string; role: string }>(`/auth/invitations/check/${token}`),
+  
+  accept: (token: string, username: string, password: string) =>
+    api.post<{ token: string; user: User }>('/auth/invitations/accept', { token, username, password }),
+  
+  delete: (id: number) =>
+    api.delete(`/auth/invitations/${id}`),
+};
+
+// Users endpoints (for mentions)
+export const usersApi = {
+  getAll: () =>
+    api.get<UserBasic[]>('/auth/users'),
+};
+
+// Invoice endpoints
+export const invoicesApi = {
+  getPending: () =>
+    api.get<PendingInvoiceSummary[]>('/invoices/pending'),
+  
+  getPendingForFreelancer: (freelancerId: number) =>
+    api.get<{ items: InvoiceItem[]; summary: any }>(`/invoices/pending/${freelancerId}`),
+  
+  generateInvoice: (freelancerId: number) =>
+    api.post<{ invoice: Invoice; csv: string; pdfHtml: string; freelancer: any }>(`/invoices/generate/${freelancerId}`),
+  
+  getHistory: (freelancerId?: number, limit?: number) =>
+    api.get<Invoice[]>('/invoices/history', { params: { freelancerId, limit } }),
+  
+  getDetails: (invoiceId: number) =>
+    api.get<{ invoice: Invoice; items: InvoiceItem[] }>(`/invoices/${invoiceId}`),
+};
+
+// Blockers endpoints
+export const blockersApi = {
+  getForIdea: (ideaId: number, includeResolved = false) =>
+    api.get<Blocker[]>(`/blockers/idea/${ideaId}`, { params: { includeResolved } }),
+  
+  getAll: (status?: string) =>
+    api.get<Blocker[]>('/blockers/all', { params: { status } }),
+  
+  getOpen: () =>
+    api.get<Blocker[]>('/blockers/open'),
+  
+  getByType: (type: BlockerType) =>
+    api.get<Blocker[]>(`/blockers/type/${type}`),
+  
+  create: (data: {
+    idea_id: number;
+    blocker_type: BlockerType;
+    title: string;
+    description: string;
+    priority?: BlockerPriority;
+  }) =>
+    api.post<Blocker>('/blockers', data),
+  
+  update: (id: number, data: Partial<{
+    blocker_type: BlockerType;
+    title: string;
+    description: string;
+    status: BlockerStatus;
+    priority: BlockerPriority;
+    resolution_notes: string;
+  }>) =>
+    api.put<Blocker>(`/blockers/${id}`, data),
+  
+  delete: (id: number) =>
+    api.delete(`/blockers/${id}`),
+  
+  getStats: () =>
+    api.get<any>('/blockers/stats/summary'),
+  
+  // Discussions
+  getDiscussions: (blockerId: number) =>
+    api.get<BlockerDiscussion[]>(`/blockers/${blockerId}/discussions`),
+  
+  addDiscussion: (blockerId: number, message: string, isSolution = false) =>
+    api.post<BlockerDiscussion>(`/blockers/${blockerId}/discussions`, { message, is_solution: isSolution }),
+  
+  deleteDiscussion: (discussionId: number) =>
+    api.delete(`/blockers/discussions/${discussionId}`),
+};
+
+export default api;
+
