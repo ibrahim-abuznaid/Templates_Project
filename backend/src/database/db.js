@@ -29,9 +29,12 @@ function createPool() {
   console.log('🐘 Connecting to PostgreSQL...');
   console.log(`📍 Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
   
-  // Configure SSL based on environment
-  // DigitalOcean managed databases require SSL
-  const sslConfig = isProduction ? { rejectUnauthorized: false } : false;
+  // Configure SSL for DigitalOcean managed databases
+  // They use self-signed certificates, so we need rejectUnauthorized: false
+  let sslConfig = false;
+  if (isProduction || connectionString.includes('digitalocean.com') || connectionString.includes('sslmode=require')) {
+    sslConfig = { rejectUnauthorized: false };
+  }
   
   pool = new Pool({
     connectionString,
