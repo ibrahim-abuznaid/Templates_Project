@@ -5,10 +5,10 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json ./
 
-# Install ALL dependencies (not just production)
-RUN npm ci
+# Install ALL dependencies
+RUN npm install
 
 # Copy source code
 COPY . .
