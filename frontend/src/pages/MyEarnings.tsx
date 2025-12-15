@@ -64,7 +64,7 @@ const MyEarnings: React.FC = () => {
             <div>
               <p className="text-sm text-orange-700 mb-1">Pending Payment</p>
               <p className="text-3xl font-bold text-orange-900">
-                ${pendingSummary?.total_amount ? parseFloat(pendingSummary.total_amount).toFixed(2) : '0.00'}
+                ${pendingSummary?.total_amount ? Number(pendingSummary.total_amount).toFixed(2) : '0.00'}
               </p>
               <p className="text-xs text-orange-600 mt-1">
                 {pendingSummary?.item_count || 0} templates
@@ -78,7 +78,7 @@ const MyEarnings: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-green-700 mb-1">Total Earned</p>
-              <p className="text-3xl font-bold text-green-900">${parseFloat(totalEarned).toFixed(2)}</p>
+              <p className="text-3xl font-bold text-green-900">${Number(totalEarned).toFixed(2)}</p>
               <p className="text-xs text-green-600 mt-1">
                 {invoiceHistory.length} invoices paid
               </p>
@@ -93,7 +93,7 @@ const MyEarnings: React.FC = () => {
               <p className="text-sm text-blue-700 mb-1">Average per Template</p>
               <p className="text-3xl font-bold text-blue-900">
                 ${pendingSummary?.item_count > 0
-                  ? (parseFloat(pendingSummary.total_amount) / pendingSummary.item_count).toFixed(2)
+                  ? (Number(pendingSummary.total_amount) / pendingSummary.item_count).toFixed(2)
                   : '0.00'}
               </p>
               <p className="text-xs text-blue-600 mt-1">Current period</p>
@@ -143,14 +143,14 @@ const MyEarnings: React.FC = () => {
                         {new Date(item.completed_at).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3 text-right font-bold text-green-600">
-                        ${parseFloat(item.amount).toFixed(2)}
+                        ${Number(item.amount).toFixed(2)}
                       </td>
                     </tr>
                   ))}
                   <tr className="bg-gray-50 font-bold">
                     <td colSpan={3} className="px-4 py-3 text-right">Total Pending:</td>
                     <td className="px-4 py-3 text-right text-lg text-green-600">
-                      ${pendingSummary?.total_amount ? parseFloat(pendingSummary.total_amount).toFixed(2) : '0.00'}
+                      ${pendingSummary?.total_amount ? Number(pendingSummary.total_amount).toFixed(2) : '0.00'}
                     </td>
                   </tr>
                 </tbody>
@@ -194,7 +194,7 @@ const MyEarnings: React.FC = () => {
                   </div>
                   <div className="text-right">
                     <div className="text-2xl font-bold text-green-600">
-                      ${parseFloat(invoice.total_amount).toFixed(2)}
+                      ${Number(invoice.total_amount).toFixed(2)}
                     </div>
                     <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">
                       Paid

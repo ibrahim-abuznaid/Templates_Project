@@ -87,6 +87,7 @@ export interface DepartmentTemplate {
   template_id: number;
   use_case: string;
   flow_name: string | null;
+  short_description: string | null;
   status: IdeaStatus;
   price: number;
   assigned_to: string | null;

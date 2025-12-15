@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { invoicesApi } from '../services/api';
 import type { PendingInvoiceSummary, Invoice, InvoiceItem } from '../types';
-import { DollarSign, Download, FileText, Loader, Calendar, User, CheckCircle, Clock } from 'lucide-react';
+import { Download, Loader, User, CheckCircle, Clock } from 'lucide-react';
 
 const InvoiceManagement: React.FC = () => {
   const [pendingInvoices, setPendingInvoices] = useState<PendingInvoiceSummary[]>([]);
@@ -135,7 +135,7 @@ const InvoiceManagement: React.FC = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Total:</span>
-                    <span className="font-bold text-green-600">${parseFloat(invoice.total_amount).toFixed(2)}</span>
+                    <span className="font-bold text-green-600">${Number(invoice.total_amount).toFixed(2)}</span>
                   </div>
                   <div className="text-xs text-gray-500 mt-2">
                     {new Date(invoice.period_start).toLocaleDateString()} - {new Date(invoice.period_end).toLocaleDateString()}
@@ -223,7 +223,7 @@ const InvoiceManagement: React.FC = () => {
                       {invoice.paid_at ? new Date(invoice.paid_at).toLocaleDateString() : 'N/A'}
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-green-600">
-                      ${parseFloat(invoice.total_amount).toFixed(2)}
+                      ${Number(invoice.total_amount).toFixed(2)}
                     </td>
                   </tr>
                 ))}
