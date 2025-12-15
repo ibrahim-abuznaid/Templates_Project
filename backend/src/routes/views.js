@@ -5,10 +5,19 @@ import { authenticateToken } from '../middleware/auth.js';
 const router = express.Router();
 
 // Get department summary with template counts
-router.get('/departments', authenticateToken, (req, res) => {
+router.get('/departments', authenticateToken, async (req, res) => {
   try {
-    const departments = db.prepare(`
-      SELECT * FROM department_summary
+    // Since views might not exist in PostgreSQL, query directly
+    const departments = await db.prepare(`
+      SELECT 
+        department,
+        COUNT(*) as template_count,
+        SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as published_count,
+        SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress_count
+      FROM ideas
+      WHERE department IS NOT NULL AND department != ''
+      GROUP BY department
+      ORDER BY template_count DESC
     `).all();
     
     res.json(departments);
@@ -19,12 +28,19 @@ router.get('/departments', authenticateToken, (req, res) => {
 });
 
 // Get templates for a specific department
-router.get('/departments/:department/templates', authenticateToken, (req, res) => {
+router.get('/departments/:department/templates', authenticateToken, async (req, res) => {
   try {
     const { department } = req.params;
-    const templates = db.prepare(`
-      SELECT * FROM department_templates
-      WHERE department = ?
+    const templates = await db.prepare(`
+      SELECT 
+        i.*,
+        u1.username as created_by_name,
+        u2.username as assigned_to_name
+      FROM ideas i
+      LEFT JOIN users u1 ON i.created_by = u1.id
+      LEFT JOIN users u2 ON i.assigned_to = u2.id
+      WHERE i.department = ?
+      ORDER BY i.created_at DESC
     `).all(department);
     
     res.json(templates);
@@ -35,10 +51,20 @@ router.get('/departments/:department/templates', authenticateToken, (req, res) =
 });
 
 // Get department performance metrics
-router.get('/departments/performance', authenticateToken, (req, res) => {
+router.get('/departments/performance', authenticateToken, async (req, res) => {
   try {
-    const performance = db.prepare(`
-      SELECT * FROM department_performance
+    const performance = await db.prepare(`
+      SELECT 
+        department,
+        COUNT(*) as total_templates,
+        SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as published,
+        SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) as archived,
+        SUM(CASE WHEN status IN ('new', 'assigned', 'in_progress', 'submitted', 'needs_fixes', 'reviewed') THEN 1 ELSE 0 END) as active,
+        SUM(price) as total_value
+      FROM ideas
+      WHERE department IS NOT NULL AND department != ''
+      GROUP BY department
+      ORDER BY total_templates DESC
     `).all();
     
     res.json(performance);
@@ -49,10 +75,13 @@ router.get('/departments/performance', authenticateToken, (req, res) => {
 });
 
 // Get status summary
-router.get('/status', authenticateToken, (req, res) => {
+router.get('/status', authenticateToken, async (req, res) => {
   try {
-    const statuses = db.prepare(`
-      SELECT * FROM status_summary
+    const statuses = await db.prepare(`
+      SELECT status, COUNT(*) as count
+      FROM ideas
+      GROUP BY status
+      ORDER BY count DESC
     `).all();
     
     res.json(statuses);
@@ -63,10 +92,24 @@ router.get('/status', authenticateToken, (req, res) => {
 });
 
 // Get freelancer workload
-router.get('/freelancers/workload', authenticateToken, (req, res) => {
+router.get('/freelancers/workload', authenticateToken, async (req, res) => {
   try {
-    const workload = db.prepare(`
-      SELECT * FROM freelancer_workload
+    const workload = await db.prepare(`
+      SELECT 
+        u.id as freelancer_id,
+        u.username as freelancer_name,
+        u.handle as freelancer_handle,
+        COUNT(i.id) as total_assigned,
+        SUM(CASE WHEN i.status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
+        SUM(CASE WHEN i.status = 'submitted' THEN 1 ELSE 0 END) as submitted,
+        SUM(CASE WHEN i.status = 'needs_fixes' THEN 1 ELSE 0 END) as needs_fixes,
+        SUM(CASE WHEN i.status = 'reviewed' THEN 1 ELSE 0 END) as reviewed,
+        SUM(CASE WHEN i.status IN ('published', 'archived') THEN 1 ELSE 0 END) as completed
+      FROM users u
+      LEFT JOIN ideas i ON u.id = i.assigned_to
+      WHERE u.role = 'freelancer'
+      GROUP BY u.id, u.username, u.handle
+      ORDER BY total_assigned DESC
     `).all();
     
     res.json(workload);
@@ -77,12 +120,24 @@ router.get('/freelancers/workload', authenticateToken, (req, res) => {
 });
 
 // Get freelancer workload for a specific freelancer
-router.get('/freelancers/:id/workload', authenticateToken, (req, res) => {
+router.get('/freelancers/:id/workload', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const workload = db.prepare(`
-      SELECT * FROM freelancer_workload
-      WHERE freelancer_id = ?
+    const workload = await db.prepare(`
+      SELECT 
+        u.id as freelancer_id,
+        u.username as freelancer_name,
+        u.handle as freelancer_handle,
+        COUNT(i.id) as total_assigned,
+        SUM(CASE WHEN i.status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
+        SUM(CASE WHEN i.status = 'submitted' THEN 1 ELSE 0 END) as submitted,
+        SUM(CASE WHEN i.status = 'needs_fixes' THEN 1 ELSE 0 END) as needs_fixes,
+        SUM(CASE WHEN i.status = 'reviewed' THEN 1 ELSE 0 END) as reviewed,
+        SUM(CASE WHEN i.status IN ('published', 'archived') THEN 1 ELSE 0 END) as completed
+      FROM users u
+      LEFT JOIN ideas i ON u.id = i.assigned_to
+      WHERE u.id = ?
+      GROUP BY u.id, u.username, u.handle
     `).get(id);
     
     if (!workload) {
@@ -97,30 +152,43 @@ router.get('/freelancers/:id/workload', authenticateToken, (req, res) => {
 });
 
 // Get detailed templates view
-router.get('/templates/detailed', authenticateToken, (req, res) => {
+router.get('/templates/detailed', authenticateToken, async (req, res) => {
   try {
     const { department, status, assigned_to } = req.query;
-    let query = 'SELECT * FROM templates_detailed WHERE 1=1';
+    let query = `
+      SELECT 
+        i.*,
+        u1.username as created_by_name,
+        u2.username as assigned_to_name
+      FROM ideas i
+      LEFT JOIN users u1 ON i.created_by = u1.id
+      LEFT JOIN users u2 ON i.assigned_to = u2.id
+      WHERE 1=1
+    `;
     const params = [];
+    let paramCount = 0;
     
     if (department) {
-      query += ' AND department = ?';
+      paramCount++;
+      query += ` AND i.department = $${paramCount}`;
       params.push(department);
     }
     
     if (status) {
-      query += ' AND status = ?';
+      paramCount++;
+      query += ` AND i.status = $${paramCount}`;
       params.push(status);
     }
     
     if (assigned_to) {
-      query += ' AND assigned_to_name = ?';
+      paramCount++;
+      query += ` AND u2.username = $${paramCount}`;
       params.push(assigned_to);
     }
     
-    query += ' ORDER BY updated_at DESC';
+    query += ' ORDER BY i.updated_at DESC';
     
-    const templates = db.prepare(query).all(...params);
+    const templates = await db.prepare(query).all(...params);
     res.json(templates);
   } catch (error) {
     console.error('Error fetching detailed templates:', error);
@@ -129,11 +197,24 @@ router.get('/templates/detailed', authenticateToken, (req, res) => {
 });
 
 // Get tags summary
-router.get('/tags', authenticateToken, (req, res) => {
+router.get('/tags', authenticateToken, async (req, res) => {
   try {
-    const tags = db.prepare(`
-      SELECT * FROM tags_summary
+    // Extract and count tags from comma-separated tags field
+    const ideas = await db.prepare(`
+      SELECT tags FROM ideas WHERE tags IS NOT NULL AND tags != ''
     `).all();
+    
+    const tagCounts = {};
+    for (const idea of ideas) {
+      const tags = idea.tags.split(',').map(t => t.trim()).filter(t => t);
+      for (const tag of tags) {
+        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+      }
+    }
+    
+    const tags = Object.entries(tagCounts)
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count);
     
     res.json(tags);
   } catch (error) {
@@ -143,13 +224,22 @@ router.get('/tags', authenticateToken, (req, res) => {
 });
 
 // Get recent activity dashboard
-router.get('/recent-activity', authenticateToken, (req, res) => {
+router.get('/recent-activity', authenticateToken, async (req, res) => {
   try {
     const limit = req.query.limit || 50;
-    const activities = db.prepare(`
-      SELECT * FROM recent_activity_dashboard
+    const activities = await db.prepare(`
+      SELECT 
+        a.*,
+        u.username,
+        u.handle,
+        i.use_case,
+        i.flow_name
+      FROM activity_log a
+      LEFT JOIN users u ON a.user_id = u.id
+      LEFT JOIN ideas i ON a.idea_id = i.id
+      ORDER BY a.created_at DESC
       LIMIT ?
-    `).all(limit);
+    `).all(parseInt(limit));
     
     res.json(activities);
   } catch (error) {
@@ -159,10 +249,16 @@ router.get('/recent-activity', authenticateToken, (req, res) => {
 });
 
 // Get unassigned templates
-router.get('/unassigned', authenticateToken, (req, res) => {
+router.get('/unassigned', authenticateToken, async (req, res) => {
   try {
-    const templates = db.prepare(`
-      SELECT * FROM unassigned_templates
+    const templates = await db.prepare(`
+      SELECT 
+        i.*,
+        u.username as created_by_name
+      FROM ideas i
+      LEFT JOIN users u ON i.created_by = u.id
+      WHERE i.assigned_to IS NULL
+      ORDER BY i.created_at DESC
     `).all();
     
     res.json(templates);
@@ -173,13 +269,21 @@ router.get('/unassigned', authenticateToken, (req, res) => {
 });
 
 // Get high-value templates
-router.get('/high-value', authenticateToken, (req, res) => {
+router.get('/high-value', authenticateToken, async (req, res) => {
   try {
     const limit = req.query.limit || 20;
-    const templates = db.prepare(`
-      SELECT * FROM high_value_templates
+    const templates = await db.prepare(`
+      SELECT 
+        i.*,
+        u1.username as created_by_name,
+        u2.username as assigned_to_name
+      FROM ideas i
+      LEFT JOIN users u1 ON i.created_by = u1.id
+      LEFT JOIN users u2 ON i.assigned_to = u2.id
+      WHERE i.price > 0
+      ORDER BY i.price DESC
       LIMIT ?
-    `).all(limit);
+    `).all(parseInt(limit));
     
     res.json(templates);
   } catch (error) {
@@ -189,14 +293,59 @@ router.get('/high-value', authenticateToken, (req, res) => {
 });
 
 // Get dashboard overview (combines multiple views)
-router.get('/dashboard', authenticateToken, (req, res) => {
+router.get('/dashboard', authenticateToken, async (req, res) => {
   try {
+    const departments = await db.prepare(`
+      SELECT 
+        department,
+        COUNT(*) as template_count
+      FROM ideas
+      WHERE department IS NOT NULL AND department != ''
+      GROUP BY department
+      ORDER BY template_count DESC
+    `).all();
+
+    const statuses = await db.prepare(`
+      SELECT status, COUNT(*) as count
+      FROM ideas
+      GROUP BY status
+    `).all();
+
+    const recentActivity = await db.prepare(`
+      SELECT 
+        a.*,
+        u.username,
+        i.use_case,
+        i.flow_name
+      FROM activity_log a
+      LEFT JOIN users u ON a.user_id = u.id
+      LEFT JOIN ideas i ON a.idea_id = i.id
+      ORDER BY a.created_at DESC
+      LIMIT 10
+    `).all();
+
+    const unassignedCount = await db.prepare(`
+      SELECT COUNT(*) as count FROM ideas WHERE assigned_to IS NULL
+    `).get();
+
+    const freelancerWorkload = await db.prepare(`
+      SELECT 
+        u.id as freelancer_id,
+        u.username as freelancer_name,
+        COUNT(i.id) as total_assigned
+      FROM users u
+      LEFT JOIN ideas i ON u.id = i.assigned_to
+      WHERE u.role = 'freelancer'
+      GROUP BY u.id, u.username
+      ORDER BY total_assigned DESC
+    `).all();
+
     const overview = {
-      departments: db.prepare('SELECT * FROM department_summary').all(),
-      statuses: db.prepare('SELECT * FROM status_summary').all(),
-      recentActivity: db.prepare('SELECT * FROM recent_activity_dashboard LIMIT 10').all(),
-      unassignedCount: db.prepare('SELECT COUNT(*) as count FROM unassigned_templates').get(),
-      freelancerWorkload: db.prepare('SELECT * FROM freelancer_workload').all()
+      departments: departments || [],
+      statuses: statuses || [],
+      recentActivity: recentActivity || [],
+      unassignedCount: unassignedCount || { count: 0 },
+      freelancerWorkload: freelancerWorkload || []
     };
     
     res.json(overview);
@@ -207,4 +356,3 @@ router.get('/dashboard', authenticateToken, (req, res) => {
 });
 
 export default router;
-

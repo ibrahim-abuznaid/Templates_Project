@@ -15,7 +15,11 @@
     "dev:backend": "cd backend && npm run dev",
     "build:frontend": "cd frontend && npm run build",
     "start": "cd backend && npm start",
-    "kill-port": "npx kill-port 3001"
+    "kill-port": "npx kill-port 3001",
+    "db:studio": "cd backend && npm run db:studio",
+    "db:generate": "cd backend && npm run db:generate",
+    "db:pull": "cd backend && npm run db:pull",
+    "db:push": "cd backend && npm run db:push"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

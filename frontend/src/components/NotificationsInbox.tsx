@@ -1,22 +1,94 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { notificationsApi } from '../services/api';
+import { useSocket } from '../context/SocketContext';
 import type { Notification } from '../types';
 import { Bell, X, Check, CheckCheck, Trash2, AtSign, RefreshCw, AlertCircle } from 'lucide-react';
+
+// Create notification sound
+const playNotificationSound = () => {
+  try {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    
+    // Create a pleasant notification sound
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    // Two-tone notification sound
+    oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // A5
+    oscillator.frequency.setValueAtTime(1108.73, audioContext.currentTime + 0.1); // C#6
+    
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+    
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.3);
+  } catch (e) {
+    console.log('Could not play notification sound');
+  }
+};
 
 const NotificationsInbox: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [hasNewNotification, setHasNewNotification] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { subscribe, isConnected } = useSocket();
 
+  // Initial load
   useEffect(() => {
     loadUnreadCount();
-    const interval = setInterval(loadUnreadCount, 30000); // Poll every 30 seconds
-    return () => clearInterval(interval);
   }, []);
+
+  // Subscribe to real-time notification events
+  useEffect(() => {
+    // When we get a new notification
+    const unsubNew = subscribe('notification:new', (notification) => {
+      console.log('📬 New notification received:', notification);
+      setUnreadCount(prev => prev + 1);
+      setHasNewNotification(true);
+      
+      // Play notification sound
+      playNotificationSound();
+      
+      // If dropdown is open, add the new notification to the list
+      setNotifications(prev => {
+        // Check if notification already exists
+        if (prev.some(n => n.id === notification.id)) {
+          return prev;
+        }
+        return [notification, ...prev];
+      });
+      
+      // Clear the "new" indicator after 3 seconds
+      setTimeout(() => setHasNewNotification(false), 3000);
+    });
+
+    // When we get a count update
+    const unsubCount = subscribe('notification:count', (data) => {
+      console.log('📊 Notification count updated:', data.count);
+      setUnreadCount(data.count);
+    });
+
+    return () => {
+      unsubNew();
+      unsubCount();
+    };
+  }, [subscribe]);
+
+  // Fallback polling only when socket is disconnected
+  useEffect(() => {
+    if (!isConnected) {
+      const interval = setInterval(loadUnreadCount, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [isConnected]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -138,12 +210,16 @@ const NotificationsInbox: React.FC = () => {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={toggleDropdown}
-        className="relative p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+        className={`relative p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-all ${
+          hasNewNotification ? 'animate-pulse ring-2 ring-blue-400' : ''
+        }`}
       >
-        <Bell className="w-5 h-5" />
+        <Bell className={`w-5 h-5 ${hasNewNotification ? 'text-blue-600' : ''}`} />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-            {unreadCount > 9 ? '9+' : unreadCount}
+          <span className={`absolute -top-1 -right-1 text-white text-xs font-bold rounded-full min-w-5 h-5 px-1 flex items-center justify-center transition-all ${
+            hasNewNotification ? 'bg-blue-500 scale-125 animate-bounce' : 'bg-red-500'
+          }`}>
+            {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>

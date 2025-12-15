@@ -216,6 +216,62 @@ const sampleTemplates = [
     status: 'new',
     price: 185,
     assigned_to: null
+  },
+  // Dedicated QA / Test Templates (for internal testing)
+  {
+    use_case: 'Regression Test Automation',
+    flow_name: 'Nightly Regression Flow',
+    short_description: 'Test template for verifying nightly builds',
+    description: 'Run a full regression suite each night, collect failures, and notify stakeholders automatically.',
+    department: 'QA',
+    tags: 'qa,regression,test,automation',
+    status: 'new',
+    price: 90,
+    assigned_to: null
+  },
+  {
+    use_case: 'Stress Simulation Test',
+    flow_name: 'Load Test Flow',
+    short_description: 'Test template for high load simulations',
+    description: 'Generate diverse traffic patterns to validate autoscaling and stability under pressure.',
+    department: 'QA',
+    tags: 'stress,performance,testing',
+    status: 'in_progress',
+    price: 120,
+    assigned_to: freelancer.id
+  },
+  {
+    use_case: 'Security Scan Pipeline',
+    flow_name: 'Vulnerability Sweep',
+    short_description: 'Test template for automated security checks',
+    description: 'Combine dependency scanning, static analysis, and secret detection once per sprint.',
+    department: 'Security',
+    tags: 'security,scan,automation,test',
+    status: 'reviewed',
+    price: 140,
+    assigned_to: freelancer.id
+  },
+  {
+    use_case: 'Test Data Provisioning',
+    flow_name: 'Masked Data Builder',
+    short_description: 'Test template for generating compliant test data',
+    description: 'Automate creation of production-like data sets with masking rules for downstream test suites.',
+    department: 'QA',
+    tags: 'test-data,data,automation',
+    status: 'submitted',
+    price: 110,
+    assigned_to: null
+  },
+  {
+    use_case: 'Feature Flag Rollout Practice',
+    flow_name: 'Flag Release Flow',
+    short_description: 'Test template for gradual flag rollout',
+    description: 'Coordinate feature flag rollout, monitoring, and rollback drills before production releases.',
+    department: 'Engineering',
+    tags: 'feature flag,release,testing',
+    status: 'needs_fixes',
+    price: 130,
+    assigned_to: freelancer.id
   }
 ];
 

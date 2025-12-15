@@ -1,9 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { ideasApi, usersApi, blockersApi } from '../services/api';
-import type { IdeaDetail as IdeaDetailType, User, UserBasic, Blocker, BlockerType, BlockerPriority } from '../types';
+import type { IdeaDetail as IdeaDetailType, User, UserBasic, Blocker, BlockerType, BlockerPriority, IdeaStatus } from '../types';
 import StatusBadge from '../components/StatusBadge';
+import StatusWorkflow from '../components/StatusWorkflow';
+import StatusChangeSelector from '../components/StatusChangeSelector';
 import {
   ArrowLeft,
   Edit,
@@ -11,7 +14,6 @@ import {
   Trash2,
   Send,
   CheckCircle,
-  XCircle,
   MessageSquare,
   Activity,
   User as UserIcon,
@@ -22,12 +24,15 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 
 const IdeaDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, isAdmin, isFreelancer } = useAuth();
+  const { subscribe, joinIdea, leaveIdea, isConnected } = useSocket();
 
   const [idea, setIdea] = useState<IdeaDetailType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,7 +44,9 @@ const IdeaDetail: React.FC = () => {
   const [allUsers, setAllUsers] = useState<UserBasic[]>([]);
   const [showMentionList, setShowMentionList] = useState(false);
   const [mentionSearch, setMentionSearch] = useState('');
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
+  const mentionListRef = useRef<(HTMLButtonElement | null)[]>([]);
   const [blockers, setBlockers] = useState<Blocker[]>([]);
   const [showBlockerForm, setShowBlockerForm] = useState(false);
   const [showResolvedBlockers, setShowResolvedBlockers] = useState(false);
@@ -52,6 +59,7 @@ const IdeaDetail: React.FC = () => {
   const [expandedBlocker, setExpandedBlocker] = useState<number | null>(null);
   const [blockerDiscussions, setBlockerDiscussions] = useState<{[key: number]: any[]}>({});
   const [discussionMessage, setDiscussionMessage] = useState<{[key: number]: string}>({});
+  const [recentlyUpdated, setRecentlyUpdated] = useState(false);
 
   useEffect(() => {
     loadIdea();
@@ -61,6 +69,60 @@ const IdeaDetail: React.FC = () => {
       loadFreelancers();
     }
   }, [id]);
+
+  // Join the idea's room for real-time updates
+  useEffect(() => {
+    if (id) {
+      joinIdea(Number(id));
+      return () => leaveIdea(Number(id));
+    }
+  }, [id, joinIdea, leaveIdea]);
+
+  // Subscribe to real-time events for this idea
+  useEffect(() => {
+    // Handle idea updates (status changes, etc.)
+    const unsubUpdated = subscribe('idea:updated', (updatedIdea) => {
+      if (updatedIdea.id === Number(id)) {
+        console.log('📝 Idea updated in real-time:', updatedIdea);
+        setIdea(prev => prev ? { ...prev, ...updatedIdea } : null);
+        setRecentlyUpdated(true);
+        setTimeout(() => setRecentlyUpdated(false), 2000);
+      }
+    });
+
+    // Handle new comments
+    const unsubComment = subscribe('comment:new', (data) => {
+      if (data.ideaId === Number(id)) {
+        console.log('💬 New comment received:', data.comment);
+        setIdea(prev => {
+          if (!prev) return null;
+          // Check if comment already exists
+          if (prev.comments.some(c => c.id === data.comment.id)) {
+            return prev;
+          }
+          return {
+            ...prev,
+            comments: [data.comment, ...prev.comments]
+          };
+        });
+      }
+    });
+
+    // Handle idea deletion
+    const unsubDeleted = subscribe('idea:deleted', ({ id: deletedId }) => {
+      if (deletedId === Number(id)) {
+        console.log('🗑️ This idea was deleted');
+        alert('This template has been deleted.');
+        navigate('/');
+      }
+    });
+
+    return () => {
+      unsubUpdated();
+      unsubComment();
+      unsubDeleted();
+    };
+  }, [id, subscribe, navigate]);
 
   const loadBlockers = async () => {
     try {
@@ -164,7 +226,7 @@ const IdeaDetail: React.FC = () => {
     }
   };
 
-  const handleStatusChange = async (newStatus: string) => {
+  const handleStatusChange = async (newStatus: IdeaStatus) => {
     try {
       await ideasApi.update(Number(id), { status: newStatus });
       loadIdea();
@@ -219,9 +281,11 @@ const IdeaDetail: React.FC = () => {
     
     if (lastAtIndex !== -1) {
       const textAfterAt = textBeforeCursor.substring(lastAtIndex + 1);
+      
       if (!textAfterAt.includes(' ')) {
         setMentionSearch(textAfterAt.toLowerCase());
         setShowMentionList(true);
+        setSelectedMentionIndex(0);
         return;
       }
     }
@@ -236,10 +300,23 @@ const IdeaDetail: React.FC = () => {
     const lastAtIndex = textBeforeCursor.lastIndexOf('@');
     
     if (lastAtIndex !== -1) {
+      // Get text before the @ symbol
       const before = comment.substring(0, lastAtIndex);
+      // Get text after the current cursor position  
       const after = comment.substring(cursorPosition);
+      // Create new comment: before + @handle + space + after
       const newComment = `${before}@${handle} ${after}`;
+      
       setComment(newComment);
+      
+      // Set cursor position after the mention
+      setTimeout(() => {
+        if (commentInputRef.current) {
+          const newCursorPos = lastAtIndex + handle.length + 2; // +2 for @ and space
+          commentInputRef.current.selectionStart = newCursorPos;
+          commentInputRef.current.selectionEnd = newCursorPos;
+        }
+      }, 0);
     }
     
     setShowMentionList(false);
@@ -250,34 +327,98 @@ const IdeaDetail: React.FC = () => {
     u => u.handle.toLowerCase().includes(mentionSearch) || 
          u.username.toLowerCase().includes(mentionSearch)
   );
+  const visibleMentionOptions = filteredUsers.slice(0, 5);
+
+  useEffect(() => {
+    setSelectedMentionIndex(prev => {
+      if (visibleMentionOptions.length === 0) {
+        return 0;
+      }
+      return Math.min(prev, visibleMentionOptions.length - 1);
+    });
+  }, [visibleMentionOptions.length]);
+
+  // Auto-scroll selected mention into view
+  useEffect(() => {
+    if (showMentionList && mentionListRef.current[selectedMentionIndex]) {
+      mentionListRef.current[selectedMentionIndex]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    }
+  }, [selectedMentionIndex, showMentionList]);
+
+  const handleCommentKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!showMentionList || visibleMentionOptions.length === 0) {
+      // Allow normal behavior if mention list is not showing
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedMentionIndex(prev => (prev + 1) % visibleMentionOptions.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedMentionIndex(prev => (prev - 1 + visibleMentionOptions.length) % visibleMentionOptions.length);
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+      // Only prevent default for Enter when mention list is showing
+      e.preventDefault();
+      const selectedUser = visibleMentionOptions[selectedMentionIndex];
+      if (selectedUser) {
+        insertMention(selectedUser.handle);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setShowMentionList(false);
+    } else if (e.key === 'Tab') {
+      // Tab also selects the currently highlighted mention
+      e.preventDefault();
+      const selectedUser = visibleMentionOptions[selectedMentionIndex];
+      if (selectedUser) {
+        insertMention(selectedUser.handle);
+      }
+    }
+  };
 
   // Render comment text with highlighted mentions
   const renderCommentText = (text: string) => {
+    if (!text) return null;
+    
     const parts = text.split(/(@\w+)/g);
-    return parts.map((part, index) => {
-      if (part.startsWith('@')) {
-        const handle = part.substring(1);
-        const mentionedUser = allUsers.find(u => u.handle === handle);
-        if (mentionedUser) {
-          return (
-            <span key={index} className="text-primary-600 font-medium bg-primary-50 px-1 rounded">
-              {part}
-            </span>
-          );
-        }
-      }
-      return part;
-    });
+    
+    return (
+      <>
+        {parts.map((part, index) => {
+          if (part.startsWith('@')) {
+            const handle = part.substring(1);
+            const mentionedUser = allUsers.find(u => u.handle === handle);
+            
+            if (mentionedUser) {
+              return (
+                <span 
+                  key={index} 
+                  className="text-blue-600 font-semibold bg-blue-100 px-1.5 py-0.5 rounded hover:bg-blue-200 transition-colors cursor-pointer"
+                  title={`@${handle} (${mentionedUser.username})`}
+                >
+                  {part}
+                </span>
+              );
+            }
+          }
+          return <span key={index}>{part}</span>;
+        })}
+      </>
+    );
   };
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this idea?')) return;
+    if (!confirm('Are you sure you want to delete this template?')) return;
 
     try {
       await ideasApi.delete(Number(id));
       navigate('/');
     } catch (error) {
-      console.error('Failed to delete idea:', error);
+      console.error('Failed to delete template:', error);
     }
   };
 
@@ -349,17 +490,66 @@ const IdeaDetail: React.FC = () => {
   }
 
   const canEdit = isAdmin || (isFreelancer && idea.assigned_to === user?.id);
-  const canReview = isAdmin;
+
+  // Determine allowed status changes based on role and current status
+  const getAllowedStatusChanges = (): IdeaStatus[] => {
+    if (isAdmin) {
+      // Admin can change to most statuses
+      const allowed: IdeaStatus[] = [];
+      if (idea.status === 'new') allowed.push('assigned');
+      if (idea.status === 'assigned') allowed.push('in_progress', 'new');
+      if (idea.status === 'in_progress') allowed.push('submitted', 'needs_fixes');
+      if (idea.status === 'submitted') allowed.push('reviewed', 'needs_fixes', 'in_progress');
+      if (idea.status === 'needs_fixes') allowed.push('submitted', 'in_progress');
+      if (idea.status === 'reviewed') allowed.push('published', 'needs_fixes');
+      if (idea.status === 'published') allowed.push('archived', 'reviewed');
+      if (idea.status === 'archived') allowed.push('published'); // Allow republishing archived templates
+      return allowed;
+    } else if (isFreelancer && idea.assigned_to === user?.id) {
+      // Template Creator can progress work forward and unsubmit if needed
+      const allowed: IdeaStatus[] = [];
+      if (idea.status === 'assigned') allowed.push('in_progress');
+      if (idea.status === 'in_progress') allowed.push('submitted');
+      if (idea.status === 'submitted') allowed.push('in_progress'); // Can unsubmit
+      if (idea.status === 'needs_fixes') allowed.push('submitted', 'in_progress');
+      return allowed;
+    }
+    return [];
+  };
+
+  const allowedStatuses = getAllowedStatusChanges();
 
   return (
     <div>
+      <div className="flex items-center justify-between mb-6">
       <button
         onClick={() => navigate('/')}
-        className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-6"
+          className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
       >
         <ArrowLeft className="w-4 h-4" />
         <span>Back to Dashboard</span>
       </button>
+        
+        {/* Real-time status indicator */}
+        <div className="flex items-center gap-2">
+          {recentlyUpdated && (
+            <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full animate-pulse">
+              Updated!
+            </span>
+          )}
+          <span 
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${
+              isConnected 
+                ? 'bg-green-100 text-green-700' 
+                : 'bg-gray-100 text-gray-500'
+            }`}
+            title={isConnected ? 'Real-time updates active' : 'Reconnecting...'}
+          >
+            {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+            {isConnected ? 'Live' : 'Offline'}
+          </span>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
@@ -367,7 +557,7 @@ const IdeaDetail: React.FC = () => {
           <div className="card">
             <div className="flex justify-between items-start mb-6">
               <div className="flex-1">
-                <div className="flex items-center space-x-3 mb-2">
+                <div className="flex items-center flex-wrap gap-3 mb-2">
                   {editing ? (
                     <input
                       type="text"
@@ -379,7 +569,7 @@ const IdeaDetail: React.FC = () => {
                   ) : (
                     <h1 className="text-2xl font-bold text-gray-900">{idea.flow_name || idea.use_case}</h1>
                   )}
-                  <StatusBadge status={idea.status} />
+                  <StatusBadge status={idea.status} showIcon={true} showTooltip={true} />
                 </div>
                 <div className="flex items-center space-x-4 text-sm text-gray-500">
                   {idea.department && (
@@ -869,7 +1059,7 @@ const IdeaDetail: React.FC = () => {
                                     <span className="text-xs font-medium text-gray-900">@{disc.handle}</span>
                                     <span className="text-xs text-gray-500">{new Date(disc.created_at).toLocaleString()}</span>
                                   </div>
-                                  <p className="text-sm text-gray-700">{disc.message}</p>
+                                  <p className="text-sm text-gray-700">{renderCommentText(disc.message)}</p>
                                   {disc.is_solution && (
                                     <span className="inline-block mt-1 text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">✓ Solution</span>
                                   )}
@@ -911,25 +1101,49 @@ const IdeaDetail: React.FC = () => {
                   ref={commentInputRef}
                   value={comment}
                   onChange={handleCommentChange}
+                  onKeyDown={handleCommentKeyDown}
                   className="input-field mb-3"
                   rows={3}
                   placeholder="Add a comment... Use @handle to mention someone"
                 />
                 
-                {showMentionList && filteredUsers.length > 0 && (
-                  <div className="absolute bottom-full left-0 mb-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto z-10">
-                    {filteredUsers.slice(0, 5).map(u => (
+                {showMentionList && visibleMentionOptions.length > 0 && (
+                  <div className="absolute bottom-full left-0 mb-2 w-72 bg-white border-2 border-blue-200 rounded-lg shadow-2xl max-h-60 overflow-y-auto z-50 animate-fade-in">
+                    <div className="px-3 py-2 bg-blue-50 border-b border-blue-200 text-xs font-semibold text-blue-700 flex items-center justify-between">
+                      <span>Select a user to mention</span>
+                      <span className="text-blue-500">↑↓ Navigate • Enter/Tab Select • Esc Close</span>
+                    </div>
+                    {visibleMentionOptions.map((u, index) => (
                       <button
                         key={u.id}
+                        ref={el => mentionListRef.current[index] = el}
                         type="button"
                         onClick={() => insertMention(u.handle)}
-                        className="w-full px-3 py-2 text-left hover:bg-gray-100 flex items-center space-x-2"
+                        className={`w-full px-4 py-3 text-left flex items-center space-x-3 transition-all duration-150 border-b border-gray-100 last:border-b-0 ${
+                          index === selectedMentionIndex
+                            ? 'bg-blue-500 text-white shadow-md scale-[1.02]'
+                            : 'hover:bg-blue-50 text-gray-900'
+                        }`}
+                        onMouseEnter={() => setSelectedMentionIndex(index)}
                       >
-                        <AtSign className="w-4 h-4 text-primary-500" />
-                        <div>
-                          <span className="font-medium text-gray-900">@{u.handle}</span>
-                          <span className="text-sm text-gray-500 ml-2">{u.username}</span>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                          index === selectedMentionIndex ? 'bg-white text-blue-500' : 'bg-blue-100 text-blue-600'
+                        }`}>
+                          <AtSign className="w-4 h-4" />
                         </div>
+                        <div className="flex-1">
+                          <div className={`font-semibold ${index === selectedMentionIndex ? 'text-white' : 'text-gray-900'}`}>
+                            @{u.handle}
+                          </div>
+                          <div className={`text-sm ${index === selectedMentionIndex ? 'text-blue-100' : 'text-gray-500'}`}>
+                            {u.username}
+                          </div>
+                        </div>
+                        {index === selectedMentionIndex && (
+                          <div className="text-white text-xs font-semibold bg-blue-600 px-2 py-1 rounded">
+                            Selected
+                          </div>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -972,18 +1186,25 @@ const IdeaDetail: React.FC = () => {
 
         {/* Sidebar */}
         <div className="space-y-6">
+          {/* Workflow Progress */}
+          <StatusWorkflow currentStatus={idea.status} />
+
           {/* Actions */}
           <div className="card">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Actions</h3>
 
+            {/* Assignment Section for Reviewer */}
             {isAdmin && idea.status === 'new' && (
-              <div className="space-y-3">
+              <div className="space-y-3 mb-6">
+                <label className="block text-sm font-medium text-gray-700">
+                  Assign to Template Creator
+                </label>
                 <select
                   value={selectedFreelancer}
                   onChange={(e) => setSelectedFreelancer(e.target.value)}
                   className="input-field"
                 >
-                  <option value="">Select Freelancer</option>
+                  <option value="">Select Template Creator</option>
                   {freelancers.map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.username}
@@ -996,13 +1217,14 @@ const IdeaDetail: React.FC = () => {
                   className="w-full btn-primary flex items-center justify-center space-x-2"
                 >
                   <Send className="w-4 h-4" />
-                  <span>Assign to Freelancer</span>
+                  <span>Assign to Template Creator</span>
                 </button>
               </div>
             )}
 
+            {/* Self-Assignment for Template Creator */}
             {isFreelancer && idea.assigned_to === null && (
-              <div className="space-y-3">
+              <div className="space-y-3 mb-6">
                 <button
                   onClick={handleSelfAssign}
                   className="w-full btn-primary flex items-center justify-center space-x-2"
@@ -1011,60 +1233,33 @@ const IdeaDetail: React.FC = () => {
                   <span>Assign to Myself</span>
                 </button>
                 <p className="text-sm text-gray-500 text-center">
-                  This idea is available. Click to start working on it.
+                  This template is available. Click to start working on it.
                 </p>
               </div>
             )}
 
-            {isFreelancer && idea.assigned_to === user?.id && (
+            {/* Status Change Selector */}
+            {allowedStatuses.length > 0 && (
               <div className="space-y-3">
-                {idea.status === 'assigned' && (
-                  <button
-                    onClick={() => handleStatusChange('in_progress')}
-                    className="w-full btn-primary"
-                  >
-                    Start Working
-                  </button>
-                )}
-                {(idea.status === 'in_progress' || idea.status === 'needs_fixes') && (
-                  <button
-                    onClick={() => handleStatusChange('submitted')}
-                    className="w-full btn-success flex items-center justify-center space-x-2"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    <span>Submit for Review</span>
-                  </button>
-                )}
+                <label className="block text-sm font-medium text-gray-700">
+                  Change Status
+                </label>
+                <StatusChangeSelector
+                  currentStatus={idea.status}
+                  allowedStatuses={allowedStatuses}
+                  onStatusChange={handleStatusChange}
+                  userRole={isAdmin ? 'admin' : 'freelancer'}
+                />
               </div>
             )}
 
-            {canReview && idea.status === 'submitted' && (
-              <div className="space-y-3">
-                <button
-                  onClick={() => handleStatusChange('reviewed')}
-                  className="w-full btn-success flex items-center justify-center space-x-2"
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  <span>Approve</span>
-                </button>
-                <button
-                  onClick={() => handleStatusChange('needs_fixes')}
-                  className="w-full btn-danger flex items-center justify-center space-x-2"
-                >
-                  <XCircle className="w-4 h-4" />
-                  <span>Request Fixes</span>
-                </button>
+            {/* No actions available message */}
+            {allowedStatuses.length === 0 && idea.assigned_to !== null && !isAdmin && (
+              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <p className="text-sm text-gray-600 text-center">
+                  No actions available at this stage.
+                </p>
               </div>
-            )}
-
-            {canReview && idea.status === 'reviewed' && (
-              <button
-                onClick={() => handleStatusChange('published')}
-                className="w-full btn-success flex items-center justify-center space-x-2"
-              >
-                <CheckCircle className="w-4 h-4" />
-                <span>Publish Template</span>
-              </button>
             )}
           </div>
 

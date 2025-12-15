@@ -122,8 +122,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <span className="text-xs text-gray-500">@{user.handle}</span>
                     )}
                   </div>
-                  <span className="text-xs px-2 py-1 bg-primary-100 text-primary-700 rounded capitalize">
-                    {user.role}
+                  <span className="text-xs px-2 py-1 bg-primary-100 text-primary-700 rounded">
+                    {user.role === 'freelancer' ? 'Template Creator' : 'Reviewer'}
                   </span>
                 </div>
                 <button

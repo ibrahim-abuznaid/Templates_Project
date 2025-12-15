@@ -98,7 +98,7 @@ const InvoiceManagement: React.FC = () => {
     <div>
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Invoice Management</h1>
-        <p className="text-gray-600">Manage freelancer invoices and payments</p>
+        <p className="text-gray-600">Manage template creator invoices and payments</p>
       </div>
 
       {/* Pending Invoices */}
@@ -135,7 +135,7 @@ const InvoiceManagement: React.FC = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Total:</span>
-                    <span className="font-bold text-green-600">${invoice.total_amount.toFixed(2)}</span>
+                    <span className="font-bold text-green-600">${parseFloat(invoice.total_amount).toFixed(2)}</span>
                   </div>
                   <div className="text-xs text-gray-500 mt-2">
                     {new Date(invoice.period_start).toLocaleDateString()} - {new Date(invoice.period_end).toLocaleDateString()}
@@ -205,7 +205,7 @@ const InvoiceManagement: React.FC = () => {
               <thead>
                 <tr className="bg-gray-50">
                   <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Invoice #</th>
-                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Freelancer</th>
+                  <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Template Creator</th>
                   <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Period</th>
                   <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Paid</th>
                   <th className="px-4 py-2 text-right text-sm font-medium text-gray-700">Amount</th>
@@ -223,7 +223,7 @@ const InvoiceManagement: React.FC = () => {
                       {invoice.paid_at ? new Date(invoice.paid_at).toLocaleDateString() : 'N/A'}
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-green-600">
-                      ${invoice.total_amount.toFixed(2)}
+                      ${parseFloat(invoice.total_amount).toFixed(2)}
                     </td>
                   </tr>
                 ))}

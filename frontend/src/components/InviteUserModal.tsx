@@ -12,7 +12,7 @@ const InviteUserModal: React.FC<InviteUserModalProps> = ({ isOpen, onClose }) =>
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'freelancer' | 'admin'>('freelancer');
+  const [role, setRole] = useState<'freelancer' | 'admin'>('freelancer'); // 'freelancer' displayed as 'Template Creator'
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [copiedToken, setCopiedToken] = useState<number | null>(null);
@@ -110,8 +110,8 @@ const InviteUserModal: React.FC<InviteUserModalProps> = ({ isOpen, onClose }) =>
                 onChange={(e) => setRole(e.target.value as 'freelancer' | 'admin')}
                 className="input-field w-32"
               >
-                <option value="freelancer">Freelancer</option>
-                <option value="admin">Admin</option>
+                <option value="freelancer">Template Creator</option>
+                <option value="admin">Reviewer</option>
               </select>
               <button type="submit" className="btn-primary whitespace-nowrap">
                 Send Invite

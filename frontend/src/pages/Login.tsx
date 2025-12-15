@@ -90,11 +90,11 @@ const Login: React.FC = () => {
             <p className="text-xs text-gray-500 text-center mb-3">Demo Credentials:</p>
             <div className="space-y-2 text-xs text-gray-600">
               <div className="flex justify-between p-2 bg-gray-50 rounded">
-                <span className="font-medium">Admin:</span>
+                <span className="font-medium">Reviewer:</span>
                 <span>admin / admin123</span>
               </div>
               <div className="flex justify-between p-2 bg-gray-50 rounded">
-                <span className="font-medium">Freelancer:</span>
+                <span className="font-medium">Template Creator:</span>
                 <span>freelancer / freelancer123</span>
               </div>
             </div>

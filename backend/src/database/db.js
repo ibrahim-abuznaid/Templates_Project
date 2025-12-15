@@ -1,158 +1,172 @@
-import Database from 'better-sqlite3';
+// ============================================
+// PostgreSQL Database Connection
+// NO MORE SQLITE - PostgreSQL ONLY!
+// ============================================
+
+import pkg from 'pg';
+const { Pool } = pkg;
+import bcrypt from 'bcryptjs';
+import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { readFileSync } from 'fs';
-import bcrypt from 'bcryptjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const db = new Database(join(__dirname, '../../data/database.db'));
+// Load environment variables
+dotenv.config({ path: join(__dirname, '../../.env') });
 
-// Enable foreign keys
-db.pragma('foreign_keys = ON');
+// PostgreSQL connection pool
+let pool = null;
 
-// Initialize database schema
-export function initDatabase() {
-  // Users table with handle
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      handle TEXT UNIQUE,
-      role TEXT NOT NULL CHECK(role IN ('admin', 'freelancer')),
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+// Initialize PostgreSQL connection
+function createPool() {
+  if (pool) return pool;
+  
+  const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:7777@localhost:5433/template_management';
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  console.log('🐘 Connecting to PostgreSQL...');
+  console.log(`📍 Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+  
+  // Configure SSL based on environment
+  // DigitalOcean managed databases require SSL
+  const sslConfig = isProduction ? { rejectUnauthorized: false } : false;
+  
+  pool = new Pool({
+    connectionString,
+    ssl: sslConfig,
+    max: 20,     // Maximum connections in pool
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  });
 
-  // Invitations table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS invitations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT UNIQUE NOT NULL,
-      token TEXT UNIQUE NOT NULL,
-      role TEXT NOT NULL CHECK(role IN ('admin', 'freelancer')),
-      invited_by INTEGER NOT NULL,
-      expires_at DATETIME NOT NULL,
-      accepted_at DATETIME,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (invited_by) REFERENCES users(id)
-    )
-  `);
+  pool.on('error', (err) => {
+    console.error('❌ PostgreSQL pool error:', err);
+  });
 
-  // Notifications table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS notifications (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      type TEXT NOT NULL,
-      title TEXT NOT NULL,
-      message TEXT NOT NULL,
-      idea_id INTEGER,
-      from_user_id INTEGER,
-      read_at DATETIME,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (idea_id) REFERENCES ideas(id) ON DELETE CASCADE,
-      FOREIGN KEY (from_user_id) REFERENCES users(id)
-    )
-  `);
+  return pool;
+}
 
-  // Invoices table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS invoices (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      freelancer_id INTEGER NOT NULL,
-      invoice_number TEXT UNIQUE NOT NULL,
-      total_amount REAL NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'paid')),
-      period_start DATETIME NOT NULL,
-      period_end DATETIME NOT NULL,
-      paid_at DATETIME,
-      paid_by INTEGER,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (freelancer_id) REFERENCES users(id),
-      FOREIGN KEY (paid_by) REFERENCES users(id)
-    )
-  `);
+// Create pool immediately
+createPool();
 
-  // Invoice items table (templates completed in billing period)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS invoice_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      invoice_id INTEGER,
-      freelancer_id INTEGER NOT NULL,
-      idea_id INTEGER NOT NULL,
-      idea_title TEXT NOT NULL,
-      amount REAL NOT NULL,
-      completed_at DATETIME NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'invoiced', 'paid')),
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL,
-      FOREIGN KEY (freelancer_id) REFERENCES users(id),
-      FOREIGN KEY (idea_id) REFERENCES ideas(id)
-    )
-  `);
+// ============================================
+// SQLite-Compatible Wrapper for PostgreSQL
+// This allows existing code to work with minimal changes
+// ============================================
 
-  // Blockers table - track issues preventing template completion
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS blockers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      idea_id INTEGER NOT NULL,
-      blocker_type TEXT NOT NULL CHECK(blocker_type IN ('missing_action', 'missing_integration', 'platform_limitation', 'bug', 'other')),
-      title TEXT NOT NULL,
-      description TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'in_progress', 'resolved', 'wont_fix')),
-      priority TEXT NOT NULL DEFAULT 'medium' CHECK(priority IN ('low', 'medium', 'high', 'critical')),
-      created_by INTEGER NOT NULL,
-      resolved_by INTEGER,
-      resolved_at DATETIME,
-      resolution_notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (idea_id) REFERENCES ideas(id) ON DELETE CASCADE,
-      FOREIGN KEY (created_by) REFERENCES users(id),
-      FOREIGN KEY (resolved_by) REFERENCES users(id)
-    )
-  `);
-
-  // Blocker discussions table - threaded discussions for each blocker
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS blocker_discussions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      blocker_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      message TEXT NOT NULL,
-      is_solution BOOLEAN DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (blocker_id) REFERENCES blockers(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    )
-  `);
-
-  // Ensure handle column exists (migration for existing DB)
-  let hasHandle = true; // Assume it exists since it's in the CREATE TABLE
-  try {
-    const tableInfo = db.prepare("PRAGMA table_info(users)").all();
-    hasHandle = tableInfo.some(col => col.name === 'handle');
+const db = {
+  prepare: (sql) => {
+    // Convert SQLite ? placeholders to PostgreSQL $1, $2, etc.
+    let paramCount = 0;
+    const pgSql = sql.replace(/\?/g, () => `$${++paramCount}`);
     
-    if (!hasHandle) {
-      console.log('Migrating: Adding handle column to users table...');
-      db.exec(`ALTER TABLE users ADD COLUMN handle TEXT`);
-      hasHandle = true;
-      console.log('✅ Added handle column to users table');
+    return {
+      // GET - returns single row (synchronous-like wrapper)
+      get: (...params) => {
+        const result = pool.query(pgSql, params);
+        // Return a thenable that also has direct access for sync-like code
+        const promise = result.then(res => res.rows[0] || null).catch(err => {
+          console.error('PostgreSQL GET error:', err.message);
+          throw err;
+        });
+        return promise;
+      },
+      
+      // ALL - returns all rows
+      all: (...params) => {
+        const result = pool.query(pgSql, params);
+        const promise = result.then(res => res.rows || []).catch(err => {
+          console.error('PostgreSQL ALL error:', err.message);
+          throw err;
+        });
+        return promise;
+      },
+      
+      // RUN - executes query (INSERT, UPDATE, DELETE)
+      run: (...params) => {
+        // For INSERT, add RETURNING id to get the inserted ID
+        let finalSql = pgSql;
+        if (pgSql.trim().toUpperCase().startsWith('INSERT') && !pgSql.toUpperCase().includes('RETURNING')) {
+          finalSql = pgSql + ' RETURNING id';
+        }
+        
+        const result = pool.query(finalSql, params);
+        const promise = result.then(res => ({
+          lastInsertRowid: res.rows[0]?.id || null,
+          changes: res.rowCount || 0
+        })).catch(err => {
+          console.error('PostgreSQL RUN error:', err.message);
+          throw err;
+        });
+        return promise;
+      }
+    };
+  },
+  
+  // Direct exec for raw SQL
+  exec: async (sql) => {
+    try {
+      await pool.query(sql);
+    } catch (err) {
+      console.error('PostgreSQL EXEC error:', err.message);
+      throw err;
     }
-  } catch (e) {
-    console.error('Error checking/adding handle column:', e.message);
-    hasHandle = false; // If there's an error, mark as false to skip handle operations
+  },
+  
+  // Transaction support
+  transaction: (fn) => {
+    return async () => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await fn(client);
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    };
   }
+};
 
-  // Ideas/Templates table
-  db.exec(`
+// ============================================
+// Database Initialization
+// ============================================
+
+export async function initDatabase() {
+  console.log('🗄️  Initializing PostgreSQL database...');
+  
+  const schema = `
+    -- Users table
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username VARCHAR(255) UNIQUE NOT NULL,
+      email VARCHAR(255) UNIQUE,
+      password VARCHAR(255) NOT NULL,
+      handle VARCHAR(255) UNIQUE,
+      role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'freelancer')),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Invitations table
+    CREATE TABLE IF NOT EXISTS invitations (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) NOT NULL,
+      token VARCHAR(255) UNIQUE NOT NULL,
+      role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'freelancer')),
+      invited_by INTEGER REFERENCES users(id),
+      expires_at TIMESTAMP NOT NULL,
+      accepted_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Ideas/Templates table
     CREATE TABLE IF NOT EXISTS ideas (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       use_case TEXT NOT NULL,
       flow_name TEXT,
       short_description TEXT,
@@ -160,157 +174,347 @@ export function initDatabase() {
       setup_guide TEXT,
       template_url TEXT,
       scribe_url TEXT,
-      department TEXT,
+      department VARCHAR(255),
       tags TEXT,
-      reviewer_name TEXT,
-      price REAL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'new' CHECK(
-        status IN ('new', 'assigned', 'in_progress', 'submitted', 'needs_fixes', 'reviewed', 'published')
-      ),
-      assigned_to INTEGER,
-      created_by INTEGER NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (assigned_to) REFERENCES users(id),
-      FOREIGN KEY (created_by) REFERENCES users(id)
-    )
-  `);
+      reviewer_name VARCHAR(255),
+      price DECIMAL(10, 2) DEFAULT 0,
+      status VARCHAR(50) DEFAULT 'new' CHECK (status IN ('new', 'assigned', 'in_progress', 'submitted', 'needs_fixes', 'reviewed', 'published', 'archived')),
+      assigned_to INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_by INTEGER REFERENCES users(id),
+      public_library_id TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
 
-  // Comments/Feedback table
-  db.exec(`
+    -- Comments table
     CREATE TABLE IF NOT EXISTS comments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      idea_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      idea_id INTEGER REFERENCES ideas(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id),
       comment TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (idea_id) REFERENCES ideas(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    )
-  `);
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
 
-  // Activity log table
-  db.exec(`
+    -- Activity log table
     CREATE TABLE IF NOT EXISTS activity_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      idea_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      action TEXT NOT NULL,
+      id SERIAL PRIMARY KEY,
+      idea_id INTEGER REFERENCES ideas(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id),
+      action VARCHAR(255) NOT NULL,
       details TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (idea_id) REFERENCES ideas(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    )
-  `);
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
 
-  // Create default admin user if no users exist
-  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
-  if (userCount.count === 0) {
-    const hashedPassword = bcrypt.hashSync('admin123', 10);
-    
-    if (hasHandle) {
-      db.prepare(`
-        INSERT INTO users (username, email, password, handle, role)
-        VALUES (?, ?, ?, ?, ?)
-      `).run('admin', 'admin@example.com', hashedPassword, 'admin', 'admin');
-    } else {
-      db.prepare(`
-        INSERT INTO users (username, email, password, role)
-        VALUES (?, ?, ?, ?)
-      `).run('admin', 'admin@example.com', hashedPassword, 'admin');
-    }
+    -- Notifications table
+    CREATE TABLE IF NOT EXISTS notifications (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      type VARCHAR(50) NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      message TEXT NOT NULL,
+      idea_id INTEGER REFERENCES ideas(id) ON DELETE CASCADE,
+      from_user_id INTEGER REFERENCES users(id),
+      read_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
 
-    // Create sample freelancer
-    const freelancerPassword = bcrypt.hashSync('freelancer123', 10);
-    
-    if (hasHandle) {
-      db.prepare(`
-        INSERT INTO users (username, email, password, handle, role)
-        VALUES (?, ?, ?, ?, ?)
-      `).run('freelancer', 'freelancer@example.com', freelancerPassword, 'freelancer', 'freelancer');
-    } else {
-      db.prepare(`
-        INSERT INTO users (username, email, password, role)
-        VALUES (?, ?, ?, ?)
-      `).run('freelancer', 'freelancer@example.com', freelancerPassword, 'freelancer');
-    }
+    -- Invoices table
+    CREATE TABLE IF NOT EXISTS invoices (
+      id SERIAL PRIMARY KEY,
+      invoice_number VARCHAR(100) UNIQUE NOT NULL,
+      freelancer_id INTEGER REFERENCES users(id),
+      total_amount DECIMAL(10, 2) NOT NULL,
+      status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'paid', 'rejected')),
+      paid_by INTEGER REFERENCES users(id),
+      paid_at TIMESTAMP,
+      period_start TIMESTAMP NOT NULL,
+      period_end TIMESTAMP NOT NULL,
+      csv_data TEXT,
+      pdf_data TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
 
-    console.log('✅ Default users created:');
-    console.log('   Admin: admin / admin123 (@admin)');
-    console.log('   Freelancer: freelancer / freelancer123 (@freelancer)');
-  }
+    -- Invoice items table
+    CREATE TABLE IF NOT EXISTS invoice_items (
+      id SERIAL PRIMARY KEY,
+      freelancer_id INTEGER REFERENCES users(id),
+      idea_id INTEGER REFERENCES ideas(id) ON DELETE CASCADE,
+      idea_title TEXT NOT NULL,
+      amount DECIMAL(10, 2) NOT NULL,
+      completed_at TIMESTAMP NOT NULL,
+      invoice_id INTEGER REFERENCES invoices(id),
+      status VARCHAR(50) DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
 
-  // Update existing users without handles (only if handle column exists and was verified)
-  if (hasHandle) {
-    try {
-      // First check if we can query the handle column
-      const testQuery = db.prepare('SELECT handle FROM users LIMIT 1');
-      testQuery.all(); // This will throw if column doesn't exist
-      
-      // Now safely query for users without handles
-      const usersWithoutHandles = db.prepare('SELECT id, username, handle FROM users WHERE handle IS NULL OR handle = ""').all();
-      
-      if (usersWithoutHandles.length > 0) {
-        console.log(`Migrating: Updating ${usersWithoutHandles.length} users with handles...`);
-        usersWithoutHandles.forEach(user => {
-          const handle = user.username.toLowerCase().replace(/[^a-z0-9]/g, '');
-          // Check if handle already exists
-          const existing = db.prepare('SELECT id FROM users WHERE handle = ? AND id != ?').get(handle, user.id);
-          const finalHandle = existing ? `${handle}${user.id}` : handle;
-          db.prepare('UPDATE users SET handle = ? WHERE id = ?').run(finalHandle, user.id);
-        });
-        console.log(`✅ Updated ${usersWithoutHandles.length} users with handles`);
-      }
-      
-      // Create unique index on handle if it doesn't exist
-      try {
-        db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_handle ON users(handle)`);
-      } catch (e) {
-        // Index might already exist, that's fine
-        if (!e.message.includes('already exists')) {
-          console.error('Error creating handle index:', e.message);
-        }
-      }
-    } catch (e) {
-      console.error('Error updating user handles:', e.message);
-      console.log('Skipping handle migration due to error');
-    }
-  }
+    -- Blockers table
+    CREATE TABLE IF NOT EXISTS blockers (
+      id SERIAL PRIMARY KEY,
+      idea_id INTEGER REFERENCES ideas(id) ON DELETE CASCADE,
+      blocker_type VARCHAR(100) NOT NULL CHECK (blocker_type IN ('missing_action', 'missing_integration', 'platform_limitation', 'bug', 'technical', 'documentation', 'design', 'other')),
+      title VARCHAR(255) NOT NULL,
+      description TEXT NOT NULL,
+      status VARCHAR(50) DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'resolved', 'wont_fix')),
+      priority VARCHAR(50) DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'critical')),
+      created_by INTEGER REFERENCES users(id),
+      resolved_by INTEGER REFERENCES users(id),
+      resolved_at TIMESTAMP,
+      resolution_notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
 
-  // Create database views
-  createDatabaseViews();
+    -- Blocker discussions table
+    CREATE TABLE IF NOT EXISTS blocker_discussions (
+      id SERIAL PRIMARY KEY,
+      blocker_id INTEGER REFERENCES blockers(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id),
+      message TEXT NOT NULL,
+      is_solution BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
 
-  console.log('✅ Database initialized successfully');
-}
+    -- Views table (for analytics)
+    CREATE TABLE IF NOT EXISTS views (
+      id SERIAL PRIMARY KEY,
+      idea_id INTEGER REFERENCES ideas(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id),
+      view_date DATE DEFAULT CURRENT_DATE,
+      view_count INTEGER DEFAULT 1,
+      UNIQUE(idea_id, user_id, view_date)
+    );
 
-// Function to create database views
-export function createDatabaseViews() {
+    -- Create indexes for better performance
+    CREATE INDEX IF NOT EXISTS idx_ideas_status ON ideas(status);
+    CREATE INDEX IF NOT EXISTS idx_ideas_assigned_to ON ideas(assigned_to);
+    CREATE INDEX IF NOT EXISTS idx_ideas_created_by ON ideas(created_by);
+    CREATE INDEX IF NOT EXISTS idx_comments_idea_id ON comments(idea_id);
+    CREATE INDEX IF NOT EXISTS idx_activity_log_idea_id ON activity_log(idea_id);
+    CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+    CREATE INDEX IF NOT EXISTS idx_blockers_idea_id ON blockers(idea_id);
+    CREATE INDEX IF NOT EXISTS idx_invoice_items_idea_id ON invoice_items(idea_id);
+    CREATE INDEX IF NOT EXISTS idx_invoice_items_freelancer_id ON invoice_items(freelancer_id);
+  `;
+
   try {
-    const viewsSQL = readFileSync(join(__dirname, 'views.sql'), 'utf-8');
+    await pool.query(schema);
+    console.log('✅ PostgreSQL schema initialized');
     
-    // Split by semicolons and execute each statement
-    const statements = viewsSQL
-      .split(';')
-      .map(stmt => stmt.trim())
-      .filter(stmt => stmt.length > 0 && !stmt.startsWith('--'));
-    
-    statements.forEach(statement => {
-      try {
-        db.exec(statement + ';');
-      } catch (err) {
-        // Ignore errors for DROP VIEW statements if view doesn't exist
-        if (!statement.includes('DROP VIEW')) {
-          console.error('Error executing statement:', statement.substring(0, 100));
-          console.error(err.message);
-        }
-      }
-    });
-    
-    console.log('✅ Database views created successfully');
-  } catch (error) {
-    console.error('❌ Error creating views:', error.message);
+    // Seed default users if they don't exist
+    await seedDefaultUsers();
+  } catch (err) {
+    console.error('❌ Error creating PostgreSQL schema:', err.message);
+    throw err;
   }
 }
 
-export default db;
+// ============================================
+// Seed Default Users
+// ============================================
 
+async function seedDefaultUsers() {
+  try {
+    const result = await pool.query('SELECT COUNT(*) as count FROM users');
+    const userCount = parseInt(result.rows[0].count);
+
+    if (userCount === 0) {
+      console.log('📝 Seeding default users...');
+
+      const adminPassword = await bcrypt.hash('admin123', 10);
+      const freelancerPassword = await bcrypt.hash('freelancer123', 10);
+
+      await pool.query(
+        'INSERT INTO users (username, email, password, handle, role) VALUES ($1, $2, $3, $4, $5)',
+        ['admin', 'admin@example.com', adminPassword, 'admin', 'admin']
+      );
+
+      await pool.query(
+        'INSERT INTO users (username, email, password, handle, role) VALUES ($1, $2, $3, $4, $5)',
+        ['freelancer', 'freelancer@example.com', freelancerPassword, 'freelancer', 'freelancer']
+      );
+
+      console.log('✅ Default users created:');
+      console.log('   Admin: admin / admin123');
+      console.log('   Freelancer: freelancer / freelancer123');
+      
+      // Seed example templates after creating users
+      await seedExampleTemplates();
+    } else {
+      console.log(`ℹ️  Database already has ${userCount} user(s)`);
+    }
+  } catch (err) {
+    console.error('❌ Error seeding default users:', err.message);
+  }
+}
+
+// ============================================
+// Seed Example Templates
+// ============================================
+
+async function seedExampleTemplates() {
+  try {
+    const result = await pool.query('SELECT COUNT(*) as count FROM ideas');
+    const ideaCount = parseInt(result.rows[0].count);
+
+    if (ideaCount === 0) {
+      console.log('📝 Seeding example templates...');
+
+      // Get user IDs
+      const adminResult = await pool.query("SELECT id FROM users WHERE username = 'admin'");
+      const freelancerResult = await pool.query("SELECT id FROM users WHERE username = 'freelancer'");
+      const adminId = adminResult.rows[0]?.id;
+      const freelancerId = freelancerResult.rows[0]?.id;
+
+      const exampleTemplates = [
+        {
+          use_case: 'Customer Onboarding Automation',
+          flow_name: 'New Customer Welcome Flow',
+          short_description: 'Automate the entire customer onboarding process from signup to first purchase',
+          description: 'This template automates the complete customer onboarding journey. It triggers when a new customer signs up, sends a personalized welcome email, creates their account in your CRM, assigns them to a sales rep, and schedules follow-up tasks. The flow includes conditional logic to route enterprise customers to dedicated account managers.',
+          department: 'Sales',
+          tags: 'onboarding, crm, email, automation',
+          price: 150,
+          status: 'new'
+        },
+        {
+          use_case: 'Invoice Processing Workflow',
+          flow_name: 'Automated Invoice Handler',
+          short_description: 'Extract data from invoices and sync with accounting software',
+          description: 'Automatically process incoming invoices using AI-powered OCR. The template extracts vendor information, line items, amounts, and due dates, then creates entries in QuickBooks/Xero. It also flags invoices that exceed budget thresholds and routes them for approval.',
+          department: 'Finance',
+          tags: 'invoice, ocr, accounting, quickbooks',
+          price: 200,
+          status: 'assigned',
+          assigned_to: freelancerId
+        },
+        {
+          use_case: 'Social Media Content Scheduler',
+          flow_name: 'Multi-Platform Content Publisher',
+          short_description: 'Schedule and publish content across all social media platforms',
+          description: 'Create once, publish everywhere. This template takes content from a Google Sheet or Notion database and automatically publishes it to LinkedIn, Twitter, Facebook, and Instagram at optimal times. Includes image resizing for each platform and hashtag suggestions using AI.',
+          department: 'Marketing',
+          tags: 'social media, content, scheduling, marketing',
+          price: 175,
+          status: 'in_progress',
+          assigned_to: freelancerId
+        },
+        {
+          use_case: 'Employee Leave Request System',
+          flow_name: 'Smart Leave Approval Flow',
+          short_description: 'Streamline leave requests with automatic manager routing and calendar sync',
+          description: 'Employees submit leave requests through a simple form. The template automatically routes to the correct manager based on department, checks for team coverage conflicts, updates the shared calendar, and notifies HR. Approved leaves sync with payroll systems.',
+          department: 'HR',
+          tags: 'hr, leave, approval, calendar',
+          price: 125,
+          status: 'submitted',
+          assigned_to: freelancerId
+        },
+        {
+          use_case: 'Lead Scoring and Routing',
+          flow_name: 'Intelligent Lead Distribution',
+          short_description: 'Score incoming leads and route to the right sales rep automatically',
+          description: 'When a new lead comes in from your website, this template enriches the data using Clearbit, calculates a lead score based on company size, industry, and engagement, then routes to the appropriate sales rep based on territory and current workload. High-value leads trigger immediate Slack notifications.',
+          department: 'Sales',
+          tags: 'leads, scoring, routing, sales',
+          price: 225,
+          status: 'new'
+        },
+        {
+          use_case: 'Customer Support Ticket Triage',
+          flow_name: 'AI-Powered Support Router',
+          short_description: 'Automatically categorize and route support tickets using AI',
+          description: 'Uses GPT to analyze incoming support tickets, determine urgency and category, and route to the appropriate team. VIP customers are automatically prioritized. The template also suggests relevant knowledge base articles and can auto-respond to common questions.',
+          department: 'Support',
+          tags: 'support, ai, tickets, routing',
+          price: 250,
+          status: 'reviewed',
+          assigned_to: freelancerId
+        },
+        {
+          use_case: 'Weekly Report Generator',
+          flow_name: 'Automated KPI Dashboard',
+          short_description: 'Generate and distribute weekly reports from multiple data sources',
+          description: 'Pulls data from Google Analytics, Stripe, HubSpot, and your database every Monday morning. Generates a beautiful PDF report with charts and KPIs, then emails it to stakeholders. Also posts a summary to your #metrics Slack channel.',
+          department: 'Operations',
+          tags: 'reports, analytics, kpi, automation',
+          price: 175,
+          status: 'new'
+        },
+        {
+          use_case: 'Contract Approval Workflow',
+          flow_name: 'Digital Contract Pipeline',
+          short_description: 'Manage contract approvals with multi-level sign-off and e-signatures',
+          description: 'When a new contract is uploaded to Dropbox or Google Drive, this template extracts key terms, routes for legal review if value exceeds threshold, collects necessary approvals based on contract type, and sends for e-signature via DocuSign. All contracts are logged in your CLM system.',
+          department: 'Legal',
+          tags: 'contracts, legal, approval, esignature',
+          price: 275,
+          status: 'new'
+        },
+        {
+          use_case: 'Inventory Reorder Alerts',
+          flow_name: 'Smart Stock Monitor',
+          short_description: 'Monitor inventory levels and automate purchase orders',
+          description: 'Connects to your inventory management system and monitors stock levels in real-time. When items fall below reorder points, it automatically generates purchase orders, sends them to approved vendors, and notifies the procurement team. Includes demand forecasting based on historical data.',
+          department: 'Operations',
+          tags: 'inventory, purchasing, alerts, automation',
+          price: 200,
+          status: 'needs_fixes',
+          assigned_to: freelancerId
+        },
+        {
+          use_case: 'Meeting Notes Processor',
+          flow_name: 'AI Meeting Assistant',
+          short_description: 'Transcribe meetings, extract action items, and update project tools',
+          description: 'After each Zoom/Teams meeting, this template automatically transcribes the recording using Whisper AI, generates a summary, extracts action items and decisions, creates tasks in Asana/Jira, and sends a recap email to all participants. Meeting insights are searchable in your knowledge base.',
+          department: 'Operations',
+          tags: 'meetings, transcription, ai, productivity',
+          price: 225,
+          status: 'published',
+          assigned_to: freelancerId
+        }
+      ];
+
+      for (const template of exampleTemplates) {
+        await pool.query(
+          `INSERT INTO ideas (use_case, flow_name, short_description, description, department, tags, price, status, created_by, assigned_to)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            template.use_case,
+            template.flow_name,
+            template.short_description,
+            template.description,
+            template.department,
+            template.tags,
+            template.price,
+            template.status,
+            adminId,
+            template.assigned_to || null
+          ]
+        );
+      }
+
+      console.log('✅ Created 10 example templates');
+    }
+  } catch (err) {
+    console.error('❌ Error seeding example templates:', err.message);
+  }
+}
+
+// ============================================
+// Graceful Shutdown
+// ============================================
+
+export async function closeDatabase() {
+  if (pool) {
+    await pool.end();
+    console.log('✅ PostgreSQL connection pool closed');
+  }
+}
+
+// Export pool for direct access if needed
+export function getPool() {
+  return pool;
+}
+
+// Export default db wrapper
+export default db;

@@ -3,14 +3,14 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { initDatabase } from './database/db.js';
-import { initPostgresDatabase } from './database/db-postgres.js';
+import { createServer } from 'http';
 import authRoutes from './routes/auth.js';
 import ideasRoutes from './routes/ideas.js';
 import viewsRoutes from './routes/views.js';
 import notificationsRoutes from './routes/notifications.js';
 import invoicesRoutes from './routes/invoices.js';
 import blockersRoutes from './routes/blockers.js';
+import { initializeSocket } from './socket.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,23 +19,38 @@ const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '..', '.env') });
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 3001;
+
+// Initialize Socket.IO
+const io = initializeSocket(httpServer);
+
+// CORS configuration for production and development
+const allowedOrigins = process.env.FRONTEND_URL 
+  ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
+  : ['http://localhost:5173'];
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS blocked origin: ${origin}`);
+      callback(null, true); // Still allow in production for flexibility
+    }
+  },
   credentials: true
 }));
 app.use(express.json());
 
-// Initialize database (PostgreSQL for production, SQLite for development)
-if (process.env.DATABASE_URL) {
-  console.log('🚀 Production mode: Using PostgreSQL database');
-  initPostgresDatabase();
-} else {
-  console.log('💻 Development mode: Using SQLite database');
-  initDatabase();
-}
+// Initialize PostgreSQL database
+console.log('🐘 Initializing PostgreSQL database (v17)...');
+const { initDatabase } = await import('./database/db.js');
+await initDatabase();
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -57,9 +72,10 @@ app.use((err, req, res, next) => {
 });
 
 // Start server with graceful shutdown
-const server = app.listen(PORT, () => {
+const server = httpServer.listen(PORT, () => {
   console.log(`\n🚀 Server is running on http://localhost:${PORT}`);
   console.log(`📊 API endpoints available at http://localhost:${PORT}/api`);
+  console.log(`🔌 WebSocket enabled for real-time updates`);
   console.log(`\n💡 Default login credentials:`);
   console.log(`   Admin: admin / admin123`);
   console.log(`   Freelancer: freelancer / freelancer123\n`);

@@ -1,16 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { ideasApi } from '../services/api';
 import type { Idea } from '../types';
 import IdeaCard from '../components/IdeaCard';
-import { Plus, Filter, Loader } from 'lucide-react';
+import StatusLegend from '../components/StatusLegend';
+import { Plus, Filter, Loader, Wifi, WifiOff } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
   const { user, isAdmin, isFreelancer } = useAuth();
+  const { subscribe, isConnected } = useSocket();
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [recentlyUpdated, setRecentlyUpdated] = useState<number | null>(null);
   const [newIdea, setNewIdea] = useState({ 
     use_case: '', 
     flow_name: '',
@@ -25,6 +29,68 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     loadIdeas();
   }, []);
+
+  // Subscribe to real-time idea events
+  useEffect(() => {
+    // Handle new idea created
+    const unsubCreated = subscribe('idea:created', (newIdea) => {
+      console.log('🆕 New idea received:', newIdea);
+      setIdeas(prev => {
+        // Check if idea already exists
+        if (prev.some(i => i.id === newIdea.id)) {
+          return prev;
+        }
+        // For freelancers, only show unassigned or their assigned ideas
+        if (isFreelancer && newIdea.assigned_to !== null && newIdea.assigned_to !== user?.id) {
+          return prev;
+        }
+        return [newIdea, ...prev];
+      });
+      setRecentlyUpdated(newIdea.id);
+      setTimeout(() => setRecentlyUpdated(null), 3000);
+    });
+
+    // Handle idea updated (status change, etc.)
+    const unsubUpdated = subscribe('idea:updated', (updatedIdea) => {
+      console.log('📝 Idea updated:', updatedIdea);
+      setIdeas(prev => prev.map(idea => 
+        idea.id === updatedIdea.id ? updatedIdea : idea
+      ));
+      setRecentlyUpdated(updatedIdea.id);
+      setTimeout(() => setRecentlyUpdated(null), 3000);
+    });
+
+    // Handle idea assigned
+    const unsubAssigned = subscribe('idea:assigned', (assignedIdea) => {
+      console.log('👤 Idea assigned:', assignedIdea);
+      setIdeas(prev => {
+        // For freelancers: if assigned to someone else, remove from available list
+        // unless it's their own
+        if (isFreelancer && assignedIdea.assigned_to !== user?.id) {
+          return prev.filter(idea => idea.id !== assignedIdea.id);
+        }
+        // Otherwise, update the idea
+        return prev.map(idea => 
+          idea.id === assignedIdea.id ? assignedIdea : idea
+        );
+      });
+      setRecentlyUpdated(assignedIdea.id);
+      setTimeout(() => setRecentlyUpdated(null), 3000);
+    });
+
+    // Handle idea deleted
+    const unsubDeleted = subscribe('idea:deleted', ({ id }) => {
+      console.log('🗑️ Idea deleted:', id);
+      setIdeas(prev => prev.filter(idea => idea.id !== id));
+    });
+
+    return () => {
+      unsubCreated();
+      unsubUpdated();
+      unsubAssigned();
+      unsubDeleted();
+    };
+  }, [subscribe, isFreelancer, user?.id]);
 
   const loadIdeas = async () => {
     try {
@@ -88,6 +154,7 @@ const Dashboard: React.FC = () => {
     needs_fixes: ideas.filter((i) => i.status === 'needs_fixes').length,
     reviewed: ideas.filter((i) => i.status === 'reviewed').length,
     published: ideas.filter((i) => i.status === 'published').length,
+    archived: ideas.filter((i) => i.status === 'archived').length,
   };
 
   if (loading) {
@@ -100,10 +167,26 @@ const Dashboard: React.FC = () => {
 
   return (
     <div>
+      {/* Status Legend Helper */}
+      <StatusLegend />
+
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600 mt-1">Welcome back, {user?.username}!</p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-gray-600">Welcome back, {user?.username}!</p>
+            <span 
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${
+                isConnected 
+                  ? 'bg-green-100 text-green-700' 
+                  : 'bg-gray-100 text-gray-500'
+              }`}
+              title={isConnected ? 'Real-time updates active' : 'Reconnecting...'}
+            >
+              {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+              {isConnected ? 'Live' : 'Offline'}
+            </span>
+          </div>
         </div>
         {isAdmin && (
           <button
@@ -111,7 +194,7 @@ const Dashboard: React.FC = () => {
             className="btn-primary flex items-center space-x-2"
           >
             <Plus className="w-5 h-5" />
-            <span>Add New Idea</span>
+            <span>Add New Template</span>
           </button>
         )}
       </div>
@@ -121,7 +204,7 @@ const Dashboard: React.FC = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <div className="card bg-blue-50 border-blue-200">
             <div className="text-2xl font-bold text-blue-600">{stats.my_ideas}</div>
-            <div className="text-sm text-blue-800">My Ideas</div>
+            <div className="text-sm text-blue-800">My Templates</div>
           </div>
           <div className="card bg-green-50 border-green-200">
             <div className="text-2xl font-bold text-green-600">{stats.available}</div>
@@ -182,11 +265,11 @@ const Dashboard: React.FC = () => {
             onChange={(e) => setFilter(e.target.value)}
             className="input-field w-64"
           >
-            <option value="all">All Ideas ({stats.total})</option>
+            <option value="all">All Templates ({stats.total})</option>
             {isFreelancer && (
               <>
-                <option value="my_ideas">My Ideas ({stats.my_ideas})</option>
-                <option value="available">Available Ideas ({stats.available})</option>
+                <option value="my_ideas">My Templates ({stats.my_ideas})</option>
+                <option value="available">Available Templates ({stats.available})</option>
               </>
             )}
             {!isFreelancer && <option value="new">New ({stats.new})</option>}
@@ -196,19 +279,24 @@ const Dashboard: React.FC = () => {
             <option value="needs_fixes">Needs Fixes ({stats.needs_fixes})</option>
             <option value="reviewed">Reviewed ({stats.reviewed})</option>
             <option value="published">Published ({stats.published})</option>
+            <option value="archived">Archived ({stats.archived})</option>
           </select>
         </div>
       </div>
 
-      {/* Ideas Grid */}
+      {/* Templates Grid */}
       {filteredIdeas.length === 0 ? (
         <div className="card text-center py-12">
-          <p className="text-gray-500">No ideas found.</p>
+          <p className="text-gray-500">No templates found.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
           {filteredIdeas.map((idea) => (
-            <IdeaCard key={idea.id} idea={idea} />
+            <IdeaCard 
+              key={idea.id} 
+              idea={idea} 
+              isHighlighted={recentlyUpdated === idea.id}
+            />
           ))}
         </div>
       )}

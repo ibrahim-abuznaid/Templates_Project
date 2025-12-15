@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int            @id @default(autoincrement())
+  username      String         @unique @db.VarChar(255)
+  password      String         @db.VarChar(255)
+  role          String         @db.VarChar(50)
+  email         String?        @db.VarChar(255)
+  createdAt     DateTime?      @default(now()) @map("created_at") @db.Timestamp(6)
+  activities    ActivityLog[]
+  blockers      Blocker[]
+  comments      Comment[]
+  assignedIdeas Idea[]         @relation("IdeaAssignee")
+  createdIdeas  Idea[]         @relation("IdeaCreator")
+  invoices      Invoice[]
+  notifications Notification[]
+  views         views[]
+
+  @@map("users")
+}
+
+model Idea {
+  id               Int           @id @default(autoincrement())
+  useCase          String?       @map("use_case")
+  department       String?       @db.VarChar(100)
+  flowName         String?       @map("flow_name")
+  shortDescription String?       @map("short_description")
+  description      String?
+  setupGuide       String?       @map("setup_guide")
+  tags             String?
+  templateUrl      String?       @map("template_url")
+  scribeUrl        String?       @map("scribe_url")
+  reviewerName     String?       @map("reviewer_name") @db.VarChar(255)
+  price            Decimal?      @db.Decimal(10, 2)
+  status           String?       @default("new") @db.VarChar(50)
+  assignedTo       Int?          @map("assigned_to")
+  createdBy        Int?          @map("created_by")
+  publicLibraryId  String?       @map("public_library_id")
+  createdAt        DateTime?     @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime?     @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  activities       ActivityLog[]
+  blockers         Blocker[]
+  comments         Comment[]
+  assignee         User?         @relation("IdeaAssignee", fields: [assignedTo], references: [id], onUpdate: NoAction)
+  creator          User?         @relation("IdeaCreator", fields: [createdBy], references: [id], onUpdate: NoAction)
+  invoices         Invoice[]
+  views            views[]
+
+  @@index([assignedTo], map: "idx_ideas_assigned_to")
+  @@index([createdBy], map: "idx_ideas_created_by")
+  @@index([status], map: "idx_ideas_status")
+  @@map("ideas")
+}
+
+model Comment {
+  id        Int       @id @default(autoincrement())
+  ideaId    Int?      @map("idea_id")
+  userId    Int?      @map("user_id")
+  comment   String
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  idea      Idea?     @relation(fields: [ideaId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user      User?     @relation(fields: [userId], references: [id], onUpdate: NoAction)
+
+  @@index([ideaId], map: "idx_comments_idea_id")
+  @@map("comments")
+}
+
+model ActivityLog {
+  id        Int       @id @default(autoincrement())
+  ideaId    Int?      @map("idea_id")
+  userId    Int?      @map("user_id")
+  action    String    @db.VarChar(255)
+  details   String?
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  idea      Idea?     @relation(fields: [ideaId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user      User?     @relation(fields: [userId], references: [id], onUpdate: NoAction)
+
+  @@index([ideaId], map: "idx_activity_log_idea_id")
+  @@map("activity_log")
+}
+
+model Invoice {
+  id           Int       @id @default(autoincrement())
+  idea_id      Int?
+  freelancerId Int?      @map("freelancer_id")
+  amount       Decimal   @db.Decimal(10, 2)
+  status       String?   @default("pending") @db.VarChar(50)
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  paidAt       DateTime? @map("paid_at") @db.Timestamp(6)
+  freelancer   User?     @relation(fields: [freelancerId], references: [id], onUpdate: NoAction)
+  ideas        Idea?     @relation(fields: [idea_id], references: [id], onUpdate: NoAction)
+
+  @@map("invoices")
+}
+
+model Notification {
+  id        Int       @id @default(autoincrement())
+  userId    Int?      @map("user_id")
+  title     String    @db.VarChar(255)
+  message   String
+  type      String?   @default("info") @db.VarChar(50)
+  read      Boolean?  @default(false)
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([userId], map: "idx_notifications_user_id")
+  @@map("notifications")
+}
+
+model Blocker {
+  id          Int       @id @default(autoincrement())
+  ideaId      Int?      @map("idea_id")
+  reported_by Int?
+  title       String    @db.VarChar(255)
+  description String
+  severity    String?   @default("medium") @db.VarChar(50)
+  status      String?   @default("open") @db.VarChar(50)
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  resolvedAt  DateTime? @map("resolved_at") @db.Timestamp(6)
+  idea        Idea?     @relation(fields: [ideaId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users       User?     @relation(fields: [reported_by], references: [id], onUpdate: NoAction)
+
+  @@index([ideaId], map: "idx_blockers_idea_id")
+  @@map("blockers")
+}
+
+model views {
+  id         Int       @id @default(autoincrement())
+  idea_id    Int?
+  user_id    Int?
+  view_date  DateTime? @default(dbgenerated("CURRENT_DATE")) @db.Date
+  view_count Int?      @default(1)
+  ideas      Idea?     @relation(fields: [idea_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      User?     @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@unique([idea_id, user_id, view_date])
+}

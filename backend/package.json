@@ -10,23 +10,29 @@
   },
   "scripts": {
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
+    "start": "NODE_ENV=production node src/server.js",
+    "create-db": "node scripts/create-db.js",
     "seed": "node src/database/seed-data.js",
     "test-views": "node src/database/test-views.js",
-    "build": "echo 'No build step required for Node.js backend'"
+    "build": "echo 'Backend ready for production'",
+    "db:studio": "prisma studio",
+    "db:generate": "prisma generate",
+    "db:pull": "prisma db pull",
+    "db:push": "prisma db push"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
     "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
-    "better-sqlite3": "^9.2.2",
-    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.18.2",
     "express-validator": "^7.0.1",
-    "pg": "^8.11.3"
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "@prisma/client": "^7.1.0",
+    "nodemon": "^3.0.2",
+    "prisma": "^7.1.0"
   }
 }
-

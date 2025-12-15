@@ -7,22 +7,24 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Generate unique handle from username
-const generateHandle = (username) => {
+// Generate unique handle from username (async for PostgreSQL)
+const generateHandle = async (username) => {
   let handle = username.toLowerCase().replace(/[^a-z0-9]/g, '');
   let counter = 0;
   let finalHandle = handle;
   
-  while (db.prepare('SELECT id FROM users WHERE handle = ?').get(finalHandle)) {
+  let existing = await db.prepare('SELECT id FROM users WHERE handle = ?').get(finalHandle);
+  while (existing) {
     counter++;
     finalHandle = `${handle}${counter}`;
+    existing = await db.prepare('SELECT id FROM users WHERE handle = ?').get(finalHandle);
   }
   
   return finalHandle;
 };
 
 // Login
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
@@ -30,7 +32,7 @@ router.post('/login', (req, res) => {
       return res.status(400).json({ error: 'Username and password are required' });
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    const user = await db.prepare('SELECT * FROM users WHERE username = ?').get(username);
 
     if (!user || !bcrypt.compareSync(password, user.password)) {
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -59,9 +61,9 @@ router.post('/login', (req, res) => {
 });
 
 // Get current user
-router.get('/me', authenticateToken, (req, res) => {
+router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const user = db.prepare('SELECT id, username, email, handle, role, created_at FROM users WHERE id = ?')
+    const user = await db.prepare('SELECT id, username, email, handle, role, created_at FROM users WHERE id = ?')
       .get(req.user.id);
 
     if (!user) {
@@ -76,9 +78,8 @@ router.get('/me', authenticateToken, (req, res) => {
 });
 
 // Register new user (admin only)
-router.post('/register', authenticateToken, (req, res) => {
+router.post('/register', authenticateToken, async (req, res) => {
   try {
-    // Only admin can create new users
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Only admins can create new users' });
     }
@@ -94,9 +95,9 @@ router.post('/register', authenticateToken, (req, res) => {
     }
 
     const hashedPassword = bcrypt.hashSync(password, 10);
-    const handle = generateHandle(username);
+    const handle = await generateHandle(username);
 
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO users (username, email, password, handle, role)
       VALUES (?, ?, ?, ?, ?)
     `).run(username, email, hashedPassword, handle, role);
@@ -112,7 +113,7 @@ router.post('/register', authenticateToken, (req, res) => {
       }
     });
   } catch (error) {
-    if (error.message.includes('UNIQUE constraint failed')) {
+    if (error.message.includes('unique') || error.message.includes('duplicate')) {
       return res.status(400).json({ error: 'Username or email already exists' });
     }
     console.error('Register error:', error);
@@ -123,7 +124,7 @@ router.post('/register', authenticateToken, (req, res) => {
 // ===== INVITATION SYSTEM =====
 
 // Create invitation (admin only)
-router.post('/invitations', authenticateToken, (req, res) => {
+router.post('/invitations', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Only admins can send invitations' });
@@ -139,22 +140,20 @@ router.post('/invitations', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Invalid role' });
     }
 
-    // Check if user already exists
-    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    const existingUser = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
     if (existingUser) {
       return res.status(400).json({ error: 'User with this email already exists' });
     }
 
-    // Check if invitation already exists
-    const existingInvite = db.prepare('SELECT id FROM invitations WHERE email = ? AND accepted_at IS NULL').get(email);
+    const existingInvite = await db.prepare('SELECT id FROM invitations WHERE email = ? AND accepted_at IS NULL').get(email);
     if (existingInvite) {
       return res.status(400).json({ error: 'Invitation already sent to this email' });
     }
 
     const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO invitations (email, token, role, invited_by, expires_at)
       VALUES (?, ?, ?, ?, ?)
     `).run(email, token, role, req.user.id, expiresAt);
@@ -177,13 +176,13 @@ router.post('/invitations', authenticateToken, (req, res) => {
 });
 
 // Get all invitations (admin only)
-router.get('/invitations', authenticateToken, (req, res) => {
+router.get('/invitations', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Only admins can view invitations' });
     }
 
-    const invitations = db.prepare(`
+    const invitations = await db.prepare(`
       SELECT i.*, u.username as invited_by_name
       FROM invitations i
       LEFT JOIN users u ON i.invited_by = u.id
@@ -198,11 +197,11 @@ router.get('/invitations', authenticateToken, (req, res) => {
 });
 
 // Check invitation token
-router.get('/invitations/check/:token', (req, res) => {
+router.get('/invitations/check/:token', async (req, res) => {
   try {
-    const invitation = db.prepare(`
+    const invitation = await db.prepare(`
       SELECT * FROM invitations 
-      WHERE token = ? AND accepted_at IS NULL AND expires_at > datetime('now')
+      WHERE token = ? AND accepted_at IS NULL AND expires_at > NOW()
     `).get(req.params.token);
 
     if (!invitation) {
@@ -220,7 +219,7 @@ router.get('/invitations/check/:token', (req, res) => {
 });
 
 // Accept invitation and create account
-router.post('/invitations/accept', (req, res) => {
+router.post('/invitations/accept', async (req, res) => {
   try {
     const { token, username, password } = req.body;
 
@@ -228,32 +227,29 @@ router.post('/invitations/accept', (req, res) => {
       return res.status(400).json({ error: 'Token, username, and password are required' });
     }
 
-    const invitation = db.prepare(`
+    const invitation = await db.prepare(`
       SELECT * FROM invitations 
-      WHERE token = ? AND accepted_at IS NULL AND expires_at > datetime('now')
+      WHERE token = ? AND accepted_at IS NULL AND expires_at > NOW()
     `).get(token);
 
     if (!invitation) {
       return res.status(404).json({ error: 'Invalid or expired invitation' });
     }
 
-    // Check if username already exists
-    const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+    const existingUser = await db.prepare('SELECT id FROM users WHERE username = ?').get(username);
     if (existingUser) {
       return res.status(400).json({ error: 'Username already taken' });
     }
 
     const hashedPassword = bcrypt.hashSync(password, 10);
-    const handle = generateHandle(username);
+    const handle = await generateHandle(username);
 
-    // Create user
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO users (username, email, password, handle, role)
       VALUES (?, ?, ?, ?, ?)
     `).run(username, invitation.email, hashedPassword, handle, invitation.role);
 
-    // Mark invitation as accepted
-    db.prepare(`
+    await db.prepare(`
       UPDATE invitations SET accepted_at = CURRENT_TIMESTAMP WHERE id = ?
     `).run(invitation.id);
 
@@ -265,7 +261,6 @@ router.post('/invitations/accept', (req, res) => {
       role: invitation.role
     };
 
-    // Generate JWT token
     const jwtToken = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
       process.env.JWT_SECRET,
@@ -284,13 +279,13 @@ router.post('/invitations/accept', (req, res) => {
 });
 
 // Delete invitation (admin only)
-router.delete('/invitations/:id', authenticateToken, (req, res) => {
+router.delete('/invitations/:id', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Only admins can delete invitations' });
     }
 
-    const result = db.prepare('DELETE FROM invitations WHERE id = ?').run(req.params.id);
+    const result = await db.prepare('DELETE FROM invitations WHERE id = ?').run(req.params.id);
 
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Invitation not found' });
@@ -303,10 +298,10 @@ router.delete('/invitations/:id', authenticateToken, (req, res) => {
   }
 });
 
-// Get all users (for mentions) - returns only id, username, handle
-router.get('/users', authenticateToken, (req, res) => {
+// Get all users (for mentions)
+router.get('/users', authenticateToken, async (req, res) => {
   try {
-    const users = db.prepare(`
+    const users = await db.prepare(`
       SELECT id, username, handle, role
       FROM users
       ORDER BY username
@@ -320,4 +315,3 @@ router.get('/users', authenticateToken, (req, res) => {
 });
 
 export default router;
-

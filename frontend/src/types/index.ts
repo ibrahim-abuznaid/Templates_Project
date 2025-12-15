@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'freelancer';
+export type UserRole = 'admin' | 'freelancer'; // 'freelancer' is displayed as 'Template Creator' in UI
 
 export type IdeaStatus = 
   | 'new' 
@@ -7,7 +7,8 @@ export type IdeaStatus =
   | 'submitted' 
   | 'needs_fixes' 
   | 'reviewed' 
-  | 'published';
+  | 'published'
+  | 'archived';
 
 export interface User {
   id: number;
@@ -36,6 +37,7 @@ export interface Idea {
   assigned_to_name: string | null;
   created_by: number;
   created_by_name: string;
+  public_library_id: string | null;
   created_at: string;
   updated_at: string;
 }

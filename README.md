@@ -1,26 +1,49 @@
 # Template Management Dashboard
 
-A full-stack web application for managing automation template ideas with role-based access control. Built with React (Vite) frontend and Node.js (Express) backend.
+A full-stack web application for managing automation template ideas with role-based access control, real-time notifications, invoicing system, and blocker tracking. Built with React (Vite) frontend and Node.js (Express) backend with PostgreSQL database.
+
+## 🚀 Quick Deploy to DigitalOcean
+
+See **[DIGITALOCEAN_DEPLOYMENT.md](./DIGITALOCEAN_DEPLOYMENT.md)** for complete deployment instructions.
+
+---
 
 ## Features
 
 ### 🎯 Role-Based Access Control
 
-- **Admin**: Full access - create ideas, assign to freelancers, review submissions, approve/reject work, and publish templates
-- **Freelancer**: View assigned ideas, fill in template details, submit work for review
+- **Admin**: Full access - create ideas, assign to freelancers, review submissions, manage invoices, publish templates
+- **Freelancer**: View assigned ideas, fill in template details, submit work, track earnings
 
 ### ✨ Core Functionality
 
 - **Use Case Management**: Create, edit, and delete template use cases with comprehensive fields
-- **Department Classification**: Organize use cases by department (HR, Finance, Marketing, Sales, IT, Operations, Customer Service, Legal, Other)
+- **Department Classification**: Organize by department (HR, Finance, Marketing, Sales, IT, Operations, Customer Service, Legal, Other)
 - **Self-Assignment**: Freelancers can browse and assign themselves to available ideas
-- **Assignment System**: Admins can assign ideas to specific freelancers, or freelancers can self-assign
-- **Workflow States**: Track ideas through their lifecycle (New → Assigned → In Progress → Submitted → Needs Fixes → Reviewed → Published)
-- **Comments & Feedback**: Add comments to ideas for collaboration
+- **Workflow States**: Track through lifecycle (New → Assigned → In Progress → Submitted → Needs Fixes → Reviewed → Published → Archived)
+- **Comments & Feedback**: Add comments for collaboration
 - **Activity Logging**: Track all actions and changes
-- **Real-time Dashboard**: View statistics and filter ideas by status
-- **Tags System**: Categorize use cases with custom tags
-- **Multiple URLs**: Support for Template URL and Scribe URL documentation
+- **Real-time Updates**: WebSocket-powered live notifications
+
+### 💰 Invoicing System
+
+- Track freelancer earnings by completed templates
+- Generate invoices with CSV export
+- Invoice history and management
+
+### 🚧 Blocker Tracking
+
+- Report and track blockers on templates
+- Priority levels and discussion threads
+- Resolution tracking
+
+### 🔔 Real-time Notifications
+
+- Live notification inbox
+- Mentions in comments (@username)
+- Status change alerts
+
+---
 
 ## Tech Stack
 
@@ -31,247 +54,269 @@ A full-stack web application for managing automation template ideas with role-ba
 - **Axios** for API calls
 - **TailwindCSS** for styling
 - **Lucide React** for icons
+- **Socket.IO Client** for real-time updates
 
 ### Backend
 - **Node.js** with Express
-- **SQLite** database with better-sqlite3
+- **PostgreSQL** database
 - **JWT** authentication
 - **bcrypt** for password hashing
+- **Socket.IO** for WebSockets
 
-## Installation
+---
+
+## Local Development Setup
 
 ### Prerequisites
 - Node.js (v18 or higher)
-- npm or yarn
+- PostgreSQL (v14 or higher)
+- npm
 
-### Setup Instructions
+### 1. Clone the Repository
 
-1. **Clone or navigate to the project directory**
-   ```bash
-   cd Templates_Project
-   ```
+```bash
+git clone https://github.com/YOUR_USERNAME/template-management-dashboard.git
+cd template-management-dashboard
+```
 
-2. **Install dependencies**
-   ```bash
-   # Install root dependencies
-   npm install
+### 2. Install Dependencies
 
-   # Install frontend dependencies
-   cd frontend
-   npm install
+```bash
+# Install all dependencies (root, frontend, backend)
+npm run install:all
 
-   # Install backend dependencies
-   cd ../backend
-   npm install
-   cd ..
-   ```
+# Or manually:
+npm install
+cd frontend && npm install
+cd ../backend && npm install
+cd ..
+```
 
-3. **Configure backend environment**
-   
-   Create a `.env` file in the `backend` directory:
-   ```env
-   PORT=3001
-   JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-   NODE_ENV=development
-   FRONTEND_URL=http://localhost:5173
-   ```
+### 3. Configure PostgreSQL
 
-4. **Start the application**
+Create a PostgreSQL database:
 
-   **Option A: Run both frontend and backend together (Recommended)**
-   ```bash
-   npm run dev
-   ```
+```sql
+CREATE DATABASE template_management;
+CREATE USER template_user WITH PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE template_management TO template_user;
+```
 
-   **Option B: Run separately**
-   ```bash
-   # Terminal 1 - Backend
-   cd backend
-   npm run dev
+### 4. Configure Environment Variables
 
-   # Terminal 2 - Frontend
-   cd frontend
-   npm run dev
-   ```
+Create `backend/.env`:
 
-5. **Access the application**
-   - Frontend: http://localhost:5173
-   - Backend API: http://localhost:3001/api
+```env
+PORT=3001
+NODE_ENV=development
+DATABASE_URL=postgresql://template_user:your_password@localhost:5432/template_management
+JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+FRONTEND_URL=http://localhost:5173
+```
+
+### 5. Start the Application
+
+```bash
+# Run both frontend and backend together
+npm run dev
+
+# Or run separately:
+# Terminal 1 - Backend
+cd backend && npm run dev
+
+# Terminal 2 - Frontend
+cd frontend && npm run dev
+```
+
+### 6. Access the Application
+
+- **Frontend**: http://localhost:5173
+- **Backend API**: http://localhost:3001/api
+- **Health Check**: http://localhost:3001/api/health
+
+---
 
 ## Default Login Credentials
-
-The application comes with two pre-configured demo accounts:
 
 | Role | Username | Password |
 |------|----------|----------|
 | Admin | `admin` | `admin123` |
 | Freelancer | `freelancer` | `freelancer123` |
 
-## API Endpoints
+⚠️ **Change these in production!**
 
-### Authentication
-- `POST /api/auth/login` - User login
-- `GET /api/auth/me` - Get current user
-- `POST /api/auth/register` - Register new user (admin only)
-
-### Ideas
-- `GET /api/ideas` - Get all ideas (filtered by role)
-- `GET /api/ideas/:id` - Get idea details
-- `POST /api/ideas` - Create new idea (admin only)
-- `PUT /api/ideas/:id` - Update idea
-- `DELETE /api/ideas/:id` - Delete idea (admin only)
-- `POST /api/ideas/:id/assign` - Assign idea to freelancer (admin only)
-- `POST /api/ideas/:id/comments` - Add comment to idea
-- `GET /api/ideas/users/freelancers` - Get all freelancers (admin only)
-
-## Workflow
-
-### Admin Workflow
-1. Create a new use case with the following information:
-   - **Use Case**: Category/type of automation (e.g., "Employee Onboarding", "Invoice Processing")
-   - **Department**: Select from predefined departments (HR, Finance, Marketing, Sales, IT, Operations, Customer Service, Legal, Other)
-   - **Flow Name**: The main display title that users will see (e.g., "Automated Employee Onboarding Flow")
-   - **Short Description**: Brief summary
-   - **Description**: Detailed information
-   - **Tags**: Keywords for categorization
-   - **Reviewer Name**: Person responsible for review
-   - **Price**: Compensation amount
-2. Assign the idea to a freelancer (or freelancer can self-assign)
-3. Monitor progress and review submissions
-4. Approve or request fixes with feedback
-5. Publish completed templates
-
-### Freelancer Workflow
-1. View "My Ideas" (assigned to them) and "Available Ideas" (can self-assign)
-2. Click on any available idea and assign to yourself
-3. Start working on an idea (status: In Progress)
-4. Fill in required fields:
-   - **Flow Name**: Main display title (what users see on the dashboard)
-   - **Short Description**: Brief summary of the use case
-   - **Description**: Detailed explanation
-   - **Setup Guide**: Step-by-step instructions
-   - **Template URL**: Link to the template
-   - **Scribe URL**: Link to Scribe documentation
-   - **Tags**: Keywords for categorization
-5. Submit for review
-6. Address feedback if fixes are requested
-7. Resubmit until approved
-
-### Admin Review Workflow
-1. Review submitted ideas from freelancers
-2. Check template quality and completeness
-3. Approve or request fixes with comments
-4. Publish approved templates
+---
 
 ## Project Structure
 
 ```
 Templates_Project/
+├── .do/                      # DigitalOcean App Platform config
+│   └── app.yaml
 ├── frontend/                 # React frontend
 │   ├── src/
 │   │   ├── components/      # Reusable UI components
-│   │   ├── context/         # React context (Auth)
+│   │   ├── context/         # React context (Auth, Socket)
 │   │   ├── pages/           # Page components
 │   │   ├── services/        # API service layer
 │   │   ├── types/           # TypeScript types
-│   │   ├── App.tsx          # Main app component
-│   │   ├── main.tsx         # Entry point
-│   │   └── index.css        # Global styles
-│   ├── index.html
+│   │   └── ...
 │   ├── package.json
-│   ├── tsconfig.json
-│   ├── vite.config.ts
-│   └── tailwind.config.js
-│
+│   └── vite.config.ts
 ├── backend/                  # Node.js backend
 │   ├── src/
-│   │   ├── database/        # Database setup and initialization
-│   │   ├── middleware/      # Express middleware (auth)
+│   │   ├── database/        # Database setup
+│   │   ├── middleware/      # Express middleware
 │   │   ├── routes/          # API routes
-│   │   └── server.js        # Express server
-│   ├── data/                # SQLite database (auto-created)
-│   ├── package.json
-│   └── .env                 # Environment variables
-│
+│   │   ├── server.js        # Express server
+│   │   └── socket.js        # WebSocket setup
+│   ├── prisma/              # Prisma schema (optional)
+│   └── package.json
 ├── package.json             # Root package.json
+├── DIGITALOCEAN_DEPLOYMENT.md
 └── README.md
 ```
 
-## Development
+---
 
-### Building for Production
+## API Endpoints
 
-1. **Build frontend**
-   ```bash
-   cd frontend
-   npm run build
-   ```
+### Authentication
+- `POST /api/auth/login` - User login
+- `GET /api/auth/me` - Get current user
+- `POST /api/auth/register` - Register new user
 
-2. **Start backend in production mode**
-   ```bash
-   cd backend
-   npm start
-   ```
+### Ideas/Templates
+- `GET /api/ideas` - Get all ideas
+- `GET /api/ideas/:id` - Get idea details
+- `POST /api/ideas` - Create new idea
+- `PUT /api/ideas/:id` - Update idea
+- `DELETE /api/ideas/:id` - Delete idea
+- `POST /api/ideas/:id/assign` - Assign idea
+- `POST /api/ideas/:id/self-assign` - Self-assign
+- `POST /api/ideas/:id/comments` - Add comment
 
-### Database
+### Views/Departments
+- `GET /api/views/departments` - Get department summaries
+- `GET /api/views/departments/:department/templates` - Get department templates
 
-The SQLite database is automatically created and initialized on first run. It includes:
-- Users table with role-based access
-- Ideas/Templates table with workflow states
-- Comments table for feedback
-- Activity log for audit trail
+### Notifications
+- `GET /api/notifications` - Get notifications
+- `PUT /api/notifications/:id/read` - Mark as read
+- `PUT /api/notifications/mark-all-read` - Mark all as read
 
-Database file location: `backend/data/database.db`
+### Invoices
+- `GET /api/invoices/pending` - Get pending invoices
+- `POST /api/invoices/generate/:freelancerId` - Generate invoice
+- `GET /api/invoices/history` - Get invoice history
 
-## Features in Detail
+### Blockers
+- `GET /api/blockers/all` - Get all blockers
+- `POST /api/blockers` - Create blocker
+- `PUT /api/blockers/:id` - Update blocker
 
-### Dashboard
-- Statistics overview showing counts by status
-- Filter ideas by status
-- Quick access to all ideas
-- Create new ideas (admin only)
+---
 
-### Idea Detail Page
-- View and edit all template fields
-- Role-based action buttons
-- Comments section for feedback
-- Activity log showing all changes
-- Status workflow management
+## Deployment
 
-### Security
-- JWT-based authentication
-- Role-based access control
-- Password hashing with bcrypt
-- Protected API endpoints
+### DigitalOcean App Platform (Recommended)
+
+See **[DIGITALOCEAN_DEPLOYMENT.md](./DIGITALOCEAN_DEPLOYMENT.md)** for step-by-step instructions.
+
+**Estimated Cost**: $5-20/month depending on database choice
+
+### Environment Variables for Production
+
+| Variable | Description |
+|----------|-------------|
+| `NODE_ENV` | Set to `production` |
+| `PORT` | Backend port (usually 3001) |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `JWT_SECRET` | Strong random string (64+ chars) |
+| `FRONTEND_URL` | Your frontend URL |
+| `VITE_API_URL` | Backend API URL (for frontend build) |
+
+---
+
+## Workflow
+
+### Admin Workflow
+1. Create new use cases with details and pricing
+2. Assign to freelancers (or let them self-assign)
+3. Monitor progress and review submissions
+4. Approve or request fixes with feedback
+5. Publish completed templates
+6. Manage invoices for freelancers
+
+### Freelancer Workflow
+1. View available and assigned ideas
+2. Self-assign to available ideas
+3. Work on templates (status: In Progress)
+4. Fill in required fields and submit
+5. Address feedback if fixes requested
+6. Track earnings in My Earnings page
+
+---
+
+## Security
+
+- ✅ JWT-based authentication
+- ✅ Role-based access control
+- ✅ Password hashing with bcrypt
+- ✅ Protected API endpoints
+- ✅ SSL for database in production
+- ✅ CORS configuration
+
+---
 
 ## Troubleshooting
 
 ### Port Already in Use
-If ports 3001 or 5173 are already in use:
-- Change `PORT` in `backend/.env`
-- Change port in `frontend/vite.config.ts`
+```bash
+# Windows
+netstat -ano | findstr :3001
+taskkill /PID <PID> /F
 
-### Database Issues
-To reset the database, delete `backend/data/database.db` and restart the backend.
+# Mac/Linux
+lsof -i :3001
+kill -9 <PID>
+```
+
+### Database Connection Issues
+- Verify PostgreSQL is running
+- Check DATABASE_URL format
+- Ensure database exists and user has permissions
 
 ### CORS Issues
-Ensure `FRONTEND_URL` in `backend/.env` matches your frontend URL.
+- Check `FRONTEND_URL` environment variable
+- Multiple URLs can be comma-separated
 
-## Future Enhancements
+---
 
-- [ ] Integration with Activepieces API for template publishing
-- [ ] File upload for template assets
-- [ ] Email notifications for status changes
-- [ ] Advanced search and filtering
-- [ ] User management interface for admins
-- [ ] Template versioning
-- [ ] Analytics and reporting
+## Scripts
+
+```bash
+# Development
+npm run dev              # Run frontend + backend
+npm run dev:frontend     # Run frontend only
+npm run dev:backend      # Run backend only
+
+# Build
+npm run build:frontend   # Build frontend for production
+
+# Database (from backend/)
+npm run db:studio        # Open Prisma Studio
+npm run db:generate      # Generate Prisma client
+```
+
+---
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License
+
+---
 
 ## Support
 
-For issues or questions, please open an issue in the project repository.
-
+For issues or questions, please open an issue in the repository.

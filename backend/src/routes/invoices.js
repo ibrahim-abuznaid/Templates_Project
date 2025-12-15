@@ -12,10 +12,10 @@ const generateInvoiceNumber = () => {
   return `INV-${year}${month}-${random}`;
 };
 
-// Helper function to add invoice item when template is completed
-export const addInvoiceItem = (freelancerId, ideaId, ideaTitle, amount) => {
+// Helper function to add invoice item when template is completed (async for PostgreSQL)
+export const addInvoiceItem = async (freelancerId, ideaId, ideaTitle, amount) => {
   try {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO invoice_items (freelancer_id, idea_id, idea_title, amount, completed_at, status)
       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, 'pending')
     `).run(freelancerId, ideaId, ideaTitle, amount);
@@ -24,10 +24,60 @@ export const addInvoiceItem = (freelancerId, ideaId, ideaTitle, amount) => {
   }
 };
 
-// Get pending invoice items for all freelancers (admin only)
-router.get('/pending', authenticateToken, authorizeRoles('admin'), (req, res) => {
+// Get all invoices (admin sees all, freelancers see their own)
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    const pendingByFreelancer = db.prepare(`
+    let query = `
+      SELECT 
+        inv.*,
+        u.username as freelancer_name,
+        u.email as freelancer_email,
+        u.handle as freelancer_handle,
+        (SELECT COUNT(*) FROM invoice_items WHERE invoice_id = inv.id) as item_count
+      FROM invoices inv
+      JOIN users u ON inv.freelancer_id = u.id
+    `;
+    
+    const params = [];
+    
+    if (req.user.role !== 'admin') {
+      query += ' WHERE inv.freelancer_id = ?';
+      params.push(req.user.id);
+    }
+    
+    query += ' ORDER BY inv.created_at DESC';
+
+    const invoices = await db.prepare(query).all(...params);
+    res.json(invoices);
+  } catch (error) {
+    console.error('Get invoices error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get my invoices (freelancer-specific shortcut)
+router.get('/my-invoices', authenticateToken, async (req, res) => {
+  try {
+    const invoices = await db.prepare(`
+      SELECT 
+        inv.*,
+        (SELECT COUNT(*) FROM invoice_items WHERE invoice_id = inv.id) as item_count
+      FROM invoices inv
+      WHERE inv.freelancer_id = ?
+      ORDER BY inv.created_at DESC
+    `).all(req.user.id);
+
+    res.json(invoices);
+  } catch (error) {
+    console.error('Get my invoices error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get pending invoice items for all freelancers (admin only)
+router.get('/pending', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const pendingByFreelancer = await db.prepare(`
       SELECT 
         u.id as freelancer_id,
         u.username as freelancer_name,
@@ -40,8 +90,8 @@ router.get('/pending', authenticateToken, authorizeRoles('admin'), (req, res) =>
       FROM users u
       LEFT JOIN invoice_items ii ON u.id = ii.freelancer_id AND ii.status = 'pending'
       WHERE u.role = 'freelancer'
-      GROUP BY u.id
-      HAVING item_count > 0
+      GROUP BY u.id, u.username, u.email, u.handle
+      HAVING COUNT(ii.id) > 0
       ORDER BY u.username
     `).all();
 
@@ -53,16 +103,15 @@ router.get('/pending', authenticateToken, authorizeRoles('admin'), (req, res) =>
 });
 
 // Get pending invoice items for specific freelancer
-router.get('/pending/:freelancerId', authenticateToken, (req, res) => {
+router.get('/pending/:freelancerId', authenticateToken, async (req, res) => {
   try {
     const { freelancerId } = req.params;
     
-    // Check permission
     if (req.user.role !== 'admin' && req.user.id !== parseInt(freelancerId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const items = db.prepare(`
+    const items = await db.prepare(`
       SELECT 
         ii.*,
         i.use_case,
@@ -74,7 +123,7 @@ router.get('/pending/:freelancerId', authenticateToken, (req, res) => {
       ORDER BY ii.completed_at DESC
     `).all(freelancerId);
 
-    const summary = db.prepare(`
+    const summary = await db.prepare(`
       SELECT 
         COUNT(*) as item_count,
         SUM(amount) as total_amount,
@@ -94,21 +143,19 @@ router.get('/pending/:freelancerId', authenticateToken, (req, res) => {
   }
 });
 
-// Generate and pay invoice (admin only) - Creates invoice record and returns CSV/PDF data
-router.post('/generate/:freelancerId', authenticateToken, authorizeRoles('admin'), (req, res) => {
+// Generate and pay invoice (admin only)
+router.post('/generate/:freelancerId', authenticateToken, authorizeRoles('admin'), async (req, res) => {
   try {
     const { freelancerId } = req.params;
 
-    // Get freelancer info
-    const freelancer = db.prepare('SELECT * FROM users WHERE id = ? AND role = ?')
+    const freelancer = await db.prepare('SELECT * FROM users WHERE id = ? AND role = ?')
       .get(freelancerId, 'freelancer');
 
     if (!freelancer) {
       return res.status(404).json({ error: 'Freelancer not found' });
     }
 
-    // Get pending items
-    const items = db.prepare(`
+    const items = await db.prepare(`
       SELECT 
         ii.*,
         i.use_case,
@@ -124,13 +171,12 @@ router.post('/generate/:freelancerId', authenticateToken, authorizeRoles('admin'
       return res.status(400).json({ error: 'No pending items for this freelancer' });
     }
 
-    const totalAmount = items.reduce((sum, item) => sum + item.amount, 0);
+    const totalAmount = items.reduce((sum, item) => sum + parseFloat(item.amount), 0);
     const periodStart = items[0].completed_at;
     const periodEnd = items[items.length - 1].completed_at;
 
-    // Create invoice
     const invoiceNumber = generateInvoiceNumber();
-    const invoiceResult = db.prepare(`
+    const invoiceResult = await db.prepare(`
       INSERT INTO invoices (
         freelancer_id, 
         invoice_number, 
@@ -146,19 +192,16 @@ router.post('/generate/:freelancerId', authenticateToken, authorizeRoles('admin'
 
     const invoiceId = invoiceResult.lastInsertRowid;
 
-    // Update invoice items
-    const itemIds = items.map(i => i.id);
-    const placeholders = itemIds.map(() => '?').join(',');
-    db.prepare(`
-      UPDATE invoice_items 
-      SET invoice_id = ?, status = 'paid'
-      WHERE id IN (${placeholders})
-    `).run(invoiceId, ...itemIds);
+    // Update each invoice item individually for PostgreSQL
+    for (const item of items) {
+      await db.prepare(`
+        UPDATE invoice_items 
+        SET invoice_id = ?, status = 'paid'
+        WHERE id = ?
+      `).run(invoiceId, item.id);
+    }
 
-    // Generate CSV data
     const csvData = generateCSV(freelancer, items, invoiceNumber, totalAmount, periodStart, periodEnd);
-
-    // Generate PDF data (HTML that can be converted to PDF)
     const pdfHtml = generatePDFHtml(freelancer, items, invoiceNumber, totalAmount, periodStart, periodEnd);
 
     res.json({
@@ -184,7 +227,7 @@ router.post('/generate/:freelancerId', authenticateToken, authorizeRoles('admin'
 });
 
 // Get invoice history (admin only)
-router.get('/history', authenticateToken, authorizeRoles('admin'), (req, res) => {
+router.get('/history', authenticateToken, authorizeRoles('admin'), async (req, res) => {
   try {
     const { freelancerId, limit = 50 } = req.query;
     
@@ -197,20 +240,19 @@ router.get('/history', authenticateToken, authorizeRoles('admin'), (req, res) =>
       FROM invoices inv
       JOIN users u ON inv.freelancer_id = u.id
       LEFT JOIN users paid_by_user ON inv.paid_by = paid_by_user.id
-      WHERE 1=1
     `;
     
     const params = [];
     
     if (freelancerId) {
-      query += ' AND inv.freelancer_id = ?';
+      query += ' WHERE inv.freelancer_id = ?';
       params.push(freelancerId);
     }
     
     query += ' ORDER BY inv.created_at DESC LIMIT ?';
     params.push(parseInt(limit));
 
-    const invoices = db.prepare(query).all(...params);
+    const invoices = await db.prepare(query).all(...params);
     res.json(invoices);
   } catch (error) {
     console.error('Get invoice history error:', error);
@@ -219,11 +261,11 @@ router.get('/history', authenticateToken, authorizeRoles('admin'), (req, res) =>
 });
 
 // Get invoice details
-router.get('/:invoiceId', authenticateToken, (req, res) => {
+router.get('/:invoiceId', authenticateToken, async (req, res) => {
   try {
     const { invoiceId } = req.params;
 
-    const invoice = db.prepare(`
+    const invoice = await db.prepare(`
       SELECT 
         inv.*,
         u.username as freelancer_name,
@@ -240,19 +282,18 @@ router.get('/:invoiceId', authenticateToken, (req, res) => {
       return res.status(404).json({ error: 'Invoice not found' });
     }
 
-    // Check permission
     if (req.user.role !== 'admin' && req.user.id !== invoice.freelancer_id) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const items = db.prepare(`
+    const items = await db.prepare(`
       SELECT 
         ii.*,
         i.use_case,
         i.flow_name,
         i.department
       FROM invoice_items ii
-      JOIN ideas i ON ii.idea_id = i.id
+      LEFT JOIN ideas i ON ii.idea_id = i.id
       WHERE ii.invoice_id = ?
       ORDER BY ii.completed_at ASC
     `).all(invoiceId);
@@ -329,7 +370,7 @@ function generatePDFHtml(freelancer, items, invoiceNumber, totalAmount, periodSt
       <h3>Bill To:</h3>
       <p><strong>${freelancer.username}</strong></p>
       <p>${freelancer.email}</p>
-      <p>@${freelancer.handle}</p>
+      <p>@${freelancer.handle || 'N/A'}</p>
     </div>
     <div class="info-block" style="text-align: right;">
       <h3>Invoice Period:</h3>
@@ -356,7 +397,7 @@ function generatePDFHtml(freelancer, items, invoiceNumber, totalAmount, periodSt
           <td>${item.flow_name || item.use_case}</td>
           <td>${item.department || 'N/A'}</td>
           <td>${new Date(item.completed_at).toLocaleDateString()}</td>
-          <td class="text-right">$${item.amount.toFixed(2)}</td>
+          <td class="text-right">$${parseFloat(item.amount).toFixed(2)}</td>
         </tr>
       `).join('')}
       <tr class="total-row">
@@ -376,4 +417,3 @@ function generatePDFHtml(freelancer, items, invoiceNumber, totalAmount, periodSt
 }
 
 export default router;
-
