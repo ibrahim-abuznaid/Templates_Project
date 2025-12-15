@@ -25,16 +25,17 @@ function createPool() {
   
   const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:7777@localhost:5433/template_management';
   const isProduction = process.env.NODE_ENV === 'production';
+  const isExternalDB = process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('localhost');
   
   console.log('🐘 Connecting to PostgreSQL...');
   console.log(`📍 Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+  console.log(`🔗 Using external DB: ${isExternalDB}`);
   
-  // Configure SSL for DigitalOcean managed databases
-  // They use self-signed certificates, so we need rejectUnauthorized: false
-  let sslConfig = false;
-  if (isProduction || connectionString.includes('digitalocean.com') || connectionString.includes('sslmode=require')) {
-    sslConfig = { rejectUnauthorized: false };
-  }
+  // For any external database (like DigitalOcean), always use SSL with rejectUnauthorized: false
+  // This handles self-signed certificates used by managed database services
+  const sslConfig = isExternalDB ? { rejectUnauthorized: false } : false;
+  
+  console.log(`🔒 SSL Config: ${JSON.stringify(sslConfig)}`);
   
   pool = new Pool({
     connectionString,
