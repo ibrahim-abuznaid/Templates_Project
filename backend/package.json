@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "type": "module",
   "engines": {
-    "node": ">=18.0.0",
+    "node": "20.x",
     "npm": ">=9.0.0"
   },
   "scripts": {
@@ -14,7 +14,8 @@
     "create-db": "node scripts/create-db.js",
     "seed": "node src/database/seed-data.js",
     "test-views": "node src/database/test-views.js",
-    "build": "npm ci --production=false",
+    "build": "echo 'Build complete'",
+    "heroku-postbuild": "npm ci --production=false",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
     "db:pull": "prisma db pull",
