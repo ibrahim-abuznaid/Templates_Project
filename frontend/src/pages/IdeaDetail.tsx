@@ -2,11 +2,12 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { ideasApi, usersApi, blockersApi } from '../services/api';
-import type { IdeaDetail as IdeaDetailType, User, UserBasic, Blocker, BlockerType, BlockerPriority, IdeaStatus } from '../types';
+import { ideasApi, usersApi, blockersApi, departmentsApi } from '../services/api';
+import type { IdeaDetail as IdeaDetailType, User, UserBasic, Blocker, BlockerType, BlockerPriority, IdeaStatus, Department } from '../types';
 import StatusBadge from '../components/StatusBadge';
 import StatusWorkflow from '../components/StatusWorkflow';
 import StatusChangeSelector from '../components/StatusChangeSelector';
+import ConfirmModal from '../components/ConfirmModal';
 import {
   ArrowLeft,
   Edit,
@@ -26,6 +27,10 @@ import {
   ChevronUp,
   Wifi,
   WifiOff,
+  Upload,
+  FileJson,
+  Eye,
+  RefreshCw,
 } from 'lucide-react';
 
 const IdeaDetail: React.FC = () => {
@@ -60,15 +65,50 @@ const IdeaDetail: React.FC = () => {
   const [blockerDiscussions, setBlockerDiscussions] = useState<{[key: number]: any[]}>({});
   const [discussionMessage, setDiscussionMessage] = useState<{[key: number]: string}>({});
   const [recentlyUpdated, setRecentlyUpdated] = useState(false);
+  const [allDepartments, setAllDepartments] = useState<Department[]>([]);
+  const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<number[]>([]);
+  const [adminUsers, setAdminUsers] = useState<User[]>([]);
+  const [uploadingFlowJson, setUploadingFlowJson] = useState(false);
+  const [showPublishPreview, setShowPublishPreview] = useState(false);
+  const [publishPreview, setPublishPreview] = useState<any>(null);
+  const [syncingWithPublicLibrary, setSyncingWithPublicLibrary] = useState(false);
+  const flowJsonInputRef = useRef<HTMLInputElement>(null);
+  
+  // Modal state
+  const [modal, setModal] = useState<{
+    isOpen: boolean;
+    type: 'confirm' | 'success' | 'error' | 'info' | 'warning';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+    showCancel?: boolean;
+    confirmText?: string;
+  }>({
+    isOpen: false,
+    type: 'confirm',
+    title: '',
+    message: '',
+    showCancel: true,
+  });
+
+  const showModal = (config: Partial<typeof modal> & { title: string; message: string }) => {
+    setModal({ ...modal, isOpen: true, showCancel: true, ...config });
+  };
+
+  const closeModal = () => {
+    setModal({ ...modal, isOpen: false });
+  };
 
   useEffect(() => {
     loadIdea();
     loadUsers();
     loadBlockers();
+    loadDepartments();
     if (isAdmin) {
       loadFreelancers();
+      loadAdmins();
     }
-  }, [id]);
+  }, [id, isAdmin]);
 
   // Join the idea's room for real-time updates
   useEffect(() => {
@@ -112,8 +152,16 @@ const IdeaDetail: React.FC = () => {
     const unsubDeleted = subscribe('idea:deleted', ({ id: deletedId }) => {
       if (deletedId === Number(id)) {
         console.log('🗑️ This idea was deleted');
-        alert('This template has been deleted.');
-        navigate('/');
+        // Show modal and navigate after closing
+        setModal({
+          isOpen: true,
+          type: 'info',
+          title: 'Template Deleted',
+          message: 'This template has been deleted.',
+          showCancel: false,
+          confirmText: 'OK',
+          onConfirm: () => navigate('/'),
+        });
       }
     });
 
@@ -183,23 +231,39 @@ const IdeaDetail: React.FC = () => {
     }
   };
 
+  const loadDepartments = async () => {
+    try {
+      const response = await departmentsApi.getAll();
+      setAllDepartments(response.data);
+    } catch (error) {
+      console.error('Failed to load departments:', error);
+    }
+  };
+
   const loadIdea = async () => {
     try {
       const response = await ideasApi.getById(Number(id));
       setIdea(response.data);
       setEditData({
-        use_case: response.data.use_case,
         flow_name: response.data.flow_name || '',
-        short_description: response.data.short_description || '',
+        summary: response.data.summary || '',
         description: response.data.description || '',
         setup_guide: response.data.setup_guide || '',
         template_url: response.data.template_url || '',
         scribe_url: response.data.scribe_url || '',
-        department: response.data.department || '',
-        tags: response.data.tags || '',
+        time_save_per_week: response.data.time_save_per_week || '',
+        cost_per_year: response.data.cost_per_year || '',
+        author: response.data.author || 'Activepieces Team',
+        idea_notes: response.data.idea_notes || '',
         reviewer_name: response.data.reviewer_name || '',
         price: response.data.price,
       });
+      // Set selected departments
+      if (response.data.departments && response.data.departments.length > 0) {
+        setSelectedDepartmentIds(response.data.departments.map((d: Department) => d.id));
+      } else {
+        setSelectedDepartmentIds([]);
+      }
     } catch (error) {
       console.error('Failed to load idea:', error);
     } finally {
@@ -216,9 +280,112 @@ const IdeaDetail: React.FC = () => {
     }
   };
 
+  const loadAdmins = async () => {
+    try {
+      const response = await ideasApi.getAdmins();
+      setAdminUsers(response.data);
+    } catch (error) {
+      console.error('Failed to load admins:', error);
+    }
+  };
+
+  const handleFlowJsonUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingFlowJson(true);
+      const text = await file.text();
+      
+      // Validate JSON
+      JSON.parse(text);
+      
+      await ideasApi.uploadFlowJson(Number(id), text);
+      loadIdea();
+      showModal({
+        type: 'success',
+        title: 'Upload Successful',
+        message: 'Flow JSON uploaded successfully!',
+        showCancel: false,
+        confirmText: 'OK',
+      });
+    } catch (error: any) {
+      if (error instanceof SyntaxError) {
+        showModal({
+          type: 'error',
+          title: 'Invalid JSON',
+          message: 'Invalid JSON file. Please upload a valid JSON file.',
+          showCancel: false,
+          confirmText: 'OK',
+        });
+      } else {
+        showModal({
+          type: 'error',
+          title: 'Upload Failed',
+          message: error.response?.data?.error || 'Failed to upload flow JSON',
+          showCancel: false,
+          confirmText: 'OK',
+        });
+      }
+      console.error('Failed to upload flow JSON:', error);
+    } finally {
+      setUploadingFlowJson(false);
+      if (flowJsonInputRef.current) {
+        flowJsonInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleViewPublishPreview = async () => {
+    try {
+      const response = await ideasApi.getPublishPreview(Number(id));
+      setPublishPreview(response.data);
+      setShowPublishPreview(true);
+    } catch (error) {
+      console.error('Failed to get publish preview:', error);
+    }
+  };
+
+  const handleSyncWithPublicLibrary = () => {
+    showModal({
+      type: 'confirm',
+      title: 'Update Public Library',
+      message: 'This will update the published template in the Public Library with your current changes.\n\nContinue?',
+      confirmText: 'Update',
+      onConfirm: async () => {
+        try {
+          setSyncingWithPublicLibrary(true);
+          const response = await ideasApi.syncWithPublicLibrary(Number(id));
+          showModal({
+            type: 'success',
+            title: 'Success',
+            message: response.data.message,
+            showCancel: false,
+            confirmText: 'OK',
+          });
+          loadIdea(); // Reload to update activity log
+        } catch (error: any) {
+          showModal({
+            type: 'error',
+            title: 'Update Failed',
+            message: error.response?.data?.error || 'Failed to update in Public Library',
+            showCancel: false,
+            confirmText: 'OK',
+          });
+          console.error('Failed to update in Public Library:', error);
+        } finally {
+          setSyncingWithPublicLibrary(false);
+        }
+      },
+    });
+  };
+
   const handleUpdate = async () => {
     try {
-      await ideasApi.update(Number(id), editData);
+      await ideasApi.update(Number(id), {
+        ...editData,
+        department_ids: selectedDepartmentIds
+      });
       setEditing(false);
       loadIdea();
     } catch (error) {
@@ -251,7 +418,13 @@ const IdeaDetail: React.FC = () => {
       await ideasApi.selfAssign(Number(id));
       loadIdea();
     } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to assign idea to yourself');
+      showModal({
+        type: 'error',
+        title: 'Assignment Failed',
+        message: error.response?.data?.error || 'Failed to assign idea to yourself',
+        showCancel: false,
+        confirmText: 'OK',
+      });
       console.error('Failed to self-assign idea:', error);
     }
   };
@@ -411,15 +584,28 @@ const IdeaDetail: React.FC = () => {
     );
   };
 
-  const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this template?')) return;
-
-    try {
-      await ideasApi.delete(Number(id));
-      navigate('/');
-    } catch (error) {
-      console.error('Failed to delete template:', error);
-    }
+  const handleDelete = () => {
+    showModal({
+      type: 'warning',
+      title: 'Delete Template',
+      message: 'Are you sure you want to delete this template?\n\nThis action cannot be undone.',
+      confirmText: 'Delete',
+      onConfirm: async () => {
+        try {
+          await ideasApi.delete(Number(id));
+          navigate('/');
+        } catch (error) {
+          showModal({
+            type: 'error',
+            title: 'Delete Failed',
+            message: 'Failed to delete template. Please try again.',
+            showCancel: false,
+            confirmText: 'OK',
+          });
+          console.error('Failed to delete template:', error);
+        }
+      },
+    });
   };
 
   const handleAddBlocker = async (e: React.FormEvent) => {
@@ -462,15 +648,21 @@ const IdeaDetail: React.FC = () => {
     }
   };
 
-  const handleDeleteBlocker = async (blockerId: number) => {
-    if (!confirm('Delete this blocker?')) return;
-
-    try {
-      await blockersApi.delete(blockerId);
-      loadBlockers();
-    } catch (error) {
-      console.error('Failed to delete blocker:', error);
-    }
+  const handleDeleteBlocker = (blockerId: number) => {
+    showModal({
+      type: 'warning',
+      title: 'Delete Blocker',
+      message: 'Are you sure you want to delete this blocker?',
+      confirmText: 'Delete',
+      onConfirm: async () => {
+        try {
+          await blockersApi.delete(blockerId);
+          loadBlockers();
+        } catch (error) {
+          console.error('Failed to delete blocker:', error);
+        }
+      },
+    });
   };
 
   if (loading) {
@@ -564,22 +756,48 @@ const IdeaDetail: React.FC = () => {
                       value={editData.flow_name}
                       onChange={(e) => setEditData({ ...editData, flow_name: e.target.value })}
                       className="input-field text-2xl font-bold"
-                      placeholder="Flow Name (Main Title)"
+                      placeholder="Flow Name"
+                      required
                     />
                   ) : (
-                    <h1 className="text-2xl font-bold text-gray-900">{idea.flow_name || idea.use_case}</h1>
+                    <h1 className="text-2xl font-bold text-gray-900">{idea.flow_name || 'Untitled Template'}</h1>
                   )}
                   <StatusBadge status={idea.status} showIcon={true} showTooltip={true} />
+                  {idea.public_library_id && (
+                    <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs font-medium">
+                      Published
+                    </span>
+                  )}
                 </div>
-                <div className="flex items-center space-x-4 text-sm text-gray-500">
-                  {idea.department && (
+                <div className="flex items-center flex-wrap gap-2 text-sm text-gray-500">
+                  {idea.departments && idea.departments.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {idea.departments.map((dept) => (
+                        <span 
+                          key={dept.id}
+                          className="px-2 py-1 bg-primary-100 text-primary-700 rounded font-medium"
+                        >
+                          {dept.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : idea.department ? (
                     <span className="px-2 py-1 bg-primary-100 text-primary-700 rounded font-medium">
                       {idea.department}
                     </span>
-                  )}
-                  <span>Use Case: {idea.use_case}</span>
+                  ) : null}
                   <span>• Created by {idea.created_by_name}</span>
                   {idea.assigned_to_name && <span>• Assigned to {idea.assigned_to_name}</span>}
+                  {idea.time_save_per_week && (
+                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">
+                      {idea.time_save_per_week}
+                    </span>
+                  )}
+                  {idea.cost_per_year && (
+                    <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs">
+                      {idea.cost_per_year}
+                    </span>
+                  )}
                   <span>• ${idea.price}</span>
                 </div>
               </div>
@@ -607,18 +825,23 @@ const IdeaDetail: React.FC = () => {
                       onClick={() => {
                         setEditing(false);
                         setEditData({
-                          use_case: idea.use_case,
                           flow_name: idea.flow_name || '',
-                          short_description: idea.short_description || '',
+                          summary: idea.summary || '',
                           description: idea.description || '',
                           setup_guide: idea.setup_guide || '',
                           template_url: idea.template_url || '',
                           scribe_url: idea.scribe_url || '',
-                          department: idea.department || '',
-                          tags: idea.tags || '',
+                          time_save_per_week: idea.time_save_per_week || '',
+                          cost_per_year: idea.cost_per_year || '',
+                          author: idea.author || 'Activepieces Team',
+                          idea_notes: idea.idea_notes || '',
                           reviewer_name: idea.reviewer_name || '',
                           price: idea.price,
                         });
+                        // Reset selected departments
+                        if (idea.departments && idea.departments.length > 0) {
+                          setSelectedDepartmentIds(idea.departments.map((d) => d.id));
+                        }
                       }}
                       className="btn-secondary"
                     >
@@ -635,65 +858,25 @@ const IdeaDetail: React.FC = () => {
             </div>
 
             <div className="space-y-4">
+              {/* Summary */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Use Case
-                </label>
-                {editing && isAdmin ? (
-                  <input
-                    type="text"
-                    value={editData.use_case}
-                    onChange={(e) => setEditData({ ...editData, use_case: e.target.value })}
-                    className="input-field"
-                    placeholder="Enter the use case category"
-                  />
-                ) : (
-                  <p className="text-gray-600">{idea.use_case}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Department
-                </label>
-                {editing && isAdmin ? (
-                  <select
-                    value={editData.department}
-                    onChange={(e) => setEditData({ ...editData, department: e.target.value })}
-                    className="input-field"
-                  >
-                    <option value="">Select Department</option>
-                    <option value="HR">HR</option>
-                    <option value="Finance">Finance</option>
-                    <option value="Marketing">Marketing</option>
-                    <option value="Sales">Sales</option>
-                    <option value="IT">IT</option>
-                    <option value="Operations">Operations</option>
-                    <option value="Customer Service">Customer Service</option>
-                    <option value="Legal">Legal</option>
-                    <option value="Other">Other</option>
-                  </select>
-                ) : (
-                  <p className="text-gray-600">{idea.department || 'Not specified'}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Short Description
+                  Summary
                 </label>
                 {editing ? (
                   <textarea
-                    value={editData.short_description}
-                    onChange={(e) => setEditData({ ...editData, short_description: e.target.value })}
+                    value={editData.summary}
+                    onChange={(e) => setEditData({ ...editData, summary: e.target.value })}
                     className="input-field"
                     rows={2}
+                    placeholder="Brief summary for public library"
                   />
                 ) : (
-                  <p className="text-gray-600">{idea.short_description || 'No short description provided'}</p>
+                  <p className="text-gray-600">{idea.summary || 'No summary provided'}</p>
                 )}
               </div>
 
+              {/* Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Description
@@ -710,6 +893,210 @@ const IdeaDetail: React.FC = () => {
                 )}
               </div>
 
+              {/* Departments */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Departments {editing && isAdmin && <span className="text-xs text-gray-500">(Select multiple)</span>}
+                </label>
+                {editing && isAdmin ? (
+                  <div className="space-y-2">
+                    {allDepartments.map((dept) => (
+                      <label key={dept.id} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedDepartmentIds.includes(dept.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedDepartmentIds([...selectedDepartmentIds, dept.id]);
+                            } else {
+                              setSelectedDepartmentIds(selectedDepartmentIds.filter(id => id !== dept.id));
+                            }
+                          }}
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        />
+                        <span className="text-sm text-gray-700">{dept.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <div>
+                    {idea.departments && idea.departments.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {idea.departments.map((dept) => (
+                          <span 
+                            key={dept.id}
+                            className="px-3 py-1 bg-primary-100 text-primary-700 rounded font-medium"
+                          >
+                            {dept.name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : idea.department ? (
+                      <p className="text-gray-600">{idea.department}</p>
+                    ) : (
+                      <p className="text-gray-600">Not specified</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Idea Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Idea Notes <span className="text-xs text-gray-500">(Internal)</span>
+                </label>
+                {editing ? (
+                  <textarea
+                    value={editData.idea_notes}
+                    onChange={(e) => setEditData({ ...editData, idea_notes: e.target.value })}
+                    className="input-field"
+                    rows={3}
+                    placeholder="Internal notes about the template idea..."
+                  />
+                ) : (
+                  <p className="text-gray-600 whitespace-pre-wrap">
+                    {idea.idea_notes || 'No notes'}
+                  </p>
+                )}
+              </div>
+
+              {/* Time Save and Cost */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Time Save / Week
+                  </label>
+                  {editing ? (
+                    <input
+                      type="text"
+                      value={editData.time_save_per_week}
+                      onChange={(e) => setEditData({ ...editData, time_save_per_week: e.target.value })}
+                      className="input-field"
+                      placeholder="e.g., 2 hours"
+                    />
+                  ) : (
+                    <p className="text-gray-600">{idea.time_save_per_week || 'Not specified'}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Cost Savings / Year
+                  </label>
+                  {editing ? (
+                    <input
+                      type="text"
+                      value={editData.cost_per_year}
+                      onChange={(e) => setEditData({ ...editData, cost_per_year: e.target.value })}
+                      className="input-field"
+                      placeholder="e.g., $150/year"
+                    />
+                  ) : (
+                    <p className="text-gray-600">{idea.cost_per_year || 'Not specified'}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Author */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Author
+                </label>
+                {editing ? (
+                  <input
+                    type="text"
+                    value={editData.author}
+                    onChange={(e) => setEditData({ ...editData, author: e.target.value })}
+                    className="input-field"
+                    placeholder="Activepieces Team"
+                  />
+                ) : (
+                  <p className="text-gray-600">{idea.author || 'Activepieces Team'}</p>
+                )}
+              </div>
+
+              {/* Scribe URL (sent as blogUrl) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Scribe URL <span className="text-xs text-gray-500">(sent as Article/Blog URL)</span>
+                </label>
+                {editing ? (
+                  <input
+                    type="url"
+                    value={editData.scribe_url}
+                    onChange={(e) => setEditData({ ...editData, scribe_url: e.target.value })}
+                    className="input-field"
+                    placeholder="https://..."
+                  />
+                ) : idea.scribe_url ? (
+                  <a
+                    href={idea.scribe_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary-600 hover:underline"
+                  >
+                    {idea.scribe_url}
+                  </a>
+                ) : (
+                  <p className="text-gray-600">Not provided</p>
+                )}
+              </div>
+
+              {/* Flow JSON Upload */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Flow JSON <span className="text-xs text-gray-500">(Upload flow definition for publishing)</span>
+                </label>
+                <div className="flex items-center gap-4">
+                  {idea.flow_json ? (
+                    <div className="flex-1 flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <FileJson className="w-5 h-5 text-green-600" />
+                      <span className="text-sm text-green-700">Flow JSON uploaded</span>
+                      <button
+                        onClick={() => {
+                          const blob = new Blob([idea.flow_json!], { type: 'application/json' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `flow-${idea.id}.json`;
+                          a.click();
+                        }}
+                        className="ml-auto text-xs text-green-600 hover:text-green-700 underline"
+                      >
+                        Download
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500">
+                      No flow JSON uploaded yet
+                    </div>
+                  )}
+                  {canEdit && (
+                    <div>
+                      <input
+                        ref={flowJsonInputRef}
+                        type="file"
+                        accept=".json,application/json"
+                        onChange={handleFlowJsonUpload}
+                        className="hidden"
+                        id="flow-json-upload"
+                      />
+                      <label
+                        htmlFor="flow-json-upload"
+                        className={`btn-secondary flex items-center gap-2 cursor-pointer ${uploadingFlowJson ? 'opacity-50' : ''}`}
+                      >
+                        {uploadingFlowJson ? (
+                          <Loader className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Upload className="w-4 h-4" />
+                        )}
+                        <span>{idea.flow_json ? 'Replace' : 'Upload'}</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Setup Guide */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Setup Guide
@@ -728,6 +1115,7 @@ const IdeaDetail: React.FC = () => {
                 )}
               </div>
 
+              {/* Template URL */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Template URL
@@ -753,88 +1141,100 @@ const IdeaDetail: React.FC = () => {
                 )}
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Scribe URL
-                </label>
-                {editing ? (
-                  <input
-                    type="url"
-                    value={editData.scribe_url}
-                    onChange={(e) => setEditData({ ...editData, scribe_url: e.target.value })}
-                    className="input-field"
-                  />
-                ) : idea.scribe_url ? (
-                  <a
-                    href={idea.scribe_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary-600 hover:underline"
-                  >
-                    {idea.scribe_url}
-                  </a>
-                ) : (
-                  <p className="text-gray-600">Not provided</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Tags
-                </label>
-                {editing ? (
-                  <input
-                    type="text"
-                    value={editData.tags}
-                    onChange={(e) => setEditData({ ...editData, tags: e.target.value })}
-                    className="input-field"
-                    placeholder="e.g., automation, integration, workflow"
-                  />
-                ) : idea.tags ? (
-                  <div className="flex flex-wrap gap-2">
-                    {idea.tags.split(',').map((tag, index) => (
-                      <span
-                        key={index}
-                        className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm"
-                      >
-                        {tag.trim()}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-gray-600">No tags</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Reviewer Name
-                </label>
-                {editing && isAdmin ? (
-                  <input
-                    type="text"
-                    value={editData.reviewer_name}
-                    onChange={(e) => setEditData({ ...editData, reviewer_name: e.target.value })}
-                    className="input-field"
-                  />
-                ) : (
-                  <p className="text-gray-600">{idea.reviewer_name || 'Not assigned'}</p>
-                )}
-              </div>
-
-              {isAdmin && editing && (
-                <div>
+              {/* Internal Fields Section */}
+              <div className="border-t pt-4 mt-4">
+                <p className="text-xs text-gray-500 mb-3 font-medium">Internal Fields (not sent to Public Library)</p>
+                
+                {/* Reviewer */}
+                <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Price ($)
+                    Reviewer
                   </label>
-                  <input
-                    type="number"
-                    value={editData.price}
-                    onChange={(e) => setEditData({ ...editData, price: parseFloat(e.target.value) })}
-                    className="input-field"
-                    min="0"
-                    step="0.01"
-                  />
+                  {editing && isAdmin ? (
+                    <select
+                      value={editData.reviewer_name}
+                      onChange={(e) => setEditData({ ...editData, reviewer_name: e.target.value })}
+                      className="input-field"
+                    >
+                      <option value="">Select reviewer...</option>
+                      {adminUsers.map((admin) => (
+                        <option key={admin.id} value={admin.username}>
+                          {admin.username}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-gray-600">{idea.reviewer_name || 'Not assigned'}</p>
+                  )}
+                </div>
+
+                {/* Price */}
+                {isAdmin && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Price ($)
+                    </label>
+                    {editing ? (
+                      <input
+                        type="number"
+                        value={editData.price}
+                        onChange={(e) => setEditData({ ...editData, price: parseFloat(e.target.value) })}
+                        className="input-field"
+                        min="0"
+                        step="0.01"
+                      />
+                    ) : (
+                      <p className="text-gray-600">${idea.price}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Public Library Info */}
+              {idea.public_library_id && (
+                <div className="border-t pt-4 mt-4">
+                  <p className="text-xs text-gray-500 mb-3 font-medium">Public Library Info</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">ID:</span>
+                    <code className="text-sm bg-gray-100 px-2 py-1 rounded">{idea.public_library_id}</code>
+                  </div>
+                </div>
+              )}
+
+              {/* Publish Actions */}
+              {isAdmin && (
+                <div className="border-t pt-4 mt-4 space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={handleViewPublishPreview}
+                      className="btn-secondary flex items-center gap-2 text-sm"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span>Preview Publish Request</span>
+                    </button>
+                    
+                    {/* Update button - only show for published templates */}
+                    {idea.public_library_id && idea.status === 'published' && (
+                      <button
+                        onClick={handleSyncWithPublicLibrary}
+                        disabled={syncingWithPublicLibrary}
+                        className="btn-primary flex items-center gap-2 text-sm"
+                      >
+                        {syncingWithPublicLibrary ? (
+                          <Loader className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4" />
+                        )}
+                        <span>{syncingWithPublicLibrary ? 'Updating...' : 'Update in Public Library'}</span>
+                      </button>
+                    )}
+                  </div>
+                  
+                  {idea.public_library_id && idea.status === 'published' && (
+                    <p className="text-xs text-gray-500">
+                      💡 Click "Update in Public Library" to push your changes to the published template.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -1287,6 +1687,97 @@ const IdeaDetail: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Confirm/Alert Modal */}
+      <ConfirmModal
+        isOpen={modal.isOpen}
+        onClose={closeModal}
+        onConfirm={modal.onConfirm}
+        title={modal.title}
+        message={modal.message}
+        type={modal.type}
+        confirmText={modal.confirmText}
+        showCancel={modal.showCancel}
+      />
+
+      {/* Publish Preview Modal */}
+      {showPublishPreview && publishPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 my-8 max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Publish Request Preview</h2>
+                <p className="text-sm text-gray-500">
+                  This is what will be sent to the Public Library API
+                </p>
+              </div>
+              <button
+                onClick={() => setShowPublishPreview(false)}
+                className="p-2 hover:bg-gray-100 rounded-full"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {/* Status Info */}
+              <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-500">Template ID:</span>
+                    <span className="ml-2 font-medium">{publishPreview.template_id}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Public Library ID:</span>
+                    <span className="ml-2 font-medium">
+                      {publishPreview.public_library_id || 'Not published yet'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Status:</span>
+                    <span className={`ml-2 font-medium ${publishPreview.is_published ? 'text-green-600' : 'text-gray-600'}`}>
+                      {publishPreview.is_published ? 'Published' : 'Not Published'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* JSON Preview */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Request Body (JSON)</h3>
+                <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-sm">
+                  {JSON.stringify(publishPreview.publish_request, null, 2)}
+                </pre>
+              </div>
+
+              {/* Warnings */}
+              {(!publishPreview.publish_request.flows || publishPreview.publish_request.flows.length === 0) && (
+                <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-center gap-2 text-yellow-700">
+                    <AlertTriangle className="w-5 h-5" />
+                    <span className="font-medium">Warning: No flow JSON uploaded</span>
+                  </div>
+                  <p className="text-sm text-yellow-600 mt-1">
+                    Upload a flow JSON file to include the flow definition in the publish request.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-gray-200">
+              <button
+                onClick={() => setShowPublishPreview(false)}
+                className="btn-secondary"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

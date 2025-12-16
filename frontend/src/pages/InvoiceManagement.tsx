@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { invoicesApi } from '../services/api';
 import type { PendingInvoiceSummary, Invoice, InvoiceItem } from '../types';
 import { Download, Loader, User, CheckCircle, Clock } from 'lucide-react';
+import ConfirmModal from '../components/ConfirmModal';
 
 const InvoiceManagement: React.FC = () => {
   const [pendingInvoices, setPendingInvoices] = useState<PendingInvoiceSummary[]>([]);
@@ -10,6 +11,31 @@ const InvoiceManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [invoiceHistory, setInvoiceHistory] = useState<Invoice[]>([]);
+  
+  // Modal state
+  const [modal, setModal] = useState<{
+    isOpen: boolean;
+    type: 'confirm' | 'success' | 'error' | 'info' | 'warning';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+    showCancel?: boolean;
+    confirmText?: string;
+  }>({
+    isOpen: false,
+    type: 'confirm',
+    title: '',
+    message: '',
+    showCancel: true,
+  });
+
+  const showModal = (config: Partial<typeof modal> & { title: string; message: string }) => {
+    setModal({ ...modal, isOpen: true, showCancel: true, ...config });
+  };
+
+  const closeModal = () => {
+    setModal({ ...modal, isOpen: false });
+  };
 
   useEffect(() => {
     loadPendingInvoices();
@@ -47,31 +73,49 @@ const InvoiceManagement: React.FC = () => {
     }
   };
 
-  const handleGenerateInvoice = async (freelancerId: number) => {
-    if (!confirm('Generate and pay this invoice? This will create CSV and PDF files for download.')) return;
-
-    try {
-      setProcessing(true);
-      const response = await invoicesApi.generateInvoice(freelancerId);
-      
-      // Download CSV
-      downloadFile(response.data.csv, `invoice_${response.data.invoice.invoice_number}.csv`, 'text/csv');
-      
-      // Download PDF (as HTML first, can be printed to PDF)
-      downloadFile(response.data.pdfHtml, `invoice_${response.data.invoice.invoice_number}.html`, 'text/html');
-      
-      alert(`Invoice ${response.data.invoice.invoice_number} generated!\nTotal: $${response.data.invoice.total_amount}\nFiles downloaded.`);
-      
-      // Reload data
-      setSelectedFreelancer(null);
-      setPendingItems([]);
-      loadPendingInvoices();
-      loadInvoiceHistory();
-    } catch (error: any) {
-      alert(error.response?.data?.error || 'Failed to generate invoice');
-    } finally {
-      setProcessing(false);
-    }
+  const handleGenerateInvoice = (freelancerId: number) => {
+    showModal({
+      type: 'confirm',
+      title: 'Generate Invoice',
+      message: 'Generate and pay this invoice?\n\nThis will create CSV and PDF files for download.',
+      confirmText: 'Generate & Pay',
+      onConfirm: async () => {
+        try {
+          setProcessing(true);
+          const response = await invoicesApi.generateInvoice(freelancerId);
+          
+          // Download CSV
+          downloadFile(response.data.csv, `invoice_${response.data.invoice.invoice_number}.csv`, 'text/csv');
+          
+          // Download PDF (as HTML first, can be printed to PDF)
+          downloadFile(response.data.pdfHtml, `invoice_${response.data.invoice.invoice_number}.html`, 'text/html');
+          
+          showModal({
+            type: 'success',
+            title: 'Invoice Generated',
+            message: `Invoice ${response.data.invoice.invoice_number} generated!\n\nTotal: $${response.data.invoice.total_amount}\n\nFiles have been downloaded.`,
+            showCancel: false,
+            confirmText: 'OK',
+          });
+          
+          // Reload data
+          setSelectedFreelancer(null);
+          setPendingItems([]);
+          loadPendingInvoices();
+          loadInvoiceHistory();
+        } catch (error: any) {
+          showModal({
+            type: 'error',
+            title: 'Invoice Generation Failed',
+            message: error.response?.data?.error || 'Failed to generate invoice',
+            showCancel: false,
+            confirmText: 'OK',
+          });
+        } finally {
+          setProcessing(false);
+        }
+      },
+    });
   };
 
   const downloadFile = (content: string, filename: string, mimeType: string) => {
@@ -96,6 +140,18 @@ const InvoiceManagement: React.FC = () => {
 
   return (
     <div>
+      {/* Confirm/Alert Modal */}
+      <ConfirmModal
+        isOpen={modal.isOpen}
+        onClose={closeModal}
+        onConfirm={modal.onConfirm}
+        title={modal.title}
+        message={modal.message}
+        type={modal.type}
+        confirmText={modal.confirmText}
+        showCancel={modal.showCancel}
+      />
+
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Invoice Management</h1>
         <p className="text-gray-600">Manage template creator invoices and payments</p>

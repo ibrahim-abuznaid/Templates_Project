@@ -7,17 +7,24 @@ const router = express.Router();
 // Get department summary with template counts
 router.get('/departments', authenticateToken, async (req, res) => {
   try {
-    // Since views might not exist in PostgreSQL, query directly
+    // Query using the new many-to-many relationship
     const departments = await db.prepare(`
       SELECT 
-        department,
-        COUNT(*) as template_count,
-        SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as published_count,
-        SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress_count
-      FROM ideas
-      WHERE department IS NOT NULL AND department != ''
-      GROUP BY department
-      ORDER BY template_count DESC
+        d.id,
+        d.name as department,
+        d.description,
+        d.display_order,
+        COUNT(DISTINCT id.idea_id) as template_count,
+        SUM(CASE WHEN i.status = 'published' THEN 1 ELSE 0 END) as published_count,
+        SUM(CASE WHEN i.status = 'in_progress' THEN 1 ELSE 0 END) as in_progress_count,
+        SUM(CASE WHEN i.status = 'new' THEN 1 ELSE 0 END) as new_count,
+        COALESCE(SUM(i.price), 0) as total_value,
+        COALESCE(AVG(i.price), 0) as avg_price
+      FROM departments d
+      LEFT JOIN idea_departments id ON d.id = id.department_id
+      LEFT JOIN ideas i ON id.idea_id = i.id
+      GROUP BY d.id, d.name, d.description, d.display_order
+      ORDER BY d.display_order, d.name
     `).all();
     
     res.json(departments);
@@ -27,21 +34,45 @@ router.get('/departments', authenticateToken, async (req, res) => {
   }
 });
 
-// Get templates for a specific department
+// Get templates for a specific department (by name)
 router.get('/departments/:department/templates', authenticateToken, async (req, res) => {
   try {
     const { department } = req.params;
+    
+    // First, get the department ID from the name
+    const dept = await db.prepare(`
+      SELECT id FROM departments WHERE name = ?
+    `).get(department);
+    
+    if (!dept) {
+      return res.status(404).json({ error: 'Department not found' });
+    }
+    
+    // Then get all templates in this department
     const templates = await db.prepare(`
-      SELECT 
+      SELECT DISTINCT
         i.*,
         u1.username as created_by_name,
         u2.username as assigned_to_name
       FROM ideas i
+      INNER JOIN idea_departments id ON i.id = id.idea_id
       LEFT JOIN users u1 ON i.created_by = u1.id
       LEFT JOIN users u2 ON i.assigned_to = u2.id
-      WHERE i.department = ?
+      WHERE id.department_id = ?
       ORDER BY i.created_at DESC
-    `).all(department);
+    `).all(dept.id);
+    
+    // Fetch departments for each template
+    for (const template of templates) {
+      const depts = await db.prepare(`
+        SELECT d.id, d.name, d.description, d.display_order
+        FROM departments d
+        INNER JOIN idea_departments id ON d.id = id.department_id
+        WHERE id.idea_id = ?
+        ORDER BY d.display_order, d.name
+      `).all(template.id);
+      template.departments = depts;
+    }
     
     res.json(templates);
   } catch (error) {

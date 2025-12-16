@@ -27,29 +27,36 @@ model User {
 }
 
 model Idea {
-  id               Int           @id @default(autoincrement())
-  useCase          String?       @map("use_case")
-  department       String?       @db.VarChar(100)
-  flowName         String?       @map("flow_name")
-  shortDescription String?       @map("short_description")
+  id               Int               @id @default(autoincrement())
+  flowName         String?           @map("flow_name")
+  summary          String?           // Brief summary for public library
   description      String?
-  setupGuide       String?       @map("setup_guide")
-  tags             String?
-  templateUrl      String?       @map("template_url")
-  scribeUrl        String?       @map("scribe_url")
-  reviewerName     String?       @map("reviewer_name") @db.VarChar(255)
-  price            Decimal?      @db.Decimal(10, 2)
-  status           String?       @default("new") @db.VarChar(50)
-  assignedTo       Int?          @map("assigned_to")
-  createdBy        Int?          @map("created_by")
-  publicLibraryId  String?       @map("public_library_id")
-  createdAt        DateTime?     @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt        DateTime?     @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  setupGuide       String?           @map("setup_guide")
+  templateUrl      String?           @map("template_url")
+  scribeUrl        String?           @map("scribe_url") // Sent as blogUrl to API
+  timeSavePerWeek  String?           @map("time_save_per_week") @db.VarChar(100) // e.g., "2 hours"
+  costPerYear      String?           @map("cost_per_year") @db.VarChar(100) // e.g., "$150/year"
+  author           String?           @db.VarChar(255) // Template author for public library
+  ideaNotes        String?           @map("idea_notes") @db.Text // Internal notes about the template idea
+  flowJson         String?           @map("flow_json") @db.Text // JSON string for flow data uploaded by freelancer
+  reviewerName     String?           @map("reviewer_name") @db.VarChar(255) // Internal only, not sent to API
+  price            Decimal?          @db.Decimal(10, 2) // Internal only, not sent to API
+  status           String?           @default("new") @db.VarChar(50)
+  assignedTo       Int?              @map("assigned_to")
+  createdBy        Int?              @map("created_by")
+  publicLibraryId  String?           @map("public_library_id") // ID returned from publish API
+  department       String?           @db.VarChar(100) // Deprecated: kept for backward compatibility
+  useCase          String?           @map("use_case") // Deprecated: kept for backward compatibility
+  shortDescription String?           @map("short_description") // Deprecated: use summary instead
+  tags             String?           // Deprecated: use timeSavePerWeek and costPerYear instead
+  createdAt        DateTime?         @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime?         @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
   activities       ActivityLog[]
   blockers         Blocker[]
   comments         Comment[]
-  assignee         User?         @relation("IdeaAssignee", fields: [assignedTo], references: [id], onUpdate: NoAction)
-  creator          User?         @relation("IdeaCreator", fields: [createdBy], references: [id], onUpdate: NoAction)
+  departments      IdeaDepartment[]
+  assignee         User?             @relation("IdeaAssignee", fields: [assignedTo], references: [id], onUpdate: NoAction)
+  creator          User?             @relation("IdeaCreator", fields: [createdBy], references: [id], onUpdate: NoAction)
   invoices         Invoice[]
   views            views[]
 
@@ -141,4 +148,29 @@ model views {
   users      User?     @relation(fields: [user_id], references: [id], onUpdate: NoAction)
 
   @@unique([idea_id, user_id, view_date])
+}
+
+model Department {
+  id          Int              @id @default(autoincrement())
+  name        String           @unique @db.VarChar(100)
+  description String?
+  displayOrder Int             @default(999) @map("display_order")
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamp(6)
+  ideas       IdeaDepartment[]
+
+  @@map("departments")
+}
+
+model IdeaDepartment {
+  id           Int        @id @default(autoincrement())
+  ideaId       Int        @map("idea_id")
+  departmentId Int        @map("department_id")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamp(6)
+  idea         Idea       @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([ideaId, departmentId])
+  @@index([ideaId], map: "idx_idea_departments_idea_id")
+  @@index([departmentId], map: "idx_idea_departments_department_id")
+  @@map("idea_departments")
 }

@@ -15,6 +15,40 @@ const logActivity = async (ideaId, userId, action, details = null) => {
   `).run(ideaId, userId, action, details);
 };
 
+// Helper function to get departments for an idea
+const getIdeaDepartments = async (ideaId) => {
+  const departments = await db.prepare(`
+    SELECT d.id, d.name, d.description, d.display_order
+    FROM departments d
+    INNER JOIN idea_departments id ON d.id = id.department_id
+    WHERE id.idea_id = ?
+    ORDER BY d.display_order, d.name
+  `).all(ideaId);
+  return departments;
+};
+
+// Helper function to set departments for an idea
+const setIdeaDepartments = async (ideaId, departmentIds) => {
+  if (!departmentIds || !Array.isArray(departmentIds)) return;
+  
+  // Remove existing departments
+  await db.prepare('DELETE FROM idea_departments WHERE idea_id = ?').run(ideaId);
+  
+  // Add new departments
+  const insertStmt = db.prepare(`
+    INSERT INTO idea_departments (idea_id, department_id)
+    VALUES (?, ?)
+  `);
+  
+  for (const deptId of departmentIds) {
+    try {
+      await insertStmt.run(ideaId, deptId);
+    } catch (error) {
+      console.error(`Failed to add department ${deptId} to idea ${ideaId}:`, error);
+    }
+  }
+};
+
 // Helper function to notify assignee about status changes
 const notifyStatusChange = (idea, newStatus, changedByUserId) => {
   if (!idea.assigned_to || idea.assigned_to === changedByUserId) return;
@@ -38,21 +72,179 @@ const notifyStatusChange = (idea, newStatus, changedByUserId) => {
   }
 };
 
-// Placeholder for Public Library API integration
+// Public Library API configuration
+const PUBLIC_LIBRARY_API_URL = process.env.PUBLIC_LIBRARY_API_URL || 'https://api.activepieces.com/v1/templates';
+const PUBLIC_LIBRARY_API_KEY = process.env.PUBLIC_LIBRARY_API_KEY || '';
+
+// Build the publish request body based on the template data
+const buildPublishRequestBody = async (idea) => {
+  // Parse flow JSON if available
+  let flows = [];
+  if (idea.flow_json) {
+    try {
+      const parsedFlows = JSON.parse(idea.flow_json);
+      flows = Array.isArray(parsedFlows) ? parsedFlows : [parsedFlows];
+    } catch (error) {
+      console.error('Failed to parse flow JSON:', error);
+    }
+  }
+
+  // Build tags array from time_save_per_week and cost_per_year
+  const tags = [];
+  if (idea.cost_per_year) {
+    tags.push({
+      title: idea.cost_per_year,
+      color: "#e4fded"
+    });
+  }
+  if (idea.time_save_per_week) {
+    tags.push({
+      title: idea.time_save_per_week,
+      color: "#dbeaff"
+    });
+  }
+
+  // Get departments for this idea and use them as categories
+  const departments = await getIdeaDepartments(idea.id);
+  const categories = departments.length > 0 
+    ? departments.map(d => d.name.toUpperCase().replace(/\s+/g, '_'))
+    : ['OTHER'];
+
+  return {
+    name: idea.flow_name || 'Untitled Template',
+    summary: idea.summary || '',
+    description: idea.description || '',
+    tags: tags,
+    blogUrl: idea.scribe_url || '', // scribe_url is sent as blogUrl
+    author: idea.author || 'Activepieces Team',
+    categories: categories,
+    type: 'OFFICIAL',
+    flows: flows
+  };
+};
+
+// Publish template to Public Library API
 const publishToPublicLibrary = async (idea) => {
   console.log('📚 [PUBLIC LIBRARY API] Publishing template:', {
     id: idea.id,
-    flow_name: idea.flow_name,
-    use_case: idea.use_case
+    flow_name: idea.flow_name
   });
-  const publicLibraryId = `pl_${idea.id}_${Date.now()}`;
-  console.log('📚 [PUBLIC LIBRARY API] Template published with ID:', publicLibraryId);
-  return publicLibraryId;
+
+  const requestBody = await buildPublishRequestBody(idea);
+  console.log('📚 [PUBLIC LIBRARY API] Request body:', JSON.stringify(requestBody, null, 2));
+
+  // If no API key is configured, use mock mode
+  if (!PUBLIC_LIBRARY_API_KEY) {
+    console.log('📚 [PUBLIC LIBRARY API] Running in mock mode (no API key configured)');
+    const mockId = `pl_${idea.id}_${Date.now()}`;
+    console.log('📚 [PUBLIC LIBRARY API] Mock template published with ID:', mockId);
+    return mockId;
+  }
+
+  try {
+    const response = await fetch(PUBLIC_LIBRARY_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${PUBLIC_LIBRARY_API_KEY}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API responded with status ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('📚 [PUBLIC LIBRARY API] Template published successfully with ID:', data.id);
+    return data.id;
+  } catch (error) {
+    console.error('📚 [PUBLIC LIBRARY API] Failed to publish:', error);
+    throw error;
+  }
 };
 
-const removeFromPublicLibrary = async (publicLibraryId) => {
-  console.log('📚 [PUBLIC LIBRARY API] Removing template with ID:', publicLibraryId);
-  return true;
+// Change template status in Public Library (archive/republish)
+const changePublicLibraryStatus = async (publicLibraryId, status) => {
+  console.log('📚 [PUBLIC LIBRARY API] Changing status for template:', publicLibraryId, 'to:', status);
+
+  // If no API key is configured, use mock mode
+  if (!PUBLIC_LIBRARY_API_KEY) {
+    console.log('📚 [PUBLIC LIBRARY API] Running in mock mode (no API key configured)');
+    console.log('📚 [PUBLIC LIBRARY API] Mock status changed to:', status);
+    return true;
+  }
+
+  try {
+    const response = await fetch(`${PUBLIC_LIBRARY_API_URL}/${publicLibraryId}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${PUBLIC_LIBRARY_API_KEY}`
+      },
+      body: JSON.stringify({ status: status }) // 'PUBLISHED' or 'ARCHIVED'
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API responded with status ${response.status}: ${errorText}`);
+    }
+
+    console.log('📚 [PUBLIC LIBRARY API] Status changed successfully');
+    return true;
+  } catch (error) {
+    console.error('📚 [PUBLIC LIBRARY API] Failed to change status:', error);
+    throw error;
+  }
+};
+
+// Archive template in Public Library
+const archiveInPublicLibrary = async (publicLibraryId) => {
+  return changePublicLibraryStatus(publicLibraryId, 'ARCHIVED');
+};
+
+// Republish template in Public Library
+const republishInPublicLibrary = async (publicLibraryId) => {
+  return changePublicLibraryStatus(publicLibraryId, 'PUBLISHED');
+};
+
+// Update published template in Public Library
+const updatePublicLibraryTemplate = async (publicLibraryId, idea) => {
+  console.log('📚 [PUBLIC LIBRARY API] Updating published template:', publicLibraryId);
+
+  const requestBody = await buildPublishRequestBody(idea);
+  console.log('📚 [PUBLIC LIBRARY API] Update request body:', JSON.stringify(requestBody, null, 2));
+
+  // If no API key is configured, use mock mode
+  if (!PUBLIC_LIBRARY_API_KEY) {
+    console.log('📚 [PUBLIC LIBRARY API] Running in mock mode (no API key configured)');
+    console.log('📚 [PUBLIC LIBRARY API] Mock template updated successfully');
+    return true;
+  }
+
+  try {
+    // POST to /templates/{public_library_id} to update the template
+    const response = await fetch(`${PUBLIC_LIBRARY_API_URL}/${publicLibraryId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${PUBLIC_LIBRARY_API_KEY}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API responded with status ${response.status}: ${errorText}`);
+    }
+
+    console.log('📚 [PUBLIC LIBRARY API] Template updated successfully');
+    return true;
+  } catch (error) {
+    console.error('📚 [PUBLIC LIBRARY API] Failed to update template:', error);
+    throw error;
+  }
 };
 
 // Get all ideas (filtered by role)
@@ -88,6 +280,11 @@ router.get('/', authenticateToken, async (req, res) => {
       `).all();
     }
 
+    // Fetch departments for each idea
+    for (const idea of ideas) {
+      idea.departments = await getIdeaDepartments(idea.id);
+    }
+
     res.json(ideas);
   } catch (error) {
     console.error('Get ideas error:', error);
@@ -120,6 +317,9 @@ router.get('/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    // Fetch departments for this idea
+    idea.departments = await getIdeaDepartments(idea.id);
+
     const comments = await db.prepare(`
       SELECT c.*, u.username, u.handle
       FROM comments c
@@ -147,54 +347,84 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.post('/', authenticateToken, authorizeRoles('admin'), async (req, res) => {
   try {
     const { 
-      use_case, 
       flow_name,
-      short_description, 
+      summary,
       description, 
-      department, 
-      tags, 
+      department_ids,
+      time_save_per_week,
+      cost_per_year,
+      author,
+      idea_notes,
+      scribe_url,
       reviewer_name,
-      price 
+      price,
+      // Deprecated fields for backward compatibility
+      use_case,
+      short_description,
+      department,
+      tags
     } = req.body;
 
-    if (!use_case) {
-      return res.status(400).json({ error: 'Use case is required' });
+    if (!flow_name) {
+      return res.status(400).json({ error: 'Flow name is required' });
     }
 
     const result = await db.prepare(`
       INSERT INTO ideas (
-        use_case, 
         flow_name,
-        short_description, 
+        summary,
         description, 
-        department, 
-        tags, 
+        time_save_per_week,
+        cost_per_year,
+        author,
+        idea_notes,
+        scribe_url,
         reviewer_name, 
         price, 
         created_by, 
-        status
+        status,
+        use_case,
+        short_description,
+        department,
+        tags
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?)
     `).run(
-      use_case, 
-      flow_name || '',
-      short_description || '', 
+      flow_name,
+      summary || '',
       description || '', 
-      department || '', 
-      tags || '', 
+      time_save_per_week || '',
+      cost_per_year || '',
+      author || 'Activepieces Team',
+      idea_notes || '',
+      scribe_url || '',
       reviewer_name || '', 
       price || 0, 
-      req.user.id
+      req.user.id,
+      use_case || flow_name, // Default use_case to flow_name for backward compatibility
+      short_description || summary || '',
+      department || '',
+      tags || ''
     );
 
-    await logActivity(result.lastInsertRowid, req.user.id, 'created', 'Idea created');
+    const ideaId = result.lastInsertRowid;
+
+    // Set departments if provided
+    if (department_ids && department_ids.length > 0) {
+      await setIdeaDepartments(ideaId, department_ids);
+    }
+
+    await logActivity(ideaId, req.user.id, 'created', 'Template created');
 
     const newIdea = await db.prepare(`
       SELECT i.*, u.username as created_by_name
       FROM ideas i
       LEFT JOIN users u ON i.created_by = u.id
       WHERE i.id = ?
-    `).get(result.lastInsertRowid);
+    `).get(ideaId);
+
+    // Fetch departments for the new idea
+    newIdea.departments = await getIdeaDepartments(ideaId);
 
     // Emit real-time event for new idea
     emitToAll('idea:created', newIdea);
@@ -217,7 +447,9 @@ router.put('/:id', authenticateToken, async (req, res) => {
     }
 
     const { role, id: userId } = req.user;
-    const updates = req.body;
+    const updates = { ...req.body };
+    const department_ids = updates.department_ids;
+    delete updates.department_ids; // Remove from updates object
     const oldStatus = idea.status;
 
     if (role === 'freelancer') {
@@ -233,10 +465,12 @@ router.put('/:id', authenticateToken, async (req, res) => {
       }
     }
 
-    if (Object.keys(updates).length === 0) {
-      return res.status(400).json({ error: 'No valid fields to update' });
+    // Update departments if provided
+    if (department_ids !== undefined) {
+      await setIdeaDepartments(ideaId, department_ids);
     }
 
+    if (Object.keys(updates).length > 0) {
     const fields = Object.keys(updates);
     const values = Object.values(updates);
     const setClause = fields.map((field, i) => `${field} = $${i + 1}`).join(', ');
@@ -246,6 +480,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
       SET ${setClause}, updated_at = CURRENT_TIMESTAMP
       WHERE id = $${fields.length + 1}
     `).run(...values, ideaId);
+    }
 
     await logActivity(ideaId, userId, 'updated', JSON.stringify(updates));
 
@@ -264,28 +499,46 @@ router.put('/:id', authenticateToken, async (req, res) => {
         }
       }
       
+      // Handle publishing to Public Library
       if (updates.status === 'published') {
         try {
-          const publicLibraryId = await publishToPublicLibrary(idea);
-          await db.prepare(`
-            UPDATE ideas SET public_library_id = ? WHERE id = ?
-          `).run(publicLibraryId, ideaId);
+          // Get the latest idea data with all fields
+          const currentIdea = await db.prepare('SELECT * FROM ideas WHERE id = ?').get(ideaId);
+          
+          if (currentIdea.public_library_id) {
+            // Template was previously published, republish it (change status back to published)
+            await republishInPublicLibrary(currentIdea.public_library_id);
+            console.log('📚 Template republished successfully');
+          } else {
+            // First time publishing, create new entry in Public Library
+            const publicLibraryId = await publishToPublicLibrary(currentIdea);
+            await db.prepare(`
+              UPDATE ideas SET public_library_id = ? WHERE id = ?
+            `).run(publicLibraryId, ideaId);
+            console.log('📚 Template published successfully with ID:', publicLibraryId);
+          }
         } catch (error) {
           console.error('Failed to publish to Public Library:', error);
+          // Don't fail the whole operation, just log the error
         }
       }
       
+      // Handle archiving in Public Library
       if (updates.status === 'archived' && idea.public_library_id) {
         try {
-          await removeFromPublicLibrary(idea.public_library_id);
-          await db.prepare(`
-            UPDATE ideas SET public_library_id = NULL WHERE id = ?
-          `).run(ideaId);
+          // Archive the template (don't delete, just change status)
+          await archiveInPublicLibrary(idea.public_library_id);
+          console.log('📚 Template archived in Public Library');
+          // Note: We keep the public_library_id so we can republish later
         } catch (error) {
-          console.error('Failed to remove from Public Library:', error);
+          console.error('Failed to archive in Public Library:', error);
+          // Don't fail the whole operation, just log the error
         }
       }
     }
+    
+    // Note: Updates to published templates are NOT automatically synced to Public Library.
+    // Use the POST /ideas/:id/sync-public-library endpoint to manually sync.
 
     const updatedIdea = await db.prepare(`
       SELECT i.*, 
@@ -298,6 +551,9 @@ router.put('/:id', authenticateToken, async (req, res) => {
       LEFT JOIN users u2 ON i.assigned_to = u2.id
       WHERE i.id = ?
     `).get(ideaId);
+
+    // Fetch departments for the updated idea
+    updatedIdea.departments = await getIdeaDepartments(ideaId);
 
     // Emit real-time update to all users and anyone watching this idea
     emitToAll('idea:updated', updatedIdea);
@@ -590,6 +846,139 @@ router.get('/users/freelancers', authenticateToken, authorizeRoles('admin'), asy
   } catch (error) {
     console.error('Get freelancers error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get all admins (for reviewer dropdown)
+router.get('/users/admins', authenticateToken, async (req, res) => {
+  try {
+    const admins = await db.prepare(`
+      SELECT id, username, email
+      FROM users
+      WHERE role = 'admin'
+      ORDER BY username
+    `).all();
+
+    res.json(admins);
+  } catch (error) {
+    console.error('Get admins error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Upload flow JSON for a template
+router.post('/:id/flow-json', authenticateToken, async (req, res) => {
+  try {
+    const ideaId = req.params.id;
+    const { flow_json } = req.body;
+
+    const idea = await db.prepare('SELECT * FROM ideas WHERE id = ?').get(ideaId);
+
+    if (!idea) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    // Check permissions - admin or assigned freelancer can upload
+    const { role, id: userId } = req.user;
+    if (role === 'freelancer' && idea.assigned_to !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Validate JSON
+    if (flow_json) {
+      try {
+        JSON.parse(flow_json);
+      } catch (parseError) {
+        return res.status(400).json({ error: 'Invalid JSON format' });
+      }
+    }
+
+    await db.prepare(`
+      UPDATE ideas SET flow_json = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(flow_json || null, ideaId);
+
+    await logActivity(ideaId, userId, 'updated', 'Flow JSON uploaded');
+
+    const updatedIdea = await db.prepare(`
+      SELECT i.*, 
+             u1.username as created_by_name,
+             u1.handle as created_by_handle,
+             u2.username as assigned_to_name,
+             u2.handle as assigned_to_handle
+      FROM ideas i
+      LEFT JOIN users u1 ON i.created_by = u1.id
+      LEFT JOIN users u2 ON i.assigned_to = u2.id
+      WHERE i.id = ?
+    `).get(ideaId);
+
+    updatedIdea.departments = await getIdeaDepartments(ideaId);
+
+    emitToAll('idea:updated', updatedIdea);
+    emitToIdea(ideaId, 'idea:updated', updatedIdea);
+
+    res.json(updatedIdea);
+  } catch (error) {
+    console.error('Upload flow JSON error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get publish request preview (shows what would be sent to Public Library API)
+router.get('/:id/publish-preview', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const ideaId = req.params.id;
+    const idea = await db.prepare('SELECT * FROM ideas WHERE id = ?').get(ideaId);
+
+    if (!idea) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    const publishRequestBody = await buildPublishRequestBody(idea);
+    
+    res.json({
+      template_id: idea.id,
+      public_library_id: idea.public_library_id,
+      is_published: idea.status === 'published',
+      publish_request: publishRequestBody
+    });
+  } catch (error) {
+    console.error('Publish preview error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Sync/update a published template in Public Library (admin only)
+router.post('/:id/sync-public-library', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const ideaId = req.params.id;
+    const idea = await db.prepare('SELECT * FROM ideas WHERE id = ?').get(ideaId);
+
+    if (!idea) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    if (!idea.public_library_id) {
+      return res.status(400).json({ error: 'Template is not published yet. Use status change to publish first.' });
+    }
+
+    if (idea.status !== 'published') {
+      return res.status(400).json({ error: 'Template is not in published status. Current status: ' + idea.status });
+    }
+
+    // Update the template in Public Library
+    await updatePublicLibraryTemplate(idea.public_library_id, idea);
+
+    await logActivity(ideaId, req.user.id, 'synced', 'Template synced with Public Library');
+
+    res.json({
+      success: true,
+      message: 'Template successfully synced with Public Library',
+      public_library_id: idea.public_library_id
+    });
+  } catch (error) {
+    console.error('Sync to Public Library error:', error);
+    res.status(500).json({ error: 'Failed to sync template with Public Library: ' + error.message });
   }
 });
 

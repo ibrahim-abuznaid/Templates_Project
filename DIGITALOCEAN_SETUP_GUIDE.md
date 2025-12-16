@@ -78,7 +78,7 @@ Copy the output - you'll use it below.
 | Key | Value | Type | Encrypt? |
 |-----|-------|------|----------|
 | `NODE_ENV` | `production` | Plain Text | No |
-| `PORT` | `8080` | Plain Text | No |
+| `` | `8080` | Plain Text | No |
 | `JWT_SECRET` | `[paste generated secret]` | Secret | Yes |
 | `FRONTEND_URL` | `${APP_URL}` | Plain Text | No |
 | `DATABASE_URL` | `${db.DATABASE_URL}` | Plain Text | No |

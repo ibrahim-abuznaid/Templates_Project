@@ -19,27 +19,42 @@ export interface User {
   created_at?: string;
 }
 
+export interface Department {
+  id: number;
+  name: string;
+  description?: string;
+  display_order: number;
+}
+
 export interface Idea {
   id: number;
-  use_case: string;
   flow_name: string | null;
-  short_description: string | null;
+  summary: string | null; // Brief summary for public library
   description: string | null;
   setup_guide: string | null;
   template_url: string | null;
-  scribe_url: string | null;
-  department: string | null;
-  tags: string | null;
-  reviewer_name: string | null;
-  price: number;
+  scribe_url: string | null; // Sent as blogUrl to API
+  time_save_per_week: string | null; // e.g., "2 hours"
+  cost_per_year: string | null; // e.g., "$150/year"
+  author: string | null; // Template author for public library
+  idea_notes: string | null; // Internal notes about the template idea
+  flow_json: string | null; // JSON string for flow data
+  reviewer_name: string | null; // Internal only
+  price: number; // Internal only
   status: IdeaStatus;
   assigned_to: number | null;
   assigned_to_name: string | null;
   created_by: number;
   created_by_name: string;
-  public_library_id: string | null;
+  public_library_id: string | null; // ID returned from publish API
+  departments?: Department[]; // Array of departments
   created_at: string;
   updated_at: string;
+  // Deprecated fields - kept for backward compatibility
+  use_case?: string;
+  short_description?: string | null;
+  department?: string | null;
+  tags?: string | null;
 }
 
 export interface IdeaDetail extends Idea {
@@ -85,14 +100,16 @@ export interface DepartmentSummary {
 export interface DepartmentTemplate {
   department: string;
   template_id: number;
-  use_case: string;
   flow_name: string | null;
-  short_description: string | null;
+  summary: string | null;
   status: IdeaStatus;
   price: number;
   assigned_to: string | null;
   created_at: string;
   updated_at: string;
+  // Deprecated
+  use_case?: string;
+  short_description?: string | null;
 }
 
 // Notification types

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import type { Idea } from '../types';
 import StatusBadge from './StatusBadge';
 import StatusWorkflow from './StatusWorkflow';
-import { Calendar, DollarSign, User } from 'lucide-react';
+import { Calendar, DollarSign, User, Clock, TrendingDown } from 'lucide-react';
 
 interface IdeaCardProps {
   idea: Idea;
@@ -11,6 +11,9 @@ interface IdeaCardProps {
 }
 
 const IdeaCard: React.FC<IdeaCardProps> = ({ idea, isHighlighted = false }) => {
+  // Use summary, fallback to short_description for backward compatibility
+  const description = idea.summary || idea.short_description;
+
   return (
     <Link 
       to={`/ideas/${idea.id}`} 
@@ -19,14 +22,39 @@ const IdeaCard: React.FC<IdeaCardProps> = ({ idea, isHighlighted = false }) => {
       }`}
     >
       <div className="flex justify-between items-start mb-3">
-        <h3 className="text-lg font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">
-          {idea.flow_name || idea.use_case}
-        </h3>
+        <div className="flex-1 min-w-0 mr-2">
+          <h3 className="text-lg font-semibold text-gray-900 group-hover:text-primary-600 transition-colors truncate">
+            {idea.flow_name || 'Untitled Template'}
+          </h3>
+          {idea.public_library_id && (
+            <span className="inline-block mt-1 px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-medium">
+              Published
+            </span>
+          )}
+        </div>
         <StatusBadge status={idea.status} showIcon={true} showTooltip={false} size="sm" />
       </div>
 
-      {idea.short_description && (
-        <p className="text-gray-600 text-sm mb-4 line-clamp-2">{idea.short_description}</p>
+      {description && (
+        <p className="text-gray-600 text-sm mb-4 line-clamp-2">{description}</p>
+      )}
+
+      {/* Time Save & Cost Tags */}
+      {(idea.time_save_per_week || idea.cost_per_year) && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {idea.time_save_per_week && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs">
+              <Clock className="w-3 h-3" />
+              {idea.time_save_per_week}
+            </span>
+          )}
+          {idea.cost_per_year && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 rounded text-xs">
+              <TrendingDown className="w-3 h-3" />
+              {idea.cost_per_year}
+            </span>
+          )}
+        </div>
       )}
 
       {/* Compact Workflow Progress */}
@@ -35,14 +63,22 @@ const IdeaCard: React.FC<IdeaCardProps> = ({ idea, isHighlighted = false }) => {
       </div>
 
       <div className="flex items-center justify-between text-xs mb-3">
-        {idea.department && (
+        <div className="flex flex-wrap gap-1">
+          {idea.departments && idea.departments.length > 0 ? (
+            idea.departments.map((dept) => (
+              <span 
+                key={dept.id}
+                className="inline-block px-2 py-1 font-medium bg-primary-100 text-primary-700 rounded text-xs"
+              >
+                {dept.name}
+              </span>
+            ))
+          ) : idea.department ? (
           <span className="inline-block px-2 py-1 font-medium bg-primary-100 text-primary-700 rounded">
             {idea.department}
           </span>
-        )}
-        {idea.use_case && !idea.flow_name && (
-          <span className="text-gray-500 text-xs">{idea.use_case}</span>
-        )}
+          ) : null}
+        </div>
       </div>
 
       <div className="flex items-center justify-between text-sm text-gray-500 mt-auto">

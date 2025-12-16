@@ -1,4 +1,4 @@
-import type { AuthResponse, User, Idea, IdeaDetail, DepartmentSummary, DepartmentTemplate, Notification, Invitation, UserBasic, Invoice, InvoiceItem, PendingInvoiceSummary, Blocker, BlockerType, BlockerStatus, BlockerPriority, BlockerDiscussion } from '../types';
+import type { AuthResponse, User, Idea, IdeaDetail, Department, DepartmentSummary, DepartmentTemplate, Notification, Invitation, UserBasic, Invoice, InvoiceItem, PendingInvoiceSummary, Blocker, BlockerType, BlockerStatus, BlockerPriority, BlockerDiscussion } from '../types';
 import axios from 'axios';
 
 // Use environment variable in production, proxy in development
@@ -54,18 +54,26 @@ export const ideasApi = {
     api.get<IdeaDetail>(`/ideas/${id}`),
   
   create: (data: { 
-    use_case: string; 
-    flow_name?: string;
-    short_description?: string; 
+    flow_name: string;
+    summary?: string;
     description?: string; 
+    department_ids?: number[];
+    time_save_per_week?: string;
+    cost_per_year?: string;
+    author?: string;
+    idea_notes?: string;
+    scribe_url?: string;
+    reviewer_name?: string;
+    price?: number;
+    // Deprecated fields for backward compatibility
+    use_case?: string;
+    short_description?: string;
     department?: string;
     tags?: string;
-    reviewer_name?: string;
-    price?: number 
   }) =>
     api.post<Idea>('/ideas', data),
   
-  update: (id: number, data: Partial<Idea>) =>
+  update: (id: number, data: Partial<Idea> & { department_ids?: number[] }) =>
     api.put<Idea>(`/ideas/${id}`, data),
   
   delete: (id: number) =>
@@ -82,6 +90,36 @@ export const ideasApi = {
   
   getFreelancers: () =>
     api.get<User[]>('/ideas/users/freelancers'),
+
+  getAdmins: () =>
+    api.get<User[]>('/ideas/users/admins'),
+
+  // Upload flow JSON for a template
+  uploadFlowJson: (id: number, flowJson: string) =>
+    api.post<Idea>(`/ideas/${id}/flow-json`, { flow_json: flowJson }),
+
+  // Get publish preview (shows what would be sent to Public Library API)
+  getPublishPreview: (id: number) =>
+    api.get<{
+      template_id: number;
+      public_library_id: string | null;
+      is_published: boolean;
+      publish_request: any;
+    }>(`/ideas/${id}/publish-preview`),
+
+  // Sync a published template with Public Library (force update)
+  syncWithPublicLibrary: (id: number) =>
+    api.post<{
+      success: boolean;
+      message: string;
+      public_library_id: string;
+    }>(`/ideas/${id}/sync-public-library`),
+};
+
+// Departments endpoints
+export const departmentsApi = {
+  getAll: () =>
+    api.get<Department[]>('/departments'),
 };
 
 // Department Views endpoints

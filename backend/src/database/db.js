@@ -171,8 +171,9 @@ export async function initDatabase() {
     -- Ideas/Templates table
     CREATE TABLE IF NOT EXISTS ideas (
       id SERIAL PRIMARY KEY,
-      use_case TEXT NOT NULL,
-      flow_name TEXT,
+      use_case TEXT,
+      flow_name TEXT NOT NULL DEFAULT '',
+      summary TEXT,
       short_description TEXT,
       description TEXT,
       setup_guide TEXT,
@@ -180,6 +181,11 @@ export async function initDatabase() {
       scribe_url TEXT,
       department VARCHAR(255),
       tags TEXT,
+      time_save_per_week VARCHAR(100),
+      cost_per_year VARCHAR(100),
+      author VARCHAR(255) DEFAULT 'Activepieces Team',
+      idea_notes TEXT,
+      flow_json TEXT,
       reviewer_name VARCHAR(255),
       price DECIMAL(10, 2) DEFAULT 0,
       status VARCHAR(50) DEFAULT 'new' CHECK (status IN ('new', 'assigned', 'in_progress', 'submitted', 'needs_fixes', 'reviewed', 'published', 'archived')),
@@ -304,11 +310,90 @@ export async function initDatabase() {
     await pool.query(schema);
     console.log('✅ PostgreSQL schema initialized');
     
+    // Add new columns if they don't exist (for existing databases)
+    await migrateNewColumns();
+    
     // Seed default users if they don't exist
     await seedDefaultUsers();
   } catch (err) {
     console.error('❌ Error creating PostgreSQL schema:', err.message);
     throw err;
+  }
+}
+
+// ============================================
+// Migration for New Template Fields
+// ============================================
+
+async function migrateNewColumns() {
+  try {
+    // Check which columns exist
+    const columnCheck = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'ideas' 
+      AND column_name IN ('summary', 'time_save_per_week', 'cost_per_year', 'author', 'idea_notes', 'flow_json')
+    `);
+    
+    const existingColumns = new Set(columnCheck.rows.map(r => r.column_name));
+    let addedColumns = [];
+
+    // Add summary column
+    if (!existingColumns.has('summary')) {
+      await pool.query('ALTER TABLE ideas ADD COLUMN IF NOT EXISTS summary TEXT');
+      addedColumns.push('summary');
+    }
+
+    // Add time_save_per_week column
+    if (!existingColumns.has('time_save_per_week')) {
+      await pool.query('ALTER TABLE ideas ADD COLUMN IF NOT EXISTS time_save_per_week VARCHAR(100)');
+      addedColumns.push('time_save_per_week');
+    }
+
+    // Add cost_per_year column
+    if (!existingColumns.has('cost_per_year')) {
+      await pool.query('ALTER TABLE ideas ADD COLUMN IF NOT EXISTS cost_per_year VARCHAR(100)');
+      addedColumns.push('cost_per_year');
+    }
+
+    // Add author column
+    if (!existingColumns.has('author')) {
+      await pool.query("ALTER TABLE ideas ADD COLUMN IF NOT EXISTS author VARCHAR(255) DEFAULT 'Activepieces Team'");
+      addedColumns.push('author');
+    }
+
+    // Add idea_notes column
+    if (!existingColumns.has('idea_notes')) {
+      await pool.query('ALTER TABLE ideas ADD COLUMN IF NOT EXISTS idea_notes TEXT');
+      addedColumns.push('idea_notes');
+    }
+
+    // Add flow_json column
+    if (!existingColumns.has('flow_json')) {
+      await pool.query('ALTER TABLE ideas ADD COLUMN IF NOT EXISTS flow_json TEXT');
+      addedColumns.push('flow_json');
+    }
+
+    // Make use_case nullable (it was required before)
+    await pool.query('ALTER TABLE ideas ALTER COLUMN use_case DROP NOT NULL').catch(() => {
+      // Ignore if already nullable
+    });
+
+    // Migrate existing data: copy short_description to summary where summary is null
+    if (addedColumns.includes('summary')) {
+      await pool.query(`
+        UPDATE ideas 
+        SET summary = short_description 
+        WHERE summary IS NULL AND short_description IS NOT NULL
+      `);
+    }
+
+    if (addedColumns.length > 0) {
+      console.log(`📝 Added new columns to ideas table: ${addedColumns.join(', ')}`);
+    }
+  } catch (err) {
+    console.error('⚠️  Migration warning:', err.message);
+    // Don't throw - allow startup to continue
   }
 }
 
