@@ -78,9 +78,7 @@ const server = httpServer.listen(PORT, () => {
   console.log(`\n🚀 Server is running on http://localhost:${PORT}`);
   console.log(`📊 API endpoints available at http://localhost:${PORT}/api`);
   console.log(`🔌 WebSocket enabled for real-time updates`);
-  console.log(`\n💡 Default login credentials:`);
-  console.log(`   Admin: admin / admin123`);
-  console.log(`   Freelancer: freelancer / freelancer123\n`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}\n`);
 });
 
 // Graceful shutdown handling

@@ -86,19 +86,6 @@ const Login: React.FC = () => {
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <p className="text-xs text-gray-500 text-center mb-3">Demo Credentials:</p>
-            <div className="space-y-2 text-xs text-gray-600">
-              <div className="flex justify-between p-2 bg-gray-50 rounded">
-                <span className="font-medium">Reviewer:</span>
-                <span>admin / admin123</span>
-              </div>
-              <div className="flex justify-between p-2 bg-gray-50 rounded">
-                <span className="font-medium">Template Creator:</span>
-                <span>freelancer / freelancer123</span>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

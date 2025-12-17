@@ -472,8 +472,12 @@ async function seedDefaultUsers() {
     if (userCount === 0) {
       console.log('📝 Seeding default users...');
 
-      const adminPassword = await bcrypt.hash('admin123', 10);
-      const freelancerPassword = await bcrypt.hash('freelancer123', 10);
+      // Use environment variables for default passwords, with fallbacks for development
+      const defaultAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'admin123';
+      const defaultFreelancerPassword = process.env.DEFAULT_FREELANCER_PASSWORD || 'freelancer123';
+
+      const adminPassword = await bcrypt.hash(defaultAdminPassword, 10);
+      const freelancerPassword = await bcrypt.hash(defaultFreelancerPassword, 10);
 
       await pool.query(
         'INSERT INTO users (username, email, password, handle, role) VALUES ($1, $2, $3, $4, $5)',
@@ -485,9 +489,7 @@ async function seedDefaultUsers() {
         ['freelancer', 'freelancer@example.com', freelancerPassword, 'freelancer', 'freelancer']
       );
 
-      console.log('✅ Default users created:');
-      console.log('   Admin: admin / admin123');
-      console.log('   Freelancer: freelancer / freelancer123');
+      console.log('✅ Default users created (change passwords after first login!)');
       
       // Seed example templates after creating users
       await seedExampleTemplates();
