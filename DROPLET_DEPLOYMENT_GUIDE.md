@@ -197,17 +197,17 @@ NODE_ENV=production
 PORT=3001
 
 # Database (Update with your actual values!)
-DATABASE_URL=postgresql://template_user:YOUR_SECURE_PASSWORD_HERE@localhost:5432/template_management
+DATABASE_URL=postgresql://template_user:vSRfe^K/Wz9yf3D@localhost:5432/template_management
 
 # JWT Secret (Generate a new one!)
-JWT_SECRET=YOUR_64_CHARACTER_SECRET_HERE
+JWT_SECRET=c7bd38d7b7aea295caf944565bae95178a4ff0da7646c97c126173a516b2fc3c0306759aaf4a8ac82e3e14b8bf9949f0414a84a477b2d61f3a9d837ae6d5eb6d
 
 # Frontend URL (Update with your domain!)
 FRONTEND_URL=https://yourdomain.com
 
 # Default User Passwords (CHANGE THESE! Only used when seeding fresh database)
-DEFAULT_ADMIN_PASSWORD=YOUR_STRONG_ADMIN_PASSWORD
-DEFAULT_FREELANCER_PASSWORD=YOUR_STRONG_FREELANCER_PASSWORD
+DEFAULT_ADMIN_PASSWORD=vSRfe^K/Wz9yf3D
+DEFAULT_FREELANCER_PASSWORD=vSRfe^K/Wz9yf3D
 EOF
 
 # Secure the file

@@ -112,6 +112,10 @@ NODE_ENV=development
 DATABASE_URL=postgresql://template_user:your_password@localhost:5432/template_management
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 FRONTEND_URL=http://localhost:5173
+
+# Activepieces Public Library API (optional - runs in mock mode if not set)
+PUBLIC_LIBRARY_API_URL=https://cloud.activepieces.com/api/v1/admin/templates
+PUBLIC_LIBRARY_API_KEY=your-templates-api-key-here
 ```
 
 ### 5. Start the Application
@@ -191,10 +195,13 @@ Templates_Project/
 - `GET /api/ideas/:id` - Get idea details
 - `POST /api/ideas` - Create new idea
 - `PUT /api/ideas/:id` - Update idea
-- `DELETE /api/ideas/:id` - Delete idea
+- `DELETE /api/ideas/:id` - Delete idea (also deletes from Public Library if published)
 - `POST /api/ideas/:id/assign` - Assign idea
 - `POST /api/ideas/:id/self-assign` - Self-assign
 - `POST /api/ideas/:id/comments` - Add comment
+- `POST /api/ideas/:id/flow-json` - Upload flow JSON for template
+- `GET /api/ideas/:id/publish-preview` - Preview what will be sent to Public Library
+- `POST /api/ideas/:id/sync-public-library` - Sync published template with Public Library
 
 ### Views/Departments
 - `GET /api/views/departments` - Get department summaries
@@ -235,6 +242,29 @@ See **[DIGITALOCEAN_DEPLOYMENT.md](./DIGITALOCEAN_DEPLOYMENT.md)** for step-by-s
 | `JWT_SECRET` | Strong random string (64+ chars) |
 | `FRONTEND_URL` | Your frontend URL |
 | `VITE_API_URL` | Backend API URL (for frontend build) |
+| `PUBLIC_LIBRARY_API_URL` | Activepieces Public Library API URL (default: `https://cloud.activepieces.com/api/v1/admin/templates`) |
+| `PUBLIC_LIBRARY_API_KEY` | API key for Activepieces Public Library (templates-api-key) |
+
+### Activepieces Public Library Integration
+
+The application integrates with the [Activepieces](https://cloud.activepieces.com) Public Library API to publish, update, and manage templates. 
+
+**API Endpoints Used:**
+- **Create Template**: `POST /api/v1/admin/templates`
+- **Update Template**: `PATCH /api/v1/admin/templates/{template-id}`
+- **Change Status**: `PATCH /api/v1/admin/templates/{template-id}` (with `status: "PUBLISH"` or `"ARCHIVED"`)
+- **Delete Template**: `DELETE /api/v1/admin/templates/{template-id}`
+
+**Valid Template Categories:**
+- `ANALYTICS`, `COMMUNICATION`, `CONTENT`, `CUSTOMER_SUPPORT`
+- `DEVELOPMENT`, `E_COMMERCE`, `FINANCE`, `HR`
+- `IT_OPERATIONS`, `MARKETING`, `PRODUCTIVITY`, `SALES`
+
+**How It Works:**
+1. When a template status changes to `published`, it's automatically published to the Public Library
+2. When a template is `archived`, it's archived in the Public Library (not deleted)
+3. When a template is deleted locally, it's also deleted from the Public Library
+4. Use the "Sync with Public Library" action to manually update published templates
 
 ---
 

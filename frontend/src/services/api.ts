@@ -104,7 +104,17 @@ export const ideasApi = {
       template_id: number;
       public_library_id: string | null;
       is_published: boolean;
-      publish_request: any;
+      publish_request: {
+        name: string;
+        summary: string;
+        description: string;
+        tags: Array<{ title: string; color: string }>;
+        blogUrl: string;
+        author: string;
+        categories: string[];
+        type: string;
+        flows: any[];
+      };
     }>(`/ideas/${id}/publish-preview`),
 
   // Sync a published template with Public Library (force update)
@@ -114,6 +124,17 @@ export const ideasApi = {
       message: string;
       public_library_id: string;
     }>(`/ideas/${id}/sync-public-library`),
+
+  // Delete a template (also removes from Public Library if published)
+  deleteTemplate: (id: number) =>
+    api.delete<{
+      message: string;
+      deletedRecords: {
+        blockers: number;
+        idea: number;
+        publicLibraryDeleted: boolean;
+      };
+    }>(`/ideas/${id}`),
 };
 
 // Departments endpoints

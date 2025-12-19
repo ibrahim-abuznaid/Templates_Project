@@ -10,6 +10,56 @@ export type IdeaStatus =
   | 'published'
   | 'archived';
 
+// Valid template categories from Activepieces Public Library API
+export type TemplateCategory = 
+  | 'ANALYTICS'
+  | 'COMMUNICATION'
+  | 'CONTENT'
+  | 'CUSTOMER_SUPPORT'
+  | 'DEVELOPMENT'
+  | 'E_COMMERCE'
+  | 'FINANCE'
+  | 'HR'
+  | 'IT_OPERATIONS'
+  | 'MARKETING'
+  | 'PRODUCTIVITY'
+  | 'SALES';
+
+// All valid template categories
+export const TEMPLATE_CATEGORIES: TemplateCategory[] = [
+  'ANALYTICS',
+  'COMMUNICATION',
+  'CONTENT',
+  'CUSTOMER_SUPPORT',
+  'DEVELOPMENT',
+  'E_COMMERCE',
+  'FINANCE',
+  'HR',
+  'IT_OPERATIONS',
+  'MARKETING',
+  'PRODUCTIVITY',
+  'SALES'
+];
+
+// Human-readable labels for template categories
+export const TEMPLATE_CATEGORY_LABELS: Record<TemplateCategory, string> = {
+  ANALYTICS: 'Analytics',
+  COMMUNICATION: 'Communication',
+  CONTENT: 'Content',
+  CUSTOMER_SUPPORT: 'Customer Support',
+  DEVELOPMENT: 'Development',
+  E_COMMERCE: 'E-Commerce',
+  FINANCE: 'Finance',
+  HR: 'HR',
+  IT_OPERATIONS: 'IT Operations',
+  MARKETING: 'Marketing',
+  PRODUCTIVITY: 'Productivity',
+  SALES: 'Sales'
+};
+
+// Public Library template status
+export type PublicLibraryStatus = 'PUBLISH' | 'ARCHIVED';
+
 export interface User {
   id: number;
   username: string;

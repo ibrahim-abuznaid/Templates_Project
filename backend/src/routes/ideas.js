@@ -73,8 +73,73 @@ const notifyStatusChange = (idea, newStatus, changedByUserId) => {
 };
 
 // Public Library API configuration
-const PUBLIC_LIBRARY_API_URL = process.env.PUBLIC_LIBRARY_API_URL || 'https://api.activepieces.com/v1/templates';
+// API endpoint: https://cloud.activepieces.com/api/v1/admin/templates
+const PUBLIC_LIBRARY_API_URL = process.env.PUBLIC_LIBRARY_API_URL || 'https://cloud.activepieces.com/api/v1/admin/templates';
 const PUBLIC_LIBRARY_API_KEY = process.env.PUBLIC_LIBRARY_API_KEY || '';
+
+// Valid template categories from Activepieces API
+const VALID_TEMPLATE_CATEGORIES = [
+  'ANALYTICS',
+  'COMMUNICATION',
+  'CONTENT',
+  'CUSTOMER_SUPPORT',
+  'DEVELOPMENT',
+  'E_COMMERCE',
+  'FINANCE',
+  'HR',
+  'IT_OPERATIONS',
+  'MARKETING',
+  'PRODUCTIVITY',
+  'SALES'
+];
+
+// Map department names to valid API categories
+const mapDepartmentToCategory = (departmentName) => {
+  if (!departmentName) return null;
+  
+  const normalized = departmentName.toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
+  
+  // Direct match
+  if (VALID_TEMPLATE_CATEGORIES.includes(normalized)) {
+    return normalized;
+  }
+  
+  // Common mappings
+  const mappings = {
+    'CUSTOMER_SERVICE': 'CUSTOMER_SUPPORT',
+    'SUPPORT': 'CUSTOMER_SUPPORT',
+    'HUMAN_RESOURCES': 'HR',
+    'DEV': 'DEVELOPMENT',
+    'ENGINEERING': 'DEVELOPMENT',
+    'ECOMMERCE': 'E_COMMERCE',
+    'E-COMMERCE': 'E_COMMERCE',
+    'SHOP': 'E_COMMERCE',
+    'STORE': 'E_COMMERCE',
+    'IT': 'IT_OPERATIONS',
+    'OPERATIONS': 'IT_OPERATIONS',
+    'OPS': 'IT_OPERATIONS',
+    'DEVOPS': 'IT_OPERATIONS',
+    'ADVERTISING': 'MARKETING',
+    'ADS': 'MARKETING',
+    'CRM': 'SALES',
+    'QA': 'DEVELOPMENT',
+    'TESTING': 'DEVELOPMENT',
+    'SECURITY': 'IT_OPERATIONS',
+    'DATA': 'ANALYTICS',
+    'REPORTING': 'ANALYTICS',
+    'DOCS': 'CONTENT',
+    'DOCUMENTATION': 'CONTENT',
+    'WRITING': 'CONTENT',
+    'EMAIL': 'COMMUNICATION',
+    'MESSAGING': 'COMMUNICATION',
+    'CHAT': 'COMMUNICATION',
+    'AUTOMATION': 'PRODUCTIVITY',
+    'WORKFLOW': 'PRODUCTIVITY',
+    'GENERAL': 'PRODUCTIVITY'
+  };
+  
+  return mappings[normalized] || 'PRODUCTIVITY'; // Default to PRODUCTIVITY
+};
 
 // Build the publish request body based on the template data
 const buildPublishRequestBody = async (idea) => {
@@ -104,11 +169,21 @@ const buildPublishRequestBody = async (idea) => {
     });
   }
 
-  // Get departments for this idea and use them as categories
+  // Get departments for this idea and map them to valid API categories
   const departments = await getIdeaDepartments(idea.id);
-  const categories = departments.length > 0 
-    ? departments.map(d => d.name.toUpperCase().replace(/\s+/g, '_'))
-    : ['OTHER'];
+  let categories = [];
+  
+  if (departments.length > 0) {
+    // Map each department to a valid category
+    categories = departments
+      .map(d => mapDepartmentToCategory(d.name))
+      .filter((cat, index, arr) => cat && arr.indexOf(cat) === index); // Remove nulls and duplicates
+  }
+  
+  // Default to PRODUCTIVITY if no valid categories found
+  if (categories.length === 0) {
+    categories = ['PRODUCTIVITY'];
+  }
 
   return {
     name: idea.flow_name || 'Untitled Template',
@@ -123,7 +198,8 @@ const buildPublishRequestBody = async (idea) => {
   };
 };
 
-// Publish template to Public Library API
+// Publish template to Public Library API (Create Official Template)
+// POST https://cloud.activepieces.com/api/v1/admin/templates
 const publishToPublicLibrary = async (idea) => {
   console.log('📚 [PUBLIC LIBRARY API] Publishing template:', {
     id: idea.id,
@@ -146,7 +222,7 @@ const publishToPublicLibrary = async (idea) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${PUBLIC_LIBRARY_API_KEY}`
+        'templates-api-key': PUBLIC_LIBRARY_API_KEY
       },
       body: JSON.stringify(requestBody)
     });
@@ -165,25 +241,28 @@ const publishToPublicLibrary = async (idea) => {
   }
 };
 
-// Change template status in Public Library (archive/republish)
+// Change template status in Public Library (PUBLISH/ARCHIVED)
+// PATCH https://cloud.activepieces.com/api/v1/admin/templates/{template-id}
 const changePublicLibraryStatus = async (publicLibraryId, status) => {
-  console.log('📚 [PUBLIC LIBRARY API] Changing status for template:', publicLibraryId, 'to:', status);
+  // Status should be 'PUBLISH' or 'ARCHIVED' (not 'PUBLISHED')
+  const apiStatus = status === 'PUBLISHED' ? 'PUBLISH' : status;
+  console.log('📚 [PUBLIC LIBRARY API] Changing status for template:', publicLibraryId, 'to:', apiStatus);
 
   // If no API key is configured, use mock mode
   if (!PUBLIC_LIBRARY_API_KEY) {
     console.log('📚 [PUBLIC LIBRARY API] Running in mock mode (no API key configured)');
-    console.log('📚 [PUBLIC LIBRARY API] Mock status changed to:', status);
+    console.log('📚 [PUBLIC LIBRARY API] Mock status changed to:', apiStatus);
     return true;
   }
 
   try {
-    const response = await fetch(`${PUBLIC_LIBRARY_API_URL}/${publicLibraryId}/status`, {
+    const response = await fetch(`${PUBLIC_LIBRARY_API_URL}/${publicLibraryId}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${PUBLIC_LIBRARY_API_KEY}`
+        'templates-api-key': PUBLIC_LIBRARY_API_KEY
       },
-      body: JSON.stringify({ status: status }) // 'PUBLISHED' or 'ARCHIVED'
+      body: JSON.stringify({ status: apiStatus })
     });
 
     if (!response.ok) {
@@ -206,14 +285,18 @@ const archiveInPublicLibrary = async (publicLibraryId) => {
 
 // Republish template in Public Library
 const republishInPublicLibrary = async (publicLibraryId) => {
-  return changePublicLibraryStatus(publicLibraryId, 'PUBLISHED');
+  return changePublicLibraryStatus(publicLibraryId, 'PUBLISH');
 };
 
-// Update published template in Public Library
+// Update published template in Public Library (Update Official Template)
+// PATCH https://cloud.activepieces.com/api/v1/admin/templates/{template-id}
 const updatePublicLibraryTemplate = async (publicLibraryId, idea) => {
   console.log('📚 [PUBLIC LIBRARY API] Updating published template:', publicLibraryId);
 
   const requestBody = await buildPublishRequestBody(idea);
+  // Remove 'type' field for updates as it's only for creation
+  delete requestBody.type;
+  
   console.log('📚 [PUBLIC LIBRARY API] Update request body:', JSON.stringify(requestBody, null, 2));
 
   // If no API key is configured, use mock mode
@@ -224,12 +307,12 @@ const updatePublicLibraryTemplate = async (publicLibraryId, idea) => {
   }
 
   try {
-    // POST to /templates/{public_library_id} to update the template
+    // PATCH to /templates/{public_library_id} to update the template
     const response = await fetch(`${PUBLIC_LIBRARY_API_URL}/${publicLibraryId}`, {
-      method: 'POST',
+      method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${PUBLIC_LIBRARY_API_KEY}`
+        'templates-api-key': PUBLIC_LIBRARY_API_KEY
       },
       body: JSON.stringify(requestBody)
     });
@@ -243,6 +326,39 @@ const updatePublicLibraryTemplate = async (publicLibraryId, idea) => {
     return true;
   } catch (error) {
     console.error('📚 [PUBLIC LIBRARY API] Failed to update template:', error);
+    throw error;
+  }
+};
+
+// Delete template from Public Library
+// DELETE https://cloud.activepieces.com/api/v1/admin/templates/{template-id}
+const deleteFromPublicLibrary = async (publicLibraryId) => {
+  console.log('📚 [PUBLIC LIBRARY API] Deleting template:', publicLibraryId);
+
+  // If no API key is configured, use mock mode
+  if (!PUBLIC_LIBRARY_API_KEY) {
+    console.log('📚 [PUBLIC LIBRARY API] Running in mock mode (no API key configured)');
+    console.log('📚 [PUBLIC LIBRARY API] Mock template deleted successfully');
+    return true;
+  }
+
+  try {
+    const response = await fetch(`${PUBLIC_LIBRARY_API_URL}/${publicLibraryId}`, {
+      method: 'DELETE',
+      headers: {
+        'templates-api-key': PUBLIC_LIBRARY_API_KEY
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API responded with status ${response.status}: ${errorText}`);
+    }
+
+    console.log('📚 [PUBLIC LIBRARY API] Template deleted successfully');
+    return true;
+  } catch (error) {
+    console.error('📚 [PUBLIC LIBRARY API] Failed to delete template:', error);
     throw error;
   }
 };
@@ -775,10 +891,23 @@ router.delete('/:id', authenticateToken, authorizeRoles('admin'), async (req, re
   try {
     const ideaId = req.params.id;
     
-    // Check if idea exists
-    const idea = await db.prepare('SELECT id FROM ideas WHERE id = ?').get(ideaId);
+    // Check if idea exists and get public_library_id
+    const idea = await db.prepare('SELECT id, public_library_id, flow_name FROM ideas WHERE id = ?').get(ideaId);
     if (!idea) {
       return res.status(404).json({ error: 'Idea not found' });
+    }
+
+    // If the template was published to Public Library, delete it from there first
+    let publicLibraryDeleted = false;
+    if (idea.public_library_id) {
+      try {
+        await deleteFromPublicLibrary(idea.public_library_id);
+        publicLibraryDeleted = true;
+        console.log('📚 Template deleted from Public Library:', idea.public_library_id);
+      } catch (error) {
+        console.error('📚 Failed to delete from Public Library:', error);
+        // Continue with local deletion even if public library deletion fails
+      }
     }
 
     // CASCADE DELETE: Delete all related records
@@ -806,7 +935,10 @@ router.delete('/:id', authenticateToken, authorizeRoles('admin'), async (req, re
     // 6. Delete invoice items (PostgreSQL schema has ON DELETE CASCADE)
     await db.prepare('DELETE FROM invoice_items WHERE idea_id = ?').run(ideaId);
     
-    // 7. Finally, delete the idea itself
+    // 7. Delete idea departments
+    await db.prepare('DELETE FROM idea_departments WHERE idea_id = ?').run(ideaId);
+    
+    // 8. Finally, delete the idea itself
     const result = await db.prepare('DELETE FROM ideas WHERE id = ?').run(ideaId);
 
     if (result.changes === 0) {
@@ -820,7 +952,8 @@ router.delete('/:id', authenticateToken, authorizeRoles('admin'), async (req, re
       message: 'Idea deleted successfully',
       deletedRecords: {
         blockers: blockerIds.length,
-        idea: ideaId
+        idea: ideaId,
+        publicLibraryDeleted: publicLibraryDeleted
       }
     });
   } catch (error) {
