@@ -19,7 +19,7 @@ const QuickPublish: React.FC = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [loading, setLoading] = useState(false);
+  // Loading state reserved for future use
   const [publishing, setPublishing] = useState(false);
   const [result, setResult] = useState<{
     success: boolean;

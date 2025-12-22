@@ -451,7 +451,7 @@ const IdeaDetail: React.FC = () => {
       onConfirm: async () => {
         try {
           setDeletingFromPublicLibrary(true);
-          const response = await ideasApi.deleteFromPublicLibrary(Number(id));
+          await ideasApi.deleteFromPublicLibrary(Number(id));
           showModal({
             type: 'success',
             title: 'Deleted from Public Library',
@@ -521,7 +521,7 @@ const IdeaDetail: React.FC = () => {
         confirmText: 'Publish',
         onConfirm: async () => {
           try {
-            const response = await ideasApi.update(Number(id), { status: newStatus });
+            await ideasApi.update(Number(id), { status: newStatus });
             loadIdea();
             
             // Show success message
