@@ -11,6 +11,7 @@ import DepartmentView from './pages/DepartmentView';
 import InvoiceManagement from './pages/InvoiceManagement';
 import MyEarnings from './pages/MyEarnings';
 import BlockersOverview from './pages/BlockersOverview';
+import QuickPublish from './pages/QuickPublish';
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -95,6 +96,16 @@ const AppRoutes: React.FC = () => {
           <PrivateRoute>
             <Layout>
               <BlockersOverview />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/quick-publish"
+        element={
+          <PrivateRoute>
+            <Layout>
+              <QuickPublish />
             </Layout>
           </PrivateRoute>
         }

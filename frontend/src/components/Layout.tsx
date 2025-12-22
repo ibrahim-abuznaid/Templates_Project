@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle } from 'lucide-react';
+import { LogOut, User, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle, Zap } from 'lucide-react';
 import NotificationsInbox from './NotificationsInbox';
 import InviteUserModal from './InviteUserModal';
 
@@ -70,6 +70,20 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <AlertTriangle className="w-4 h-4" />
                     <span>Blockers</span>
                   </Link>
+
+                  {isAdmin && (
+                    <Link
+                      to="/quick-publish"
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                        isActive('/quick-publish')
+                          ? 'bg-amber-100 text-amber-700 font-medium'
+                          : 'text-amber-600 hover:bg-amber-50'
+                      }`}
+                    >
+                      <Zap className="w-4 h-4" />
+                      <span>Quick Publish</span>
+                    </Link>
+                  )}
 
                   {isAdmin ? (
                     <Link

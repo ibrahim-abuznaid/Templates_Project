@@ -1254,6 +1254,141 @@ router.post('/:id/sync-public-library', authenticateToken, authorizeRoles('admin
   }
 });
 
+// Quick Publish - Create and publish template in one step (admin only)
+// This is a temporary/convenience endpoint to quickly import templates from external sources
+router.post('/quick-publish', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const { 
+      flow_name,
+      summary,
+      description, 
+      department_ids,
+      time_save_per_week,
+      cost_per_year,
+      author,
+      idea_notes,
+      scribe_url,
+      reviewer_name,
+      price,
+      assigned_to, // The user who created the template (freelancer)
+      flow_json    // The flow JSON to publish
+    } = req.body;
+
+    if (!flow_name) {
+      return res.status(400).json({ error: 'Flow name is required' });
+    }
+
+    if (!flow_json) {
+      return res.status(400).json({ error: 'Flow JSON is required' });
+    }
+
+    // Validate and extract flows from the JSON
+    const result = extractFlowsFromJson(flow_json);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    // Store flows in our format
+    const storageData = JSON.stringify({
+      _flowCount: result.flows.length,
+      flows: result.flows
+    });
+
+    // Create the template with 'published' status directly
+    const insertResult = await db.prepare(`
+      INSERT INTO ideas (
+        flow_name,
+        summary,
+        description, 
+        time_save_per_week,
+        cost_per_year,
+        author,
+        idea_notes,
+        scribe_url,
+        reviewer_name, 
+        price, 
+        created_by, 
+        assigned_to,
+        flow_json,
+        status
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published')
+    `).run(
+      flow_name,
+      summary || '',
+      description || '', 
+      time_save_per_week || '',
+      cost_per_year || '',
+      author || 'Activepieces Team',
+      idea_notes || '',
+      scribe_url || '',
+      reviewer_name || '', 
+      price || 0, 
+      req.user.id,
+      assigned_to || null,
+      storageData
+    );
+
+    const ideaId = insertResult.lastInsertRowid;
+
+    // Set departments if provided
+    if (department_ids && department_ids.length > 0) {
+      await setIdeaDepartments(ideaId, department_ids);
+    }
+
+    // Get the full idea for publishing
+    const idea = await db.prepare('SELECT * FROM ideas WHERE id = ?').get(ideaId);
+
+    // Publish to Public Library
+    let publicLibraryId = null;
+    let publishError = null;
+    
+    try {
+      publicLibraryId = await publishToPublicLibrary(idea);
+      
+      // Update the template with the public library ID
+      await db.prepare(`
+        UPDATE ideas SET public_library_id = ? WHERE id = ?
+      `).run(publicLibraryId, ideaId);
+      
+      console.log('📚 Quick publish: Template published with ID:', publicLibraryId);
+    } catch (error) {
+      console.error('📚 Quick publish: Failed to publish to Public Library:', error);
+      publishError = error.message;
+      // Template is still created locally, just not published
+    }
+
+    await logActivity(ideaId, req.user.id, 'quick_published', 
+      `Template quick published${publicLibraryId ? ' (ID: ' + publicLibraryId + ')' : ' (local only)'}`);
+
+    const newIdea = await db.prepare(`
+      SELECT i.*, 
+             u1.username as created_by_name,
+             u2.username as assigned_to_name
+      FROM ideas i
+      LEFT JOIN users u1 ON i.created_by = u1.id
+      LEFT JOIN users u2 ON i.assigned_to = u2.id
+      WHERE i.id = ?
+    `).get(ideaId);
+
+    // Fetch departments for the new idea
+    newIdea.departments = await getIdeaDepartments(ideaId);
+
+    // Emit real-time event for new idea
+    emitToAll('idea:created', newIdea);
+
+    res.status(201).json({
+      ...newIdea,
+      _flowCount: result.flows.length,
+      _publishedToLibrary: !!publicLibraryId,
+      _publishError: publishError
+    });
+  } catch (error) {
+    console.error('Quick publish error:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
 // Delete template from Public Library only (admin only)
 // This removes from Public Library but keeps the template in local system
 router.delete('/:id/public-library', authenticateToken, authorizeRoles('admin'), async (req, res) => {

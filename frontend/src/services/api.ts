@@ -150,6 +150,28 @@ export const ideasApi = {
         publicLibraryDeleted: boolean;
       };
     }>(`/ideas/${id}`),
+
+  // Quick publish - create and publish template in one step
+  quickPublish: (data: {
+    flow_name: string;
+    summary?: string;
+    description?: string;
+    department_ids?: number[];
+    time_save_per_week?: string;
+    cost_per_year?: string;
+    author?: string;
+    idea_notes?: string;
+    scribe_url?: string;
+    reviewer_name?: string;
+    price?: number;
+    assigned_to?: number;
+    flow_json: string;
+  }) =>
+    api.post<Idea & {
+      _flowCount: number;
+      _publishedToLibrary: boolean;
+      _publishError?: string;
+    }>('/ideas/quick-publish', data),
 };
 
 // Departments endpoints
