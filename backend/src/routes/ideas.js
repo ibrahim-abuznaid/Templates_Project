@@ -141,18 +141,73 @@ const mapDepartmentToCategory = (departmentName) => {
   return mappings[normalized] || 'PRODUCTIVITY'; // Default to PRODUCTIVITY
 };
 
+// Extract flows array from uploaded flow JSON
+// Valid formats:
+// 1. Our storage format with { _flowCount, flows: [...] }
+// 2. A full template export with { name, type, flows: [...], ... }
+// Returns: { success: true, flows: [...] } or { success: false, error: string }
+const extractFlowsFromJson = (flowJson) => {
+  if (!flowJson) {
+    console.log('📚 [FLOW PARSER] Empty flowJson received');
+    return { success: false, error: 'Empty file' };
+  }
+  
+  try {
+    const parsed = JSON.parse(flowJson);
+    
+    console.log('📚 [FLOW PARSER] Parsed JSON type:', typeof parsed, 'isArray:', Array.isArray(parsed));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      console.log('📚 [FLOW PARSER] Object keys:', Object.keys(parsed).slice(0, 10).join(', '));
+    }
+    
+    // Case 1: Our storage format (has _flowCount property)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed._flowCount !== undefined && parsed.flows) {
+      const flows = Array.isArray(parsed.flows) ? parsed.flows : [parsed.flows];
+      console.log(`📚 [FLOW PARSER] Extracted ${flows.length} flows from storage format`);
+      return { success: true, flows };
+    }
+    
+    // Case 2: Full template export object with flows property
+    // This is the required format: { name, type, flows: [...], ... }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.flows) {
+      const flows = Array.isArray(parsed.flows) ? parsed.flows : [parsed.flows];
+      console.log(`📚 [FLOW PARSER] Extracted ${flows.length} flows from template export`);
+      return { success: true, flows };
+    }
+    
+    // Invalid format - file must have a "flows" array
+    console.log('📚 [FLOW PARSER] Invalid format - file must contain a "flows" array');
+    return { 
+      success: false, 
+      error: 'Invalid file format. File must be a template export with a "flows" array. Export your flow from Activepieces using the template export option.'
+    };
+  } catch (error) {
+    console.error('📚 [FLOW PARSER] Failed to parse flow JSON:', error.message);
+    return { success: false, error: 'Invalid JSON format' };
+  }
+};
+
+// Get the flow count from stored flow_json
+const getFlowCount = (flowJson) => {
+  if (!flowJson) return 0;
+  try {
+    const parsed = JSON.parse(flowJson);
+    if (parsed._flowCount !== undefined) {
+      return parsed._flowCount;
+    }
+    // For legacy data, extract flows and count them
+    const result = extractFlowsFromJson(flowJson);
+    return result.success ? result.flows.length : 0;
+  } catch {
+    return 0;
+  }
+};
+
 // Build the publish request body based on the template data
 const buildPublishRequestBody = async (idea) => {
-  // Parse flow JSON if available
-  let flows = [];
-  if (idea.flow_json) {
-    try {
-      const parsedFlows = JSON.parse(idea.flow_json);
-      flows = Array.isArray(parsedFlows) ? parsedFlows : [parsedFlows];
-    } catch (error) {
-      console.error('Failed to parse flow JSON:', error);
-    }
-  }
+  // Parse flow JSON if available - extract only the flows array
+  const result = extractFlowsFromJson(idea.flow_json);
+  const flows = result.success ? result.flows : [];
 
   // Build tags array from time_save_per_week and cost_per_year
   const tags = [];
@@ -241,12 +296,20 @@ const publishToPublicLibrary = async (idea) => {
   }
 };
 
-// Change template status in Public Library (PUBLISH/ARCHIVED)
-// PATCH https://cloud.activepieces.com/api/v1/admin/templates/{template-id}
+// Change template status in Public Library (PUBLISHED/ARCHIVED)
+// POST https://cloud.activepieces.com/api/v1/admin/templates/{template-id}
 const changePublicLibraryStatus = async (publicLibraryId, status) => {
-  // Status should be 'PUBLISH' or 'ARCHIVED' (not 'PUBLISHED')
-  const apiStatus = status === 'PUBLISHED' ? 'PUBLISH' : status;
-  console.log('📚 [PUBLIC LIBRARY API] Changing status for template:', publicLibraryId, 'to:', apiStatus);
+  // API expects 'PUBLISHED' or 'ARCHIVED' (uppercase with full word)
+  // Map our internal status to API status
+  let apiStatus = status;
+  if (status === 'PUBLISH' || status === 'PUBLISHED' || status === 'published') {
+    apiStatus = 'PUBLISHED';  // API expects PUBLISHED not PUBLISH
+  } else if (status === 'ARCHIVED' || status === 'archived') {
+    apiStatus = 'ARCHIVED';
+  }
+  
+  console.log('📚 [PUBLIC LIBRARY API] Changing status for template:', publicLibraryId);
+  console.log('📚 [PUBLIC LIBRARY API] Input status:', status, '-> API status:', apiStatus);
 
   // If no API key is configured, use mock mode
   if (!PUBLIC_LIBRARY_API_KEY) {
@@ -256,21 +319,28 @@ const changePublicLibraryStatus = async (publicLibraryId, status) => {
   }
 
   try {
+    const requestBody = { status: apiStatus };
+    console.log('📚 [PUBLIC LIBRARY API] Request URL:', `${PUBLIC_LIBRARY_API_URL}/${publicLibraryId}`);
+    console.log('📚 [PUBLIC LIBRARY API] Request body:', JSON.stringify(requestBody));
+    
     const response = await fetch(`${PUBLIC_LIBRARY_API_URL}/${publicLibraryId}`, {
-      method: 'PATCH',
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'templates-api-key': PUBLIC_LIBRARY_API_KEY
       },
-      body: JSON.stringify({ status: apiStatus })
+      body: JSON.stringify(requestBody)
     });
 
+    const responseText = await response.text();
+    console.log('📚 [PUBLIC LIBRARY API] Response status:', response.status);
+    console.log('📚 [PUBLIC LIBRARY API] Response body:', responseText);
+
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API responded with status ${response.status}: ${errorText}`);
+      throw new Error(`API responded with status ${response.status}: ${responseText}`);
     }
 
-    console.log('📚 [PUBLIC LIBRARY API] Status changed successfully');
+    console.log('📚 [PUBLIC LIBRARY API] Status changed successfully to:', apiStatus);
     return true;
   } catch (error) {
     console.error('📚 [PUBLIC LIBRARY API] Failed to change status:', error);
@@ -283,13 +353,13 @@ const archiveInPublicLibrary = async (publicLibraryId) => {
   return changePublicLibraryStatus(publicLibraryId, 'ARCHIVED');
 };
 
-// Republish template in Public Library
+// Republish template in Public Library (change status back to PUBLISHED)
 const republishInPublicLibrary = async (publicLibraryId) => {
-  return changePublicLibraryStatus(publicLibraryId, 'PUBLISH');
+  return changePublicLibraryStatus(publicLibraryId, 'PUBLISHED');
 };
 
 // Update published template in Public Library (Update Official Template)
-// PATCH https://cloud.activepieces.com/api/v1/admin/templates/{template-id}
+// POST https://cloud.activepieces.com/api/v1/admin/templates/{template-id}
 const updatePublicLibraryTemplate = async (publicLibraryId, idea) => {
   console.log('📚 [PUBLIC LIBRARY API] Updating published template:', publicLibraryId);
 
@@ -307,9 +377,9 @@ const updatePublicLibraryTemplate = async (publicLibraryId, idea) => {
   }
 
   try {
-    // PATCH to /templates/{public_library_id} to update the template
+    // POST to /templates/{public_library_id} to update the template
     const response = await fetch(`${PUBLIC_LIBRARY_API_URL}/${publicLibraryId}`, {
-      method: 'PATCH',
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'templates-api-key': PUBLIC_LIBRARY_API_KEY
@@ -617,39 +687,32 @@ router.put('/:id', authenticateToken, async (req, res) => {
       
       // Handle publishing to Public Library
       if (updates.status === 'published') {
-        try {
-          // Get the latest idea data with all fields
-          const currentIdea = await db.prepare('SELECT * FROM ideas WHERE id = ?').get(ideaId);
-          
-          if (currentIdea.public_library_id) {
-            // Template was previously published, republish it (change status back to published)
-            await republishInPublicLibrary(currentIdea.public_library_id);
-            console.log('📚 Template republished successfully');
-          } else {
-            // First time publishing, create new entry in Public Library
-            const publicLibraryId = await publishToPublicLibrary(currentIdea);
-            await db.prepare(`
-              UPDATE ideas SET public_library_id = ? WHERE id = ?
-            `).run(publicLibraryId, ideaId);
-            console.log('📚 Template published successfully with ID:', publicLibraryId);
-          }
-        } catch (error) {
-          console.error('Failed to publish to Public Library:', error);
-          // Don't fail the whole operation, just log the error
+        // Get the latest idea data with all fields
+        const currentIdea = await db.prepare('SELECT * FROM ideas WHERE id = ?').get(ideaId);
+        
+        if (currentIdea.public_library_id) {
+          // Template was previously published, just change status back to PUBLISHED
+          console.log('📚 Attempting to republish template with Public Library ID:', currentIdea.public_library_id);
+          await republishInPublicLibrary(currentIdea.public_library_id);
+          console.log('📚 Template republished successfully');
+        } else {
+          // First time publishing, create new entry in Public Library
+          console.log('📚 First time publishing template:', ideaId);
+          const publicLibraryId = await publishToPublicLibrary(currentIdea);
+          await db.prepare(`
+            UPDATE ideas SET public_library_id = ? WHERE id = ?
+          `).run(publicLibraryId, ideaId);
+          console.log('📚 Template published successfully with ID:', publicLibraryId);
         }
       }
       
       // Handle archiving in Public Library
       if (updates.status === 'archived' && idea.public_library_id) {
-        try {
-          // Archive the template (don't delete, just change status)
-          await archiveInPublicLibrary(idea.public_library_id);
-          console.log('📚 Template archived in Public Library');
-          // Note: We keep the public_library_id so we can republish later
-        } catch (error) {
-          console.error('Failed to archive in Public Library:', error);
-          // Don't fail the whole operation, just log the error
-        }
+        console.log('📚 Attempting to archive template with Public Library ID:', idea.public_library_id);
+        // Archive the template (don't delete, just change status)
+        await archiveInPublicLibrary(idea.public_library_id);
+        console.log('📚 Template archived in Public Library');
+        // Note: We keep the public_library_id so we can republish later
       }
     }
     
@@ -999,11 +1062,14 @@ router.get('/users/admins', authenticateToken, async (req, res) => {
   }
 });
 
-// Upload flow JSON for a template
+// Upload flow JSON for a template (supports multiple files)
+// Accepts: { flow_json: string } for single file (backward compatible)
+// Or: { flow_jsons: string[] } for multiple files
+// Or: { flow_json: string, append: true } to add to existing flows
 router.post('/:id/flow-json', authenticateToken, async (req, res) => {
   try {
     const ideaId = req.params.id;
-    const { flow_json } = req.body;
+    const { flow_json, flow_jsons, append } = req.body;
 
     const idea = await db.prepare('SELECT * FROM ideas WHERE id = ?').get(ideaId);
 
@@ -1017,21 +1083,91 @@ router.post('/:id/flow-json', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Validate JSON
-    if (flow_json) {
+    // Collect all flows from the uploaded files
+    let allFlows = [];
+    const invalidFiles = [];
+    
+    console.log('📚 [FLOW UPLOAD] Received request:', {
+      hasFlowJson: !!flow_json,
+      hasFlowJsons: !!flow_jsons,
+      flowJsonsLength: flow_jsons?.length,
+      append: !!append
+    });
+    
+    // If appending, start with existing flows
+    if (append && idea.flow_json) {
+      const result = extractFlowsFromJson(idea.flow_json);
+      if (result.success) {
+        console.log('📚 [FLOW UPLOAD] Starting with existing flows:', result.flows.length);
+        allFlows = [...result.flows];
+      }
+    }
+
+    // Handle multiple files (flow_jsons array)
+    if (flow_jsons && Array.isArray(flow_jsons)) {
+      console.log(`📚 [FLOW UPLOAD] Processing ${flow_jsons.length} files...`);
+      for (let i = 0; i < flow_jsons.length; i++) {
+        const jsonStr = flow_jsons[i];
+        try {
+          JSON.parse(jsonStr); // Validate JSON syntax
+          const result = extractFlowsFromJson(jsonStr);
+          
+          if (result.success) {
+            console.log(`📚 [FLOW UPLOAD] File ${i + 1}: extracted ${result.flows.length} flows`);
+            allFlows.push(...result.flows);
+          } else {
+            console.log(`📚 [FLOW UPLOAD] File ${i + 1}: invalid format - ${result.error}`);
+            invalidFiles.push({ index: i + 1, error: result.error });
+          }
+        } catch (parseError) {
+          invalidFiles.push({ index: i + 1, error: 'Invalid JSON syntax' });
+        }
+      }
+      
+      // If any files were invalid, return error
+      if (invalidFiles.length > 0) {
+        const fileErrors = invalidFiles.map(f => `File ${f.index}: ${f.error}`).join('\n');
+        return res.status(400).json({ 
+          error: `Invalid file format`,
+          details: fileErrors,
+          invalidCount: invalidFiles.length,
+          validCount: flow_jsons.length - invalidFiles.length
+        });
+      }
+    }
+    // Handle single file (flow_json string) - backward compatible
+    else if (flow_json) {
       try {
-        JSON.parse(flow_json);
+        JSON.parse(flow_json); // Validate JSON syntax
+        const result = extractFlowsFromJson(flow_json);
+        
+        if (result.success) {
+          console.log(`📚 [FLOW UPLOAD] Single file: extracted ${result.flows.length} flows`);
+          allFlows.push(...result.flows);
+        } else {
+          return res.status(400).json({ error: result.error });
+        }
       } catch (parseError) {
         return res.status(400).json({ error: 'Invalid JSON format' });
       }
     }
+    
+    console.log(`📚 [FLOW UPLOAD] Total flows to store: ${allFlows.length}`);
+
+    // Store as a wrapper object with flows array for consistency
+    // This makes it easy to extract later and maintains the structure
+    const storageData = allFlows.length > 0 ? JSON.stringify({
+      _flowCount: allFlows.length,
+      flows: allFlows
+    }) : null;
 
     await db.prepare(`
       UPDATE ideas SET flow_json = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(flow_json || null, ideaId);
+    `).run(storageData, ideaId);
 
-    await logActivity(ideaId, userId, 'updated', 'Flow JSON uploaded');
+    const flowCount = allFlows.length;
+    await logActivity(ideaId, userId, 'updated', `Flow JSON uploaded (${flowCount} flow${flowCount !== 1 ? 's' : ''})`);
 
     const updatedIdea = await db.prepare(`
       SELECT i.*, 
@@ -1050,7 +1186,10 @@ router.post('/:id/flow-json', authenticateToken, async (req, res) => {
     emitToAll('idea:updated', updatedIdea);
     emitToIdea(ideaId, 'idea:updated', updatedIdea);
 
-    res.json(updatedIdea);
+    res.json({
+      ...updatedIdea,
+      _flowCount: flowCount
+    });
   } catch (error) {
     console.error('Upload flow JSON error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1112,6 +1251,61 @@ router.post('/:id/sync-public-library', authenticateToken, authorizeRoles('admin
   } catch (error) {
     console.error('Sync to Public Library error:', error);
     res.status(500).json({ error: 'Failed to sync template with Public Library: ' + error.message });
+  }
+});
+
+// Delete template from Public Library only (admin only)
+// This removes from Public Library but keeps the template in local system
+router.delete('/:id/public-library', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const ideaId = req.params.id;
+    const idea = await db.prepare('SELECT * FROM ideas WHERE id = ?').get(ideaId);
+
+    if (!idea) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    if (!idea.public_library_id) {
+      return res.status(400).json({ error: 'Template is not published to the Public Library' });
+    }
+
+    // Delete from Public Library
+    await deleteFromPublicLibrary(idea.public_library_id);
+
+    // Clear the public_library_id from local database
+    await db.prepare(`
+      UPDATE ideas 
+      SET public_library_id = NULL, status = 'reviewed', updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(ideaId);
+
+    await logActivity(ideaId, req.user.id, 'deleted_from_public_library', 
+      `Template removed from Public Library (was: ${idea.public_library_id})`);
+
+    // Get updated idea
+    const updatedIdea = await db.prepare(`
+      SELECT i.*, 
+             u1.username as created_by_name,
+             u1.handle as created_by_handle,
+             u2.username as assigned_to_name,
+             u2.handle as assigned_to_handle
+      FROM ideas i
+      LEFT JOIN users u1 ON i.created_by = u1.id
+      LEFT JOIN users u2 ON i.assigned_to = u2.id
+      WHERE i.id = ?
+    `).get(ideaId);
+
+    // Emit real-time update
+    emitToAll('idea:updated', updatedIdea);
+
+    res.json({
+      success: true,
+      message: 'Template successfully removed from Public Library',
+      previous_public_library_id: idea.public_library_id
+    });
+  } catch (error) {
+    console.error('Delete from Public Library error:', error);
+    res.status(500).json({ error: 'Failed to delete template from Public Library: ' + error.message });
   }
 });
 

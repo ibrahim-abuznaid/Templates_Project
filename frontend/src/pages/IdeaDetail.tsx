@@ -72,7 +72,10 @@ const IdeaDetail: React.FC = () => {
   const [showPublishPreview, setShowPublishPreview] = useState(false);
   const [publishPreview, setPublishPreview] = useState<any>(null);
   const [syncingWithPublicLibrary, setSyncingWithPublicLibrary] = useState(false);
+  const [deletingFromPublicLibrary, setDeletingFromPublicLibrary] = useState(false);
   const flowJsonInputRef = useRef<HTMLInputElement>(null);
+  const flowJsonAppendInputRef = useRef<HTMLInputElement>(null);
+  const [appendingFlows, setAppendingFlows] = useState(false);
   
   // Modal state
   const [modal, setModal] = useState<{
@@ -289,49 +292,108 @@ const IdeaDetail: React.FC = () => {
     }
   };
 
-  const handleFlowJsonUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFlowJsonUpload = async (e: React.ChangeEvent<HTMLInputElement>, append = false) => {
+    const files = e.target.files;
+    console.log(`📚 [FRONTEND] File input changed - files count: ${files?.length}, append: ${append}`);
+    if (!files || files.length === 0) return;
 
     try {
-      setUploadingFlowJson(true);
-      const text = await file.text();
+      if (append) {
+        setAppendingFlows(true);
+      } else {
+        setUploadingFlowJson(true);
+      }
       
-      // Validate JSON
-      JSON.parse(text);
+      // Read all files
+      const fileContents: string[] = [];
+      const invalidFiles: string[] = [];
       
-      await ideasApi.uploadFlowJson(Number(id), text);
+      console.log(`📚 [FRONTEND] Reading ${files.length} files...`);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        console.log(`📚 [FRONTEND] File ${i + 1}: ${file.name}, size: ${file.size} bytes`);
+        const text = await file.text();
+        console.log(`📚 [FRONTEND] File ${i + 1} content length: ${text.length} chars`);
+        
+        // Validate JSON
+        try {
+          const parsed = JSON.parse(text);
+          console.log(`📚 [FRONTEND] File ${i + 1} parsed OK, has flows: ${!!parsed.flows}`);
+          fileContents.push(text);
+        } catch {
+          invalidFiles.push(file.name);
+        }
+      }
+      console.log(`📚 [FRONTEND] Valid JSON files: ${fileContents.length}, Invalid JSON: ${invalidFiles.length}`);
+      
+      if (invalidFiles.length > 0) {
+        showModal({
+          type: 'error',
+          title: 'Invalid JSON Files',
+          message: `The following files contain invalid JSON:\n${invalidFiles.join('\n')}`,
+          showCancel: false,
+          confirmText: 'OK',
+        });
+        return;
+      }
+      
+      // Check if files have flows property (quick validation)
+      const filesWithoutFlows: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        try {
+          const parsed = JSON.parse(fileContents[i]);
+          if (!parsed.flows && !parsed._flowCount) {
+            filesWithoutFlows.push(files[i].name);
+          }
+        } catch {
+          // Already handled above
+        }
+      }
+      
+      if (filesWithoutFlows.length > 0) {
+        showModal({
+          type: 'error',
+          title: 'Invalid Flow Format',
+          message: `The following files don't have the required "flows" array:\n\n${filesWithoutFlows.join('\n')}\n\nPlease export your flows from Activepieces using the template export option which includes a "flows" array.`,
+          showCancel: false,
+          confirmText: 'OK',
+        });
+        return;
+      }
+      
+      // Upload files (with append flag if adding more)
+      console.log(`📚 [FLOW UPLOAD] Uploading ${fileContents.length} files, append: ${append}`);
+      const response = await ideasApi.uploadFlowJsonMultiple(Number(id), fileContents, append);
+      console.log('📚 [FLOW UPLOAD] Response:', response.data);
+      
       loadIdea();
       showModal({
         type: 'success',
-        title: 'Upload Successful',
-        message: 'Flow JSON uploaded successfully!',
+        title: append ? 'Flows Added' : 'Upload Successful',
+        message: append 
+          ? `${files.length} flow file${files.length > 1 ? 's' : ''} added successfully!`
+          : `${files.length} flow file${files.length > 1 ? 's' : ''} uploaded successfully!`,
         showCancel: false,
         confirmText: 'OK',
       });
     } catch (error: any) {
-      if (error instanceof SyntaxError) {
-        showModal({
-          type: 'error',
-          title: 'Invalid JSON',
-          message: 'Invalid JSON file. Please upload a valid JSON file.',
-          showCancel: false,
-          confirmText: 'OK',
-        });
-      } else {
-        showModal({
-          type: 'error',
-          title: 'Upload Failed',
-          message: error.response?.data?.error || 'Failed to upload flow JSON',
-          showCancel: false,
-          confirmText: 'OK',
-        });
-      }
+      const errorMessage = error.response?.data?.details || error.response?.data?.error || 'Failed to upload flow JSON';
+      showModal({
+        type: 'error',
+        title: 'Upload Failed',
+        message: errorMessage,
+        showCancel: false,
+        confirmText: 'OK',
+      });
       console.error('Failed to upload flow JSON:', error);
     } finally {
       setUploadingFlowJson(false);
+      setAppendingFlows(false);
       if (flowJsonInputRef.current) {
         flowJsonInputRef.current.value = '';
+      }
+      if (flowJsonAppendInputRef.current) {
+        flowJsonAppendInputRef.current.value = '';
       }
     }
   };
@@ -380,6 +442,40 @@ const IdeaDetail: React.FC = () => {
     });
   };
 
+  const handleDeleteFromPublicLibrary = () => {
+    showModal({
+      type: 'confirm',
+      title: '⚠️ Delete from Public Library',
+      message: `This will PERMANENTLY DELETE the template from the Activepieces Public Library.\n\nThe template will no longer be visible to any users.\n\nNote: This is different from "Archive" which just hides the template. Delete is permanent and cannot be undone.\n\nThe template will remain in your local Template Management system and can be republished later.\n\nAre you sure you want to delete from Public Library?`,
+      confirmText: 'Delete from Public Library',
+      onConfirm: async () => {
+        try {
+          setDeletingFromPublicLibrary(true);
+          const response = await ideasApi.deleteFromPublicLibrary(Number(id));
+          showModal({
+            type: 'success',
+            title: 'Deleted from Public Library',
+            message: 'The template has been permanently removed from the Public Library.\n\nYou can republish it later by changing the status to "Published".',
+            showCancel: false,
+            confirmText: 'OK',
+          });
+          loadIdea();
+        } catch (error: any) {
+          showModal({
+            type: 'error',
+            title: 'Delete Failed',
+            message: error.response?.data?.error || 'Failed to delete from Public Library',
+            showCancel: false,
+            confirmText: 'OK',
+          });
+          console.error('Failed to delete from Public Library:', error);
+        } finally {
+          setDeletingFromPublicLibrary(false);
+        }
+      },
+    });
+  };
+
   const handleUpdate = async () => {
     try {
       await ideasApi.update(Number(id), {
@@ -394,6 +490,97 @@ const IdeaDetail: React.FC = () => {
   };
 
   const handleStatusChange = async (newStatus: IdeaStatus) => {
+    // For publishing, show a confirmation first
+    if (newStatus === 'published') {
+      const hasFlows = idea?.flow_json ? (() => {
+        try {
+          const parsed = JSON.parse(idea.flow_json);
+          return (parsed._flowCount && parsed._flowCount > 0) || (parsed.flows && parsed.flows.length > 0);
+        } catch {
+          return false;
+        }
+      })() : false;
+
+      if (!hasFlows) {
+        showModal({
+          type: 'error',
+          title: 'Cannot Publish',
+          message: 'Please upload at least one flow JSON file before publishing to the Public Library.',
+          showCancel: false,
+          confirmText: 'OK',
+        });
+        return;
+      }
+
+      showModal({
+        type: 'confirm',
+        title: 'Publish to Public Library',
+        message: idea?.public_library_id 
+          ? 'This template was previously published. This will re-publish it to the Public Library.\n\nContinue?'
+          : 'This will publish the template to the Activepieces Public Library where it will be visible to all users.\n\nContinue?',
+        confirmText: 'Publish',
+        onConfirm: async () => {
+          try {
+            const response = await ideasApi.update(Number(id), { status: newStatus });
+            loadIdea();
+            
+            // Show success message
+            showModal({
+              type: 'success',
+              title: '🎉 Published Successfully!',
+              message: `Your template "${idea?.flow_name || 'Untitled'}" has been published to the Activepieces Public Library!\n\nIt is now live and visible to all users.`,
+              showCancel: false,
+              confirmText: 'Awesome!',
+            });
+          } catch (error: any) {
+            console.error('Failed to publish:', error);
+            showModal({
+              type: 'error',
+              title: 'Publish Failed',
+              message: error.response?.data?.error || 'Failed to publish template to the Public Library. Please try again.',
+              showCancel: false,
+              confirmText: 'OK',
+            });
+          }
+        },
+      });
+      return;
+    }
+
+    // For archiving published templates, show a warning
+    if (newStatus === 'archived' && idea?.public_library_id) {
+      showModal({
+        type: 'confirm',
+        title: 'Archive Template',
+        message: 'This template is published to the Public Library. Archiving will also archive it in the Public Library (it won\'t be visible to users anymore).\n\nContinue?',
+        confirmText: 'Archive',
+        onConfirm: async () => {
+          try {
+            await ideasApi.update(Number(id), { status: newStatus });
+            loadIdea();
+            showModal({
+              type: 'success',
+              title: 'Template Archived',
+              message: 'The template has been archived and removed from the Public Library.',
+              showCancel: false,
+              confirmText: 'OK',
+            });
+          } catch (error: any) {
+            console.error('Failed to archive:', error);
+            showModal({
+              type: 'error',
+              title: 'Archive Failed',
+              message: error.response?.data?.error || 'Failed to archive template.',
+              showCancel: false,
+              confirmText: 'OK',
+            });
+          }
+        },
+      });
+      return;
+    }
+
+    // For other status changes, just update
     try {
       await ideasApi.update(Number(id), { status: newStatus });
       loadIdea();
@@ -763,9 +950,15 @@ const IdeaDetail: React.FC = () => {
                     <h1 className="text-2xl font-bold text-gray-900">{idea.flow_name || 'Untitled Template'}</h1>
                   )}
                   <StatusBadge status={idea.status} showIcon={true} showTooltip={true} />
-                  {idea.public_library_id && (
-                    <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs font-medium">
-                      Published
+                  {idea.public_library_id && idea.status === 'published' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-full text-xs font-semibold shadow-sm">
+                      <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
+                      LIVE
+                    </span>
+                  )}
+                  {idea.public_library_id && idea.status === 'archived' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-400 text-white rounded-full text-xs font-semibold">
+                      ARCHIVED
                     </span>
                   )}
                 </div>
@@ -1044,20 +1237,30 @@ const IdeaDetail: React.FC = () => {
               {/* Flow JSON Upload */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Flow JSON <span className="text-xs text-gray-500">(Upload flow definition for publishing)</span>
+                  Flow JSON <span className="text-xs text-gray-500">(Upload one or more flow files for publishing)</span>
                 </label>
                 <div className="flex items-center gap-4">
                   {idea.flow_json ? (
                     <div className="flex-1 flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
                       <FileJson className="w-5 h-5 text-green-600" />
-                      <span className="text-sm text-green-700">Flow JSON uploaded</span>
+                      <span className="text-sm text-green-700">
+                        {(() => {
+                          try {
+                            const parsed = JSON.parse(idea.flow_json!);
+                            const count = parsed._flowCount || (parsed.flows?.length) || 1;
+                            return `${count} flow${count !== 1 ? 's' : ''} uploaded`;
+                          } catch {
+                            return 'Flow JSON uploaded';
+                          }
+                        })()}
+                      </span>
                       <button
                         onClick={() => {
                           const blob = new Blob([idea.flow_json!], { type: 'application/json' });
                           const url = URL.createObjectURL(blob);
                           const a = document.createElement('a');
                           a.href = url;
-                          a.download = `flow-${idea.id}.json`;
+                          a.download = `flows-${idea.id}.json`;
                           a.click();
                         }}
                         className="ml-auto text-xs text-green-600 hover:text-green-700 underline"
@@ -1067,18 +1270,20 @@ const IdeaDetail: React.FC = () => {
                     </div>
                   ) : (
                     <div className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500">
-                      No flow JSON uploaded yet
+                      No flow files uploaded yet
                     </div>
                   )}
                   {canEdit && (
-                    <div>
+                    <div className="flex items-center gap-2">
+                      {/* Replace/Upload button */}
                       <input
                         ref={flowJsonInputRef}
                         type="file"
                         accept=".json,application/json"
-                        onChange={handleFlowJsonUpload}
+                        onChange={(e) => handleFlowJsonUpload(e, false)}
                         className="hidden"
                         id="flow-json-upload"
+                        multiple
                       />
                       <label
                         htmlFor="flow-json-upload"
@@ -1091,6 +1296,32 @@ const IdeaDetail: React.FC = () => {
                         )}
                         <span>{idea.flow_json ? 'Replace' : 'Upload'}</span>
                       </label>
+                      
+                      {/* Add More button - only shows when flows already exist */}
+                      {idea.flow_json && (
+                        <>
+                          <input
+                            ref={flowJsonAppendInputRef}
+                            type="file"
+                            accept=".json,application/json"
+                            onChange={(e) => handleFlowJsonUpload(e, true)}
+                            className="hidden"
+                            id="flow-json-append"
+                            multiple
+                          />
+                          <label
+                            htmlFor="flow-json-append"
+                            className={`btn-secondary flex items-center gap-2 cursor-pointer ${appendingFlows ? 'opacity-50' : ''}`}
+                          >
+                            {appendingFlows ? (
+                              <Loader className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Plus className="w-4 h-4" />
+                            )}
+                            <span>Add More</span>
+                          </label>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1190,53 +1421,161 @@ const IdeaDetail: React.FC = () => {
                 )}
               </div>
 
-              {/* Public Library Info */}
-              {idea.public_library_id && (
-                <div className="border-t pt-4 mt-4">
-                  <p className="text-xs text-gray-500 mb-3 font-medium">Public Library Info</p>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">ID:</span>
-                    <code className="text-sm bg-gray-100 px-2 py-1 rounded">{idea.public_library_id}</code>
-                  </div>
-                </div>
-              )}
-
-              {/* Publish Actions */}
-              {isAdmin && (
-                <div className="border-t pt-4 mt-4 space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={handleViewPublishPreview}
-                      className="btn-secondary flex items-center gap-2 text-sm"
-                    >
-                      <Eye className="w-4 h-4" />
-                      <span>Preview Publish Request</span>
-                    </button>
+              {/* Public Library Status Card */}
+              <div className="border-t pt-4 mt-4">
+                {idea.public_library_id && idea.status === 'published' ? (
+                  /* Published & Live */
+                  <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                        <CheckCircle className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-semibold text-green-800">Live in Public Library</h4>
+                          <span className="px-2 py-0.5 bg-green-500 text-white text-xs font-medium rounded-full animate-pulse">
+                            LIVE
+                          </span>
+                        </div>
+                        <p className="text-sm text-green-700 mb-2">
+                          This template is published and visible to all Activepieces users.
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-green-600">
+                          <span>ID:</span>
+                          <code className="bg-green-100 px-2 py-0.5 rounded font-mono">{idea.public_library_id}</code>
+                        </div>
+                      </div>
+                    </div>
                     
-                    {/* Update button - only show for published templates */}
-                    {idea.public_library_id && idea.status === 'published' && (
-                      <button
-                        onClick={handleSyncWithPublicLibrary}
-                        disabled={syncingWithPublicLibrary}
-                        className="btn-primary flex items-center gap-2 text-sm"
-                      >
-                        {syncingWithPublicLibrary ? (
-                          <Loader className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="w-4 h-4" />
-                        )}
-                        <span>{syncingWithPublicLibrary ? 'Updating...' : 'Update in Public Library'}</span>
-                      </button>
+                    {/* Actions */}
+                    {isAdmin && (
+                      <div className="mt-4 pt-3 border-t border-green-200">
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          <button
+                            onClick={handleSyncWithPublicLibrary}
+                            disabled={syncingWithPublicLibrary}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
+                          >
+                            {syncingWithPublicLibrary ? (
+                              <Loader className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-4 h-4" />
+                            )}
+                            <span>{syncingWithPublicLibrary ? 'Updating...' : 'Sync Changes'}</span>
+                          </button>
+                          <button
+                            onClick={handleViewPublishPreview}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-green-50 text-green-700 text-sm font-medium rounded-lg border border-green-300 transition-colors"
+                          >
+                            <Eye className="w-4 h-4" />
+                            <span>View Details</span>
+                          </button>
+                        </div>
+                        
+                        {/* Danger Zone */}
+                        <div className="pt-2 border-t border-green-200">
+                          <button
+                            onClick={handleDeleteFromPublicLibrary}
+                            disabled={deletingFromPublicLibrary}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-medium rounded-lg border border-red-200 transition-colors"
+                          >
+                            {deletingFromPublicLibrary ? (
+                              <Loader className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                            <span>{deletingFromPublicLibrary ? 'Deleting...' : 'Delete from Public Library'}</span>
+                          </button>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Permanently removes from Public Library. Use "Archive" status to just hide it.
+                          </p>
+                        </div>
+                      </div>
                     )}
                   </div>
-                  
-                  {idea.public_library_id && idea.status === 'published' && (
-                    <p className="text-xs text-gray-500">
-                      💡 Click "Update in Public Library" to push your changes to the published template.
-                    </p>
-                  )}
-                </div>
-              )}
+                ) : idea.public_library_id && idea.status === 'archived' ? (
+                  /* Archived from Public Library */
+                  <div className="bg-gradient-to-r from-gray-50 to-slate-50 border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-10 h-10 bg-gray-400 rounded-full flex items-center justify-center">
+                        <FileJson className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-semibold text-gray-700">Archived in Public Library</h4>
+                          <span className="px-2 py-0.5 bg-gray-400 text-white text-xs font-medium rounded-full">
+                            ARCHIVED
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-2">
+                          This template is archived (hidden) in the Public Library. Change status to "Published" to make it live again.
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <span>ID:</span>
+                          <code className="bg-gray-100 px-2 py-0.5 rounded font-mono">{idea.public_library_id}</code>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Actions for archived */}
+                    {isAdmin && (
+                      <div className="mt-4 pt-3 border-t border-gray-200">
+                        <button
+                          onClick={handleDeleteFromPublicLibrary}
+                          disabled={deletingFromPublicLibrary}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-medium rounded-lg border border-red-200 transition-colors"
+                        >
+                          {deletingFromPublicLibrary ? (
+                            <Loader className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                          <span>{deletingFromPublicLibrary ? 'Deleting...' : 'Delete Permanently from Public Library'}</span>
+                        </button>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Currently archived (hidden). Delete permanently or change status to "Published" to restore.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Not Published Yet */
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                        <Upload className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-blue-800 mb-1">Not Published Yet</h4>
+                        <p className="text-sm text-blue-700 mb-3">
+                          This template hasn't been published to the Public Library yet. Once published, it will be available to all Activepieces users.
+                        </p>
+                        <div className="text-xs text-blue-600 space-y-1">
+                          <p>📋 <strong>Before publishing, ensure you have:</strong></p>
+                          <ul className="list-disc list-inside ml-4 space-y-0.5">
+                            <li>Uploaded flow JSON file(s)</li>
+                            <li>Added a summary and description</li>
+                            <li>Selected appropriate department(s)/categories</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Preview Action */}
+                    {isAdmin && (
+                      <div className="mt-4 pt-3 border-t border-blue-200">
+                        <button
+                          onClick={handleViewPublishPreview}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                        >
+                          <Eye className="w-4 h-4" />
+                          <span>Preview Publish Request</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

@@ -1,0 +1,241 @@
+﻿{
+  "name": "Automatic Scraping of Company Information Before Call",
+  "type": "SHARED",
+  "summary": "",
+  "description": "",
+  "tags": [],
+  "author": "",
+  "categories": [],
+  "pieces": [
+    "@activepieces/piece-schedule",
+    "@activepieces/piece-date-helper",
+    "@activepieces/piece-google-calendar",
+    "@activepieces/piece-perplexity-ai",
+    "@activepieces/piece-google-docs"
+  ],
+  "status": "PUBLISHED",
+  "blogUrl": "",
+  "metadata": null,
+  "flows": [
+    {
+      "displayName": "Automatic Scraping of Company Information Before Call",
+      "trigger": {
+        "name": "trigger",
+        "valid": true,
+        "displayName": "Every Day",
+        "type": "PIECE_TRIGGER",
+        "settings": {
+          "propertySettings": {
+            "timezone": {
+              "type": "MANUAL"
+            },
+            "hour_of_the_day": {
+              "type": "MANUAL"
+            },
+            "run_on_weekends": {
+              "type": "MANUAL"
+            }
+          },
+          "pieceName": "@activepieces/piece-schedule",
+          "pieceVersion": "~0.1.5",
+          "input": {
+            "timezone": "UTC",
+            "hour_of_the_day": 7,
+            "run_on_weekends": false
+          },
+          "sampleData": {},
+          "triggerName": "every_day"
+        },
+        "nextAction": {
+          "name": "step_2",
+          "skip": false,
+          "type": "PIECE",
+          "valid": true,
+          "settings": {
+            "input": {
+              "timeZone": "UTC",
+              "timeFormat": "DDD MMM DD YYYY HH:mm:ss"
+            },
+            "pieceName": "@activepieces/piece-date-helper",
+            "pieceType": "OFFICIAL",
+            "actionName": "get_current_date",
+            "sampleData": {},
+            "packageType": "REGISTRY",
+            "pieceVersion": "~0.1.6",
+            "propertySettings": {
+              "timeZone": {
+                "type": "MANUAL"
+              },
+              "timeFormat": {
+                "type": "MANUAL"
+              }
+            },
+            "sampleDataSettings": {},
+            "errorHandlingOptions": {
+              "retryOnFailure": {
+                "value": false
+              },
+              "continueOnFailure": {
+                "value": false
+              }
+            }
+          },
+          "nextAction": {
+            "name": "step_1",
+            "skip": false,
+            "type": "PIECE",
+            "valid": true,
+            "settings": {
+              "input": {
+                "auth": "{{connections['tNdxWja1d3FoZivbMkYZS']}}",
+                "start_date": "{{step_2['result']}}",
+                "calendar_id": "nwibeg@gmail.com",
+                "event_types": [
+                  "default"
+                ],
+                "singleEvents": false
+              },
+              "pieceName": "@activepieces/piece-google-calendar",
+              "pieceType": "OFFICIAL",
+              "actionName": "google_calendar_get_events",
+              "sampleData": {},
+              "packageType": "REGISTRY",
+              "pieceVersion": "~0.5.6",
+              "propertySettings": {
+                "auth": {
+                  "type": "MANUAL"
+                },
+                "start_date": {
+                  "type": "MANUAL"
+                },
+                "calendar_id": {
+                  "type": "MANUAL"
+                },
+                "event_types": {
+                  "type": "MANUAL"
+                },
+                "singleEvents": {
+                  "type": "MANUAL"
+                }
+              },
+              "sampleDataSettings": {},
+              "errorHandlingOptions": {
+                "retryOnFailure": {
+                  "value": false
+                },
+                "continueOnFailure": {
+                  "value": false
+                }
+              }
+            },
+            "nextAction": {
+              "name": "step_3",
+              "skip": false,
+              "type": "PIECE",
+              "valid": true,
+              "settings": {
+                "input": {
+                  "auth": "{{connections['eZiIMJVV0R6U03AtlV63V']}}",
+                  "model": "sonar-reasoning",
+                  "roles": [
+                    {
+                      "role": "system",
+                      "content": "You are a helpful assistant."
+                    }
+                  ],
+                  "top_p": 0.9,
+                  "prompt": "Get recent information about this company with this link{{step_1['body']['items'][0]['description']}}",
+                  "temperature": 0.2,
+                  "presence_penalty": 0,
+                  "frequency_penalty": 1
+                },
+                "pieceName": "@activepieces/piece-perplexity-ai",
+                "pieceType": "OFFICIAL",
+                "actionName": "ask-ai",
+                "sampleData": {},
+                "packageType": "REGISTRY",
+                "pieceVersion": "~0.2.0",
+                "propertySettings": {
+                  "auth": {
+                    "type": "MANUAL"
+                  },
+                  "model": {
+                    "type": "MANUAL"
+                  },
+                  "roles": {
+                    "type": "MANUAL"
+                  },
+                  "top_p": {
+                    "type": "MANUAL"
+                  },
+                  "prompt": {
+                    "type": "MANUAL"
+                  },
+                  "temperature": {
+                    "type": "MANUAL"
+                  },
+                  "presence_penalty": {
+                    "type": "MANUAL"
+                  },
+                  "frequency_penalty": {
+                    "type": "MANUAL"
+                  }
+                },
+                "sampleDataSettings": {},
+                "errorHandlingOptions": {
+                  "retryOnFailure": {
+                    "value": false
+                  },
+                  "continueOnFailure": {
+                    "value": false
+                  }
+                }
+              },
+              "nextAction": {
+                "name": "step_4",
+                "skip": false,
+                "type": "PIECE",
+                "valid": false,
+                "settings": {
+                  "input": {
+                    "auth": "{{connections['bnQo6d2Zuww4WsUXvZO53']}}",
+                    "title": "{{step_1['body']['items'][0]['summary']}} Meeting "
+                  },
+                  "pieceName": "@activepieces/piece-google-docs",
+                  "pieceType": "OFFICIAL",
+                  "actionName": "create_document",
+                  "sampleData": {},
+                  "packageType": "REGISTRY",
+                  "pieceVersion": "~0.2.0",
+                  "propertySettings": {
+                    "auth": {
+                      "type": "MANUAL"
+                    },
+                    "title": {
+                      "type": "MANUAL"
+                    }
+                  },
+                  "sampleDataSettings": {},
+                  "errorHandlingOptions": {
+                    "retryOnFailure": {
+                      "value": false
+                    },
+                    "continueOnFailure": {
+                      "value": false
+                    }
+                  }
+                },
+                "displayName": "Create Document"
+              },
+              "displayName": "Ask AI"
+            },
+            "displayName": "Get all Events"
+          },
+          "displayName": "Get Current Date"
+        }
+      },
+      "valid": false,
+      "schemaVersion": "10"
+    }
+  ]
+}

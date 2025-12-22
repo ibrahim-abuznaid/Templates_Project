@@ -94,9 +94,16 @@ export const ideasApi = {
   getAdmins: () =>
     api.get<User[]>('/ideas/users/admins'),
 
-  // Upload flow JSON for a template
+  // Upload flow JSON for a template (single file - backward compatible)
   uploadFlowJson: (id: number, flowJson: string) =>
-    api.post<Idea>(`/ideas/${id}/flow-json`, { flow_json: flowJson }),
+    api.post<Idea & { _flowCount?: number }>(`/ideas/${id}/flow-json`, { flow_json: flowJson }),
+
+  // Upload multiple flow JSON files
+  uploadFlowJsonMultiple: (id: number, flowJsons: string[], append = false) =>
+    api.post<Idea & { _flowCount?: number }>(`/ideas/${id}/flow-json`, { 
+      flow_jsons: flowJsons,
+      append 
+    }),
 
   // Get publish preview (shows what would be sent to Public Library API)
   getPublishPreview: (id: number) =>
@@ -124,6 +131,14 @@ export const ideasApi = {
       message: string;
       public_library_id: string;
     }>(`/ideas/${id}/sync-public-library`),
+
+  // Delete from Public Library only (keeps template in local system)
+  deleteFromPublicLibrary: (id: number) =>
+    api.delete<{
+      success: boolean;
+      message: string;
+      previous_public_library_id: string;
+    }>(`/ideas/${id}/public-library`),
 
   // Delete a template (also removes from Public Library if published)
   deleteTemplate: (id: number) =>
