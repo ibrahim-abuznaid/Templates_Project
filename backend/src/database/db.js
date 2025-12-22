@@ -23,7 +23,7 @@ let pool = null;
 function createPool() {
   if (pool) return pool;
   
-  const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:7777@localhost:5433/template_management';
+  let connectionString = process.env.DATABASE_URL || 'postgresql://postgres:7777@localhost:5433/template_management';
   const isProduction = process.env.NODE_ENV === 'production';
   const isExternalDB = process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('localhost');
   
@@ -33,7 +33,17 @@ function createPool() {
   
   // For any external database (like DigitalOcean), always use SSL with rejectUnauthorized: false
   // This handles self-signed certificates used by managed database services
-  const sslConfig = isExternalDB ? { rejectUnauthorized: false } : false;
+  let sslConfig = false;
+  
+  if (isExternalDB) {
+    // Remove sslmode from connection string - we'll handle SSL via Pool config
+    // This prevents conflicts between URL params and Pool SSL config
+    connectionString = connectionString.replace(/[?&]sslmode=[^&]*/g, '');
+    // Clean up any trailing ? or &
+    connectionString = connectionString.replace(/\?$/, '').replace(/&$/, '');
+    
+    sslConfig = { rejectUnauthorized: false };
+  }
   
   console.log(`🔒 SSL Config: ${JSON.stringify(sslConfig)}`);
   
@@ -42,7 +52,7 @@ function createPool() {
     ssl: sslConfig,
     max: 20,     // Maximum connections in pool
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
+    connectionTimeoutMillis: 10000,  // Increased timeout for external DBs
   });
 
   pool.on('error', (err) => {
