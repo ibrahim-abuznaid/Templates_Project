@@ -48,7 +48,11 @@ const getSocketURL = () => {
     const apiUrl = import.meta.env.VITE_API_URL as string;
     return apiUrl.replace('/api', '');
   }
-  // In development, connect directly to backend
+  // In production, use same origin (Nginx proxies /socket.io/ to backend)
+  // In development without VITE_API_URL, use localhost
+  if (import.meta.env.PROD) {
+    return window.location.origin;
+  }
   return 'http://localhost:3001';
 };
 
