@@ -7,7 +7,7 @@ A full-stack web application for managing automation template ideas with role-ba
 See **[DIGITALOCEAN_DEPLOYMENT.md](./DIGITALOCEAN_DEPLOYMENT.md)** for complete deployment instructions.
 
 ---
-
+#test
 ## Features
 
 ### 🎯 Role-Based Access Control
