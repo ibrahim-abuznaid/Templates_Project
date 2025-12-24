@@ -32,7 +32,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             {/* Logo & Brand */}
             <div className="flex items-center gap-8">
               <Link to="/" className="flex items-center gap-2.5">
-                <img src="/activepieces.png" alt="Activepieces" className="w-8 h-8" />
+                <img src="/activepieces.webp" alt="Activepieces" className="w-8 h-8" />
                 <span className="text-lg font-semibold text-gray-900">Template Manager</span>
               </Link>
               

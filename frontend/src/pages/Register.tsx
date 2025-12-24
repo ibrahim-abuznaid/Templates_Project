@@ -115,7 +115,7 @@ const Register: React.FC = () => {
         {/* Logo & Title */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-6">
-            <img src="/activepieces.png" alt="Activepieces" className="w-16 h-16" />
+            <img src="/activepieces.webp" alt="Activepieces" className="w-16 h-16" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Create your account</h1>
           <p className="text-gray-500 mt-2">You've been invited to join Template Manager</p>

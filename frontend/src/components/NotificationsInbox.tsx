@@ -60,8 +60,8 @@ const showBrowserNotification = (title: string, body: string, ideaId?: number) =
   
   const notification = new Notification(title, {
     body,
-    icon: '/activepieces.png',
-    badge: '/activepieces.png',
+    icon: '/activepieces.webp',
+    badge: '/activepieces.webp',
     tag: ideaId ? `idea-${ideaId}` : 'notification',
     requireInteraction: false,
   });
@@ -248,7 +248,7 @@ const NotificationsInbox: React.FC = () => {
       // Show a test notification
       new Notification('Desktop Notifications Enabled', {
         body: 'You will now receive notifications even when this tab is not focused.',
-        icon: '/activepieces.png',
+        icon: '/activepieces.webp',
       });
     }
   };
