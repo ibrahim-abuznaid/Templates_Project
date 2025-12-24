@@ -55,7 +55,9 @@ const notifyStatusChange = (idea, newStatus, changedByUserId) => {
   
   const statusMessages = {
     'needs_fixes': 'Your submission needs fixes',
-    'assigned': 'You have been assigned a new template'
+    'assigned': 'You have been assigned a new template',
+    'reviewed': 'Your template has been reviewed',
+    'published': 'Your template has been published'
   };
 
   const message = statusMessages[newStatus];

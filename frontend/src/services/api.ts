@@ -302,5 +302,66 @@ export const blockersApi = {
     api.delete(`/blockers/discussions/${discussionId}`),
 };
 
+// Analytics endpoints
+export const analyticsApi = {
+  getFreelancerReport: (period: 'weekly' | 'monthly' | 'all' = 'monthly', freelancerId?: number) =>
+    api.get<{
+      period: string;
+      reports: Array<{
+        freelancer_id: number;
+        username: string;
+        email: string;
+        total_templates: number;
+        published: number;
+        reviewed: number;
+        submitted: number;
+        in_progress: number;
+        needs_fixes: number;
+        assigned: number;
+        total_earnings: number;
+        completed_earnings: number;
+      }>;
+      generated_at: string;
+    }>('/analytics/freelancer-report', { params: { period, freelancerId } }),
+  
+  getCreationRate: (period: 'weekly' | 'monthly' | 'quarterly' | 'yearly' = 'monthly') =>
+    api.get<{
+      period: string;
+      creation_over_time: Array<{ date: string; created: number; published: number }>;
+      status_distribution: Array<{ status: string; count: number }>;
+      top_freelancers: Array<{ username: string; templates_count: number; published_count: number }>;
+      generated_at: string;
+    }>('/analytics/creation-rate', { params: { period } }),
+  
+  getSummary: () =>
+    api.get<{
+      overall: {
+        total_templates: number;
+        published: number;
+        reviewed: number;
+        in_progress: number;
+        new_templates: number;
+        total_value: number;
+      };
+      this_month: { created: number; published: number };
+      last_month: { created: number; published: number };
+      active_freelancers: number;
+      total_freelancers: number;
+      month_over_month_growth: string;
+      generated_at: string;
+    }>('/analytics/summary'),
+  
+  getDepartmentAnalytics: () =>
+    api.get<{
+      departments: Array<{
+        department: string;
+        template_count: number;
+        published: number;
+        in_progress: number;
+      }>;
+      generated_at: string;
+    }>('/analytics/departments'),
+};
+
 export default api;
 

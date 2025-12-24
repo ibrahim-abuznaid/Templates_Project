@@ -11,6 +11,7 @@ import notificationsRoutes from './routes/notifications.js';
 import invoicesRoutes from './routes/invoices.js';
 import blockersRoutes from './routes/blockers.js';
 import departmentsRoutes from './routes/departments.js';
+import analyticsRoutes from './routes/analytics.js';
 import { initializeSocket } from './socket.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -61,6 +62,7 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/invoices', invoicesRoutes);
 app.use('/api/blockers', blockersRoutes);
 app.use('/api/departments', departmentsRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

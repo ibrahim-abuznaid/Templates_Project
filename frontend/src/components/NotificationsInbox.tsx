@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { notificationsApi } from '../services/api';
 import { useSocket } from '../context/SocketContext';
 import type { Notification } from '../types';
-import { Bell, X, Check, CheckCheck, Trash2, AtSign, RefreshCw, AlertCircle } from 'lucide-react';
+import { Bell, X, Check, CheckCheck, Trash2, AtSign, RefreshCw, AlertCircle, BellRing, BellOff } from 'lucide-react';
 
 // Create notification sound
 const playNotificationSound = () => {
@@ -31,12 +31,63 @@ const playNotificationSound = () => {
   }
 };
 
+// Check if browser supports notifications
+const supportsNotifications = () => {
+  return 'Notification' in window;
+};
+
+// Request permission for browser notifications
+const requestNotificationPermission = async (): Promise<NotificationPermission> => {
+  if (!supportsNotifications()) {
+    console.log('Browser does not support notifications');
+    return 'denied';
+  }
+  
+  const permission = await Notification.requestPermission();
+  return permission;
+};
+
+// Show browser notification
+const showBrowserNotification = (title: string, body: string, ideaId?: number) => {
+  if (!supportsNotifications() || Notification.permission !== 'granted') {
+    return;
+  }
+  
+  // Only show if tab is not focused
+  if (document.hasFocus()) {
+    return;
+  }
+  
+  const notification = new Notification(title, {
+    body,
+    icon: '/activepieces.png',
+    badge: '/activepieces.png',
+    tag: ideaId ? `idea-${ideaId}` : 'notification',
+    requireInteraction: false,
+  });
+  
+  // Click to focus the tab and navigate to the idea
+  notification.onclick = () => {
+    window.focus();
+    if (ideaId) {
+      window.location.href = `/ideas/${ideaId}`;
+    }
+    notification.close();
+  };
+  
+  // Auto close after 5 seconds
+  setTimeout(() => notification.close(), 5000);
+};
+
 const NotificationsInbox: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [hasNewNotification, setHasNewNotification] = useState(false);
+  const [desktopPermission, setDesktopPermission] = useState<NotificationPermission>(
+    supportsNotifications() ? Notification.permission : 'denied'
+  );
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { subscribe, isConnected } = useSocket();
@@ -44,6 +95,10 @@ const NotificationsInbox: React.FC = () => {
   // Initial load
   useEffect(() => {
     loadUnreadCount();
+    // Check notification permission on mount
+    if (supportsNotifications()) {
+      setDesktopPermission(Notification.permission);
+    }
   }, []);
 
   // Subscribe to real-time notification events
@@ -56,6 +111,13 @@ const NotificationsInbox: React.FC = () => {
       
       // Play notification sound
       playNotificationSound();
+      
+      // Show browser/desktop notification
+      showBrowserNotification(
+        notification.title || 'New Notification',
+        notification.message || '',
+        notification.idea_id ?? undefined
+      );
       
       // If dropdown is open, add the new notification to the list
       setNotifications(prev => {
@@ -178,6 +240,19 @@ const NotificationsInbox: React.FC = () => {
     }
   };
 
+  const handleEnableDesktopNotifications = async () => {
+    const permission = await requestNotificationPermission();
+    setDesktopPermission(permission);
+    
+    if (permission === 'granted') {
+      // Show a test notification
+      new Notification('Desktop Notifications Enabled', {
+        body: 'You will now receive notifications even when this tab is not focused.',
+        icon: '/activepieces.png',
+      });
+    }
+  };
+
   const getNotificationIcon = (type: string) => {
     switch (type) {
       case 'mention':
@@ -226,25 +301,52 @@ const NotificationsInbox: React.FC = () => {
 
       {isOpen && (
         <div className="absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
-          <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-            <h3 className="font-semibold text-gray-900">Notifications</h3>
-            <div className="flex items-center space-x-2">
-              {unreadCount > 0 && (
+          <div className="p-4 border-b border-gray-200 bg-gray-50">
+            <div className="flex justify-between items-center">
+              <h3 className="font-semibold text-gray-900">Notifications</h3>
+              <div className="flex items-center space-x-2">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={handleMarkAllAsRead}
+                    className="text-sm text-primary-600 hover:text-primary-700 flex items-center space-x-1"
+                  >
+                    <CheckCheck className="w-4 h-4" />
+                    <span>Mark all read</span>
+                  </button>
+                )}
                 <button
-                  onClick={handleMarkAllAsRead}
-                  className="text-sm text-primary-600 hover:text-primary-700 flex items-center space-x-1"
+                  onClick={() => setIsOpen(false)}
+                  className="p-1 hover:bg-gray-200 rounded"
                 >
-                  <CheckCheck className="w-4 h-4" />
-                  <span>Mark all read</span>
+                  <X className="w-4 h-4 text-gray-500" />
                 </button>
-              )}
-              <button
-                onClick={() => setIsOpen(false)}
-                className="p-1 hover:bg-gray-200 rounded"
-              >
-                <X className="w-4 h-4 text-gray-500" />
-              </button>
+              </div>
             </div>
+            
+            {/* Desktop Notifications Toggle */}
+            {supportsNotifications() && (
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                {desktopPermission === 'granted' ? (
+                  <div className="flex items-center gap-2 text-sm text-green-600">
+                    <BellRing className="w-4 h-4" />
+                    <span>Desktop notifications enabled</span>
+                  </div>
+                ) : desktopPermission === 'denied' ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <BellOff className="w-4 h-4" />
+                    <span>Desktop notifications blocked</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleEnableDesktopNotifications}
+                    className="flex items-center gap-2 text-sm text-primary-600 hover:text-primary-700"
+                  >
+                    <BellRing className="w-4 h-4" />
+                    <span>Enable desktop notifications</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="max-h-96 overflow-y-auto">

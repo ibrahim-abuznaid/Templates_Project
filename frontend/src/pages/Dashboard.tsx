@@ -5,14 +5,16 @@ import { ideasApi, departmentsApi } from '../services/api';
 import type { Idea, Department, User } from '../types';
 import IdeaCard from '../components/IdeaCard';
 import StatusLegend from '../components/StatusLegend';
-import { Plus, Filter, Loader, Wifi, WifiOff, X, ChevronDown } from 'lucide-react';
+import { Plus, Filter, Loader, Wifi, WifiOff, X, ChevronDown, Search } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
   const { user, isAdmin, isFreelancer } = useAuth();
   const { subscribe, isConnected } = useSocket();
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>('all');
+  // Default to 'active' for freelancers (hides published/archived), 'all' for admins
+  const [filter, setFilter] = useState<string>(isFreelancer ? 'active' : 'all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [recentlyUpdated, setRecentlyUpdated] = useState<number | null>(null);
   const [newIdea, setNewIdea] = useState({ 
@@ -168,19 +170,37 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // "Available to pick up" = unassigned AND status is 'new' (ready for someone to take)
+  const availableIdeas = ideas.filter((i) => i.assigned_to === null && i.status === 'new');
+  
+  // "My templates" = assigned to current user (excluding published/archived for active count)
+  const myIdeas = ideas.filter((i) => i.assigned_to === user?.id);
+  const myActiveIdeas = myIdeas.filter((i) => i.status !== 'published' && i.status !== 'archived');
+
   const filteredIdeas = ideas.filter((idea) => {
+    // First, apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      const name = (idea.flow_name || '').toLowerCase();
+      if (!name.includes(query)) return false;
+    }
+    
+    // Then, apply status/category filter
     if (filter === 'all') return true;
-    if (filter === 'my_ideas' && isFreelancer) return idea.assigned_to === user?.id;
-    if (filter === 'available' && isFreelancer) return idea.assigned_to === null;
+    // Work in Progress = all non-completed templates
+    if (filter === 'active') return idea.status !== 'published' && idea.status !== 'archived';
+    // Assigned to me = my templates that are still active (not published/archived)
+    if (filter === 'my_ideas') return idea.assigned_to === user?.id && idea.status !== 'published' && idea.status !== 'archived';
+    // Available to pick up = unassigned NEW templates only
+    if (filter === 'available') return idea.assigned_to === null && idea.status === 'new';
+    // Status-specific filters
     return idea.status === filter;
   });
 
-  const myIdeas = ideas.filter((i) => i.assigned_to === user?.id);
-  const availableIdeas = ideas.filter((i) => i.assigned_to === null);
-
   const stats = {
     total: ideas.length,
-    my_ideas: myIdeas.length,
+    active: ideas.filter((i) => i.status !== 'published' && i.status !== 'archived').length,
+    my_ideas: myActiveIdeas.length,
     available: availableIdeas.length,
     new: ideas.filter((i) => i.status === 'new').length,
     assigned: ideas.filter((i) => i.status === 'assigned').length,
@@ -291,32 +311,70 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Filter */}
+      {/* Search & Filter */}
       <div className="card mb-6">
-        <div className="flex items-center space-x-4">
-          <Filter className="w-5 h-5 text-gray-600" />
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="input-field w-64"
-          >
-            <option value="all">All Templates ({stats.total})</option>
-            {isFreelancer && (
-              <>
-                <option value="my_ideas">My Templates ({stats.my_ideas})</option>
-                <option value="available">Available Templates ({stats.available})</option>
-              </>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+          {/* Search */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search templates by name..."
+              className="input-field pl-10 w-full"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
             )}
-            {!isFreelancer && <option value="new">New ({stats.new})</option>}
-            <option value="assigned">Assigned ({stats.assigned})</option>
-            <option value="in_progress">In Progress ({stats.in_progress})</option>
-            <option value="submitted">Submitted ({stats.submitted})</option>
-            <option value="needs_fixes">Needs Fixes ({stats.needs_fixes})</option>
-            <option value="reviewed">Reviewed ({stats.reviewed})</option>
-            <option value="published">Published ({stats.published})</option>
-            <option value="archived">Archived ({stats.archived})</option>
-          </select>
+          </div>
+          
+          {/* Filter */}
+          <div className="flex items-center gap-2">
+            <Filter className="w-5 h-5 text-gray-600 hidden sm:block" />
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="input-field w-full sm:w-72"
+            >
+              {isFreelancer ? (
+                <>
+                  <option value="active">📋 Work in Progress ({stats.active})</option>
+                  <option value="my_ideas">👤 Assigned to Me ({stats.my_ideas})</option>
+                  <option value="available">🆕 Available to Pick Up ({stats.available})</option>
+                  <option value="all">All (incl. Completed) ({stats.total})</option>
+                </>
+              ) : (
+                <>
+                  <option value="all">All Templates ({stats.total})</option>
+                  <option value="active">Work in Progress ({stats.active})</option>
+                </>
+              )}
+              <optgroup label="Filter by Status">
+                <option value="new">New - Unassigned ({stats.new})</option>
+                <option value="assigned">Assigned - Not Started ({stats.assigned})</option>
+                <option value="in_progress">In Progress ({stats.in_progress})</option>
+                <option value="submitted">Submitted - Awaiting Review ({stats.submitted})</option>
+                <option value="needs_fixes">Needs Fixes ({stats.needs_fixes})</option>
+                <option value="reviewed">Reviewed - Approved ({stats.reviewed})</option>
+                <option value="published">Published ({stats.published})</option>
+                <option value="archived">Archived ({stats.archived})</option>
+              </optgroup>
+            </select>
+          </div>
         </div>
+        
+        {/* Search results count */}
+        {searchQuery && (
+          <div className="mt-3 text-sm text-gray-500">
+            Found {filteredIdeas.length} template{filteredIdeas.length !== 1 ? 's' : ''} matching "{searchQuery}"
+          </div>
+        )}
       </div>
 
       {/* Templates Grid */}
@@ -467,28 +525,35 @@ const Dashboard: React.FC = () => {
 
                     {/* Dropdown Menu */}
                     {showDeptDropdown && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                        {allDepartments.map((dept) => (
-                          <label
-                            key={dept.id}
-                            className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedDepartmentIds.includes(dept.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedDepartmentIds([...selectedDepartmentIds, dept.id]);
-                                } else {
-                                  setSelectedDepartmentIds(selectedDepartmentIds.filter(id => id !== dept.id));
-                                }
-                              }}
-                              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-2"
-                            />
-                            <span className="text-sm text-gray-700">{dept.name}</span>
-                          </label>
-                        ))}
-                      </div>
+                      <>
+                        {/* Click outside overlay */}
+                        <div 
+                          className="fixed inset-0 z-[5]" 
+                          onClick={() => setShowDeptDropdown(false)}
+                        />
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          {allDepartments.map((dept) => (
+                            <label
+                              key={dept.id}
+                              className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedDepartmentIds.includes(dept.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedDepartmentIds([...selectedDepartmentIds, dept.id]);
+                                  } else {
+                                    setSelectedDepartmentIds(selectedDepartmentIds.filter(id => id !== dept.id));
+                                  }
+                                }}
+                                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-2"
+                              />
+                              <span className="text-sm text-gray-700">{dept.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </>
                     )}
                     
                     {selectedDepartmentIds.length === 0 && (

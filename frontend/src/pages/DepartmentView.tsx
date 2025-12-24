@@ -42,11 +42,6 @@ const DepartmentView: React.FC = () => {
     }
   };
 
-  const getCompletionRate = (dept: DepartmentSummary) => {
-    if (dept.template_count === 0) return 0;
-    return Math.round((dept.published_count / dept.template_count) * 100);
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -157,63 +152,46 @@ const DepartmentView: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {departments.map((dept) => {
-          const completionRate = getCompletionRate(dept);
-          
-          return (
-            <div
-              key={dept.department}
-              onClick={() => loadDepartmentTemplates(dept.department)}
-              className="card cursor-pointer hover:shadow-xl transition-all transform hover:-translate-y-1 bg-gradient-to-br from-white to-gray-50"
-            >
-              <div className="flex justify-between items-start mb-4">
-                <h2 className="text-2xl font-bold text-gray-900">{dept.department}</h2>
-                <div className="bg-primary-100 text-primary-600 font-bold text-xl rounded-full w-12 h-12 flex items-center justify-center">
-                  {dept.template_count}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                <div className="text-center">
-                  <div className="flex items-center justify-center mb-1">
-                    <CheckCircle className="w-4 h-4 text-green-600" />
-                  </div>
-                  <div className="text-lg font-bold text-green-600">{dept.published_count}</div>
-                  <div className="text-xs text-gray-600">Published</div>
-                </div>
-                
-                <div className="text-center">
-                  <div className="flex items-center justify-center mb-1">
-                    <Clock className="w-4 h-4 text-yellow-600" />
-                  </div>
-                  <div className="text-lg font-bold text-yellow-600">{dept.in_progress_count}</div>
-                  <div className="text-xs text-gray-600">In Progress</div>
-                </div>
-                
-                <div className="text-center">
-                  <div className="flex items-center justify-center mb-1">
-                    <AlertCircle className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <div className="text-lg font-bold text-blue-600">{dept.new_count}</div>
-                  <div className="text-xs text-gray-600">New</div>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-gray-600">Completion Rate</span>
-                  <span className="text-sm font-medium text-gray-900">{completionRate}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div
-                    className="bg-gradient-to-r from-primary-500 to-green-500 h-2.5 rounded-full transition-all duration-500"
-                    style={{ width: `${completionRate}%` }}
-                  />
-                </div>
+        {departments.map((dept) => (
+          <div
+            key={dept.department}
+            onClick={() => loadDepartmentTemplates(dept.department)}
+            className="card cursor-pointer hover:shadow-xl transition-all transform hover:-translate-y-1 bg-gradient-to-br from-white to-gray-50"
+          >
+            <div className="flex justify-between items-start mb-4">
+              <h2 className="text-2xl font-bold text-gray-900">{dept.department}</h2>
+              <div className="bg-primary-100 text-primary-600 font-bold text-xl rounded-full w-12 h-12 flex items-center justify-center">
+                {dept.template_count}
               </div>
             </div>
-          );
-        })}
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="text-center">
+                <div className="flex items-center justify-center mb-1">
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                </div>
+                <div className="text-lg font-bold text-green-600">{dept.published_count}</div>
+                <div className="text-xs text-gray-600">Published</div>
+              </div>
+              
+              <div className="text-center">
+                <div className="flex items-center justify-center mb-1">
+                  <Clock className="w-4 h-4 text-yellow-600" />
+                </div>
+                <div className="text-lg font-bold text-yellow-600">{dept.in_progress_count}</div>
+                <div className="text-xs text-gray-600">In Progress</div>
+              </div>
+              
+              <div className="text-center">
+                <div className="flex items-center justify-center mb-1">
+                  <AlertCircle className="w-4 h-4 text-blue-600" />
+                </div>
+                <div className="text-lg font-bold text-blue-600">{dept.new_count}</div>
+                <div className="text-xs text-gray-600">New</div>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {departments.length === 0 && (

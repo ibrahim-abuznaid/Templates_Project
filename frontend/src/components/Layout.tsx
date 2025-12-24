@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle, Zap } from 'lucide-react';
+import { LogOut, User, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle, Zap, ChevronDown, BarChart3 } from 'lucide-react';
 import NotificationsInbox from './NotificationsInbox';
 import InviteUserModal from './InviteUserModal';
 
@@ -14,6 +14,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -23,25 +24,24 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const isActive = (path: string) => location.pathname === path;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm border-b border-gray-200">
+    <div className="min-h-screen bg-gray-50/50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200/80 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            <div className="flex items-center space-x-8">
-              <Link to="/" className="flex items-center space-x-2 text-xl font-bold text-primary-600">
-                <LayoutDashboard className="w-6 h-6" />
-                <span>Template Manager</span>
+          <div className="flex justify-between h-14 items-center">
+            {/* Logo & Brand */}
+            <div className="flex items-center gap-8">
+              <Link to="/" className="flex items-center gap-2.5">
+                <img src="/activepieces.png" alt="Activepieces" className="w-8 h-8" />
+                <span className="text-lg font-semibold text-gray-900">Template Manager</span>
               </Link>
               
+              {/* Navigation */}
               {user && (
-                <div className="flex items-center space-x-4">
+                <nav className="hidden md:flex items-center gap-1">
                   <Link
                     to="/"
-                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                      isActive('/')
-                        ? 'bg-primary-100 text-primary-700 font-medium'
-                        : 'text-gray-600 hover:bg-gray-100'
-                    }`}
+                    className={isActive('/') ? 'nav-link-active' : 'nav-link'}
                   >
                     <LayoutDashboard className="w-4 h-4" />
                     <span>Dashboard</span>
@@ -49,11 +49,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   
                   <Link
                     to="/departments"
-                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                      isActive('/departments')
-                        ? 'bg-primary-100 text-primary-700 font-medium'
-                        : 'text-gray-600 hover:bg-gray-100'
-                    }`}
+                    className={isActive('/departments') ? 'nav-link-active' : 'nav-link'}
                   >
                     <Building2 className="w-4 h-4" />
                     <span>Departments</span>
@@ -61,11 +57,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   
                   <Link
                     to="/blockers"
-                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                      isActive('/blockers')
-                        ? 'bg-primary-100 text-primary-700 font-medium'
-                        : 'text-gray-600 hover:bg-gray-100'
-                    }`}
+                    className={isActive('/blockers') ? 'nav-link-active' : 'nav-link'}
                   >
                     <AlertTriangle className="w-4 h-4" />
                     <span>Blockers</span>
@@ -74,9 +66,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   {isAdmin && (
                     <Link
                       to="/quick-publish"
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
                         isActive('/quick-publish')
-                          ? 'bg-amber-100 text-amber-700 font-medium'
+                          ? 'bg-amber-50 text-amber-700 border border-amber-200'
                           : 'text-amber-600 hover:bg-amber-50'
                       }`}
                     >
@@ -85,14 +77,20 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     </Link>
                   )}
 
+                  {isAdmin && (
+                    <Link
+                      to="/analytics"
+                      className={isActive('/analytics') ? 'nav-link-active' : 'nav-link'}
+                    >
+                      <BarChart3 className="w-4 h-4" />
+                      <span>Analytics</span>
+                    </Link>
+                  )}
+
                   {isAdmin ? (
                     <Link
                       to="/invoices"
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                        isActive('/invoices')
-                          ? 'bg-primary-100 text-primary-700 font-medium'
-                          : 'text-gray-600 hover:bg-gray-100'
-                      }`}
+                      className={isActive('/invoices') ? 'nav-link-active' : 'nav-link'}
                     >
                       <Receipt className="w-4 h-4" />
                       <span>Invoices</span>
@@ -100,26 +98,23 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   ) : (
                     <Link
                       to="/earnings"
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                        isActive('/earnings')
-                          ? 'bg-primary-100 text-primary-700 font-medium'
-                          : 'text-gray-600 hover:bg-gray-100'
-                      }`}
+                      className={isActive('/earnings') ? 'nav-link-active' : 'nav-link'}
                     >
                       <DollarSign className="w-4 h-4" />
                       <span>Earnings</span>
                     </Link>
                   )}
-                </div>
+                </nav>
               )}
             </div>
 
+            {/* Right Side Actions */}
             {user && (
-              <div className="flex items-center space-x-4">
+              <div className="flex items-center gap-2">
                 {isAdmin && (
                   <button
                     onClick={() => setShowInviteModal(true)}
-                    className="flex items-center space-x-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                    className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all"
                     title="Invite Users"
                   >
                     <UserPlus className="w-5 h-5" />
@@ -128,31 +123,59 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 
                 <NotificationsInbox />
                 
-                <div className="flex items-center space-x-2 px-3 py-2 bg-gray-100 rounded-lg">
-                  <User className="w-5 h-5 text-gray-600" />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-gray-700">{user.username}</span>
-                    {user.handle && (
-                      <span className="text-xs text-gray-500">@{user.handle}</span>
-                    )}
-                  </div>
-                  <span className="text-xs px-2 py-1 bg-primary-100 text-primary-700 rounded">
-                    {user.role === 'freelancer' ? 'Template Creator' : 'Reviewer'}
-                  </span>
+                {/* User Menu */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowUserMenu(!showUserMenu)}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-all"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
+                      <User className="w-4 h-4 text-primary-600" />
+                    </div>
+                    <div className="hidden sm:flex flex-col items-start">
+                      <span className="text-sm font-medium text-gray-900">{user.username}</span>
+                      <span className="text-xs text-gray-500">
+                        {user.role === 'freelancer' ? 'Creator' : 'Reviewer'}
+                      </span>
+                    </div>
+                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                  </button>
+
+                  {/* Dropdown Menu */}
+                  {showUserMenu && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-10" 
+                        onClick={() => setShowUserMenu(false)}
+                      />
+                      <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-elevated border border-gray-100 py-2 z-20 animate-fade-in">
+                        <div className="px-4 py-2 border-b border-gray-100">
+                          <p className="text-sm font-medium text-gray-900">{user.username}</p>
+                          {user.handle && (
+                            <p className="text-xs text-gray-500">@{user.handle}</p>
+                          )}
+                          <span className="inline-block mt-1.5 text-xs px-2 py-0.5 bg-primary-50 text-primary-700 rounded-full font-medium">
+                            {user.role === 'freelancer' ? 'Template Creator' : 'Reviewer'}
+                          </span>
+                        </div>
+                        <button
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>Sign out</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
-                <button
-                  onClick={handleLogout}
-                  className="flex items-center space-x-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>Logout</span>
-                </button>
               </div>
             )}
           </div>
         </div>
-      </nav>
+      </header>
 
+      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {children}
       </main>
@@ -168,4 +191,3 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 };
 
 export default Layout;
-

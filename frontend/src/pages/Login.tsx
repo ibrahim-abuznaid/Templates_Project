@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogIn, AlertCircle } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 
 const Login: React.FC = () => {
   const [username, setUsername] = useState('');
@@ -27,25 +27,27 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 to-primary-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-subtle flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="card">
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-100 rounded-full mb-4">
-              <LogIn className="w-8 h-8 text-primary-600" />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900">Welcome Back</h1>
-            <p className="text-gray-600 mt-2">Sign in to your account</p>
+        {/* Logo & Title */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center mb-6">
+            <img src="/activepieces.png" alt="Activepieces" className="w-16 h-16" />
           </div>
+          <h1 className="text-2xl font-bold text-gray-900">Welcome back</h1>
+          <p className="text-gray-500 mt-2">Sign in to Template Manager</p>
+        </div>
 
+        {/* Login Card */}
+        <div className="bg-white rounded-2xl shadow-elevated border border-gray-100 p-8">
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-2">
-              <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-              <span className="text-sm text-red-800">{error}</span>
+            <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+              <span className="text-sm text-red-700">{error}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
                 Username
@@ -80,17 +82,27 @@ const Login: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full btn-primary py-3 text-base font-medium"
+              className="w-full btn-primary py-3 text-base flex items-center justify-center gap-2"
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Signing in...</span>
+                </>
+              ) : (
+                <span>Sign in</span>
+              )}
             </button>
           </form>
-
         </div>
+
+        {/* Footer */}
+        <p className="text-center text-sm text-gray-500 mt-8">
+          Powered by <span className="font-medium text-primary-600">Activepieces</span>
+        </p>
       </div>
     </div>
   );
 };
 
 export default Login;
-

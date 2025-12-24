@@ -61,6 +61,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const mountedRef = useRef(false);
+  // Store pending subscriptions for when socket connects
+  const pendingSubscriptions = useRef<Map<string, Set<Function>>>(new Map());
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -95,6 +97,14 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         newSocket.on('connect', () => {
           console.log('✅ Socket connected:', newSocket.id);
           setIsConnected(true);
+          
+          // Apply any pending subscriptions
+          pendingSubscriptions.current.forEach((callbacks, eventName) => {
+            callbacks.forEach(cb => {
+              newSocket.on(eventName, cb as any);
+            });
+          });
+          console.log('📬 Applied pending subscriptions:', pendingSubscriptions.current.size, 'event types');
         });
 
         newSocket.on('disconnect', (reason) => {
@@ -105,6 +115,19 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         newSocket.on('connect_error', (error) => {
           console.error('🔴 Socket connection error:', error.message);
           setIsConnected(false);
+        });
+
+        // Handle reconnection - reapply subscriptions
+        newSocket.on('reconnect', () => {
+          console.log('🔄 Socket reconnected');
+          setIsConnected(true);
+          
+          // Reapply subscriptions after reconnection
+          pendingSubscriptions.current.forEach((callbacks, eventName) => {
+            callbacks.forEach(cb => {
+              newSocket.on(eventName, cb as any);
+            });
+          });
         });
 
         socketRef.current = newSocket;
@@ -148,19 +171,29 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Subscribe to socket events
+  // Subscribe to socket events - handles both connected and not-yet-connected states
   const subscribe = useCallback(<K extends keyof SocketEvents>(
     event: K,
     callback: SocketEvents[K]
   ): (() => void) => {
-    if (!socketRef.current) {
-      return () => {};
-    }
+    const eventName = event as string;
+    const cb = callback as Function;
 
-    socketRef.current.on(event as string, callback as any);
+    // If socket is ready, subscribe immediately
+    if (socketRef.current?.connected) {
+      socketRef.current.on(eventName, cb as any);
+    }
     
+    // Also store in pending subscriptions (for reconnection handling)
+    if (!pendingSubscriptions.current.has(eventName)) {
+      pendingSubscriptions.current.set(eventName, new Set());
+    }
+    pendingSubscriptions.current.get(eventName)!.add(cb);
+    
+    // Return cleanup function
     return () => {
-      socketRef.current?.off(event as string, callback as any);
+      socketRef.current?.off(eventName, cb as any);
+      pendingSubscriptions.current.get(eventName)?.delete(cb);
     };
   }, []);
 

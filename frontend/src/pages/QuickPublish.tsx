@@ -436,28 +436,35 @@ const QuickPublish: React.FC = () => {
               )}
 
               {showDeptDropdown && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {allDepartments.map((dept) => (
-                    <label
-                      key={dept.id}
-                      className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedDepartmentIds.includes(dept.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedDepartmentIds([...selectedDepartmentIds, dept.id]);
-                          } else {
-                            setSelectedDepartmentIds(selectedDepartmentIds.filter(id => id !== dept.id));
-                          }
-                        }}
-                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-2"
-                      />
-                      <span className="text-sm text-gray-700">{dept.name}</span>
-                    </label>
-                  ))}
-                </div>
+                <>
+                  {/* Click outside overlay */}
+                  <div 
+                    className="fixed inset-0 z-[5]" 
+                    onClick={() => setShowDeptDropdown(false)}
+                  />
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {allDepartments.map((dept) => (
+                      <label
+                        key={dept.id}
+                        className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedDepartmentIds.includes(dept.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedDepartmentIds([...selectedDepartmentIds, dept.id]);
+                            } else {
+                              setSelectedDepartmentIds(selectedDepartmentIds.filter(id => id !== dept.id));
+                            }
+                          }}
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-2"
+                        />
+                        <span className="text-sm text-gray-700">{dept.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </>
               )}
               
               {selectedDepartmentIds.length === 0 && (

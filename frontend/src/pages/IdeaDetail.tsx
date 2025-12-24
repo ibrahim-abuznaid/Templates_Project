@@ -1189,22 +1189,12 @@ const IdeaDetail: React.FC = () => {
                 </div>
               </div>
 
-              {/* Author */}
+              {/* Author (read-only) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Author
                 </label>
-                {editing ? (
-                  <input
-                    type="text"
-                    value={editData.author}
-                    onChange={(e) => setEditData({ ...editData, author: e.target.value })}
-                    className="input-field"
-                    placeholder="Activepieces Team"
-                  />
-                ) : (
-                  <p className="text-gray-600">{idea.author || 'Activepieces Team'}</p>
-                )}
+                <p className="text-gray-600">{idea.author || 'Activepieces Team'}</p>
               </div>
 
               {/* Scribe URL (sent as blogUrl) */}
@@ -1325,25 +1315,6 @@ const IdeaDetail: React.FC = () => {
                     </div>
                   )}
                 </div>
-              </div>
-
-              {/* Setup Guide */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Setup Guide
-                </label>
-                {editing ? (
-                  <textarea
-                    value={editData.setup_guide}
-                    onChange={(e) => setEditData({ ...editData, setup_guide: e.target.value })}
-                    className="input-field"
-                    rows={6}
-                  />
-                ) : (
-                  <p className="text-gray-600 whitespace-pre-wrap">
-                    {idea.setup_guide || 'Not provided'}
-                  </p>
-                )}
               </div>
 
               {/* Template URL */}
