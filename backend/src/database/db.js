@@ -450,6 +450,7 @@ async function seedDefaultDepartments() {
         { name: 'Legal', description: 'Legal and Compliance' },
         { name: 'Product', description: 'Product Management' },
         { name: 'Engineering', description: 'Software Engineering' },
+        { name: 'Everyone - Everyday', description: 'Universal templates for daily use' },
         { name: 'Other', description: 'Other Departments' }
       ];
 
