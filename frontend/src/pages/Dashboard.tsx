@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
+import { useSearchParams } from 'react-router-dom';
 import { ideasApi, departmentsApi } from '../services/api';
 import type { Idea, Department, User } from '../types';
 import IdeaCard from '../components/IdeaCard';
@@ -10,13 +11,32 @@ import { Plus, Loader, Wifi, WifiOff, X, ChevronDown, Search, User as UserIcon, 
 const Dashboard: React.FC = () => {
   const { user, isAdmin, isFreelancer } = useAuth();
   const { subscribe, isConnected } = useSocket();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Get initial filter values from URL or defaults
+  const getInitialStatusFilter = () => {
+    const urlStatus = searchParams.get('status');
+    if (urlStatus) return urlStatus;
+    return isFreelancer ? 'active_and_available' : 'all';
+  };
+  
+  const getInitialAssigneeFilter = () => {
+    const urlAssignee = searchParams.get('assignee');
+    if (urlAssignee) return urlAssignee;
+    return 'all';
+  };
+  
+  const getInitialSearchQuery = () => {
+    return searchParams.get('search') || '';
+  };
+  
   // Status filter - default to 'active_and_available' for freelancers (hides published), 'all' for admins
-  const [statusFilter, setStatusFilter] = useState<string>(isFreelancer ? 'active_and_available' : 'all');
+  const [statusFilter, setStatusFilter] = useState<string>(getInitialStatusFilter);
   // Assignee filter - 'all' means no assignee filter, null means unassigned, number means specific user
-  const [assigneeFilter, setAssigneeFilter] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [assigneeFilter, setAssigneeFilter] = useState<string>(getInitialAssigneeFilter);
+  const [searchQuery, setSearchQuery] = useState(getInitialSearchQuery);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [recentlyUpdated, setRecentlyUpdated] = useState<number | null>(null);
   const [newIdea, setNewIdea] = useState({ 
@@ -46,6 +66,30 @@ const Dashboard: React.FC = () => {
       loadFreelancers();
     }
   }, [isAdmin]);
+
+  // Sync filters with URL parameters
+  useEffect(() => {
+    const params = new URLSearchParams();
+    
+    // Only add non-default values to URL
+    const defaultStatus = isFreelancer ? 'active_and_available' : 'all';
+    if (statusFilter !== defaultStatus) {
+      params.set('status', statusFilter);
+    }
+    if (assigneeFilter !== 'all') {
+      params.set('assignee', assigneeFilter);
+    }
+    if (searchQuery.trim()) {
+      params.set('search', searchQuery.trim());
+    }
+    
+    // Update URL without causing a re-render loop
+    const newSearch = params.toString();
+    const currentSearch = searchParams.toString();
+    if (newSearch !== currentSearch) {
+      setSearchParams(params, { replace: true });
+    }
+  }, [statusFilter, assigneeFilter, searchQuery, isFreelancer, setSearchParams]);
 
   const loadDepartments = async () => {
     try {
@@ -291,9 +335,12 @@ const Dashboard: React.FC = () => {
   
   // Clear filters helper
   const clearFilters = () => {
-    setStatusFilter('all');
+    const defaultStatus = isFreelancer ? 'active_and_available' : 'all';
+    setStatusFilter(defaultStatus);
     setAssigneeFilter('all');
     setSearchQuery('');
+    // Clear URL params
+    setSearchParams({}, { replace: true });
   };
   
   const hasActiveFilters = statusFilter !== 'all' || assigneeFilter !== 'all' || searchQuery.trim() !== '';
