@@ -285,14 +285,14 @@ const NotificationsInbox: React.FC = () => {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={toggleDropdown}
-        className={`relative p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-all ${
-          hasNewNotification ? 'animate-pulse ring-2 ring-blue-400' : ''
+        className={`relative p-2.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all ${
+          hasNewNotification ? 'animate-pulse ring-2 ring-blue-400 ring-offset-1' : ''
         }`}
       >
         <Bell className={`w-5 h-5 ${hasNewNotification ? 'text-blue-600' : ''}`} />
         {unreadCount > 0 && (
-          <span className={`absolute -top-1 -right-1 text-white text-xs font-bold rounded-full min-w-5 h-5 px-1 flex items-center justify-center transition-all ${
-            hasNewNotification ? 'bg-blue-500 scale-125 animate-bounce' : 'bg-red-500'
+          <span className={`absolute -top-0.5 -right-0.5 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center transition-all shadow-sm ${
+            hasNewNotification ? 'bg-blue-500 scale-110 animate-bounce' : 'bg-red-500'
           }`}>
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
