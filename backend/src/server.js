@@ -47,7 +47,7 @@ app.use(cors({
   },
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));  // Increased to handle large flow JSON files
 
 // Initialize PostgreSQL database
 console.log('🐘 Initializing PostgreSQL database (v17)...');
