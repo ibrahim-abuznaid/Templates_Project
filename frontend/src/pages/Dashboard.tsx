@@ -15,28 +15,20 @@ const Dashboard: React.FC = () => {
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Get initial filter values from URL or defaults
-  const getInitialStatusFilter = () => {
+  // Status filter - default to 'active_and_available' for freelancers (hides published), 'all' for admins
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
     const urlStatus = searchParams.get('status');
     if (urlStatus) return urlStatus;
     return isFreelancer ? 'active_and_available' : 'all';
-  };
-  
-  const getInitialAssigneeFilter = () => {
-    const urlAssignee = searchParams.get('assignee');
-    if (urlAssignee) return urlAssignee;
-    return 'all';
-  };
-  
-  const getInitialSearchQuery = () => {
-    return searchParams.get('search') || '';
-  };
-  
-  // Status filter - default to 'active_and_available' for freelancers (hides published), 'all' for admins
-  const [statusFilter, setStatusFilter] = useState<string>(getInitialStatusFilter);
+  });
   // Assignee filter - 'all' means no assignee filter, null means unassigned, number means specific user
-  const [assigneeFilter, setAssigneeFilter] = useState<string>(getInitialAssigneeFilter);
-  const [searchQuery, setSearchQuery] = useState(getInitialSearchQuery);
+  const [assigneeFilter, setAssigneeFilter] = useState<string>(() => {
+    return searchParams.get('assignee') || 'all';
+  });
+  const [searchQuery, setSearchQuery] = useState<string>(() => {
+    return searchParams.get('search') || '';
+  });
+  const [filtersInitialized, setFiltersInitialized] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [recentlyUpdated, setRecentlyUpdated] = useState<number | null>(null);
   const [newIdea, setNewIdea] = useState({ 
@@ -67,8 +59,23 @@ const Dashboard: React.FC = () => {
     }
   }, [isAdmin]);
 
-  // Sync filters with URL parameters
+  // Initialize filters from URL on mount (handles browser back/forward and page refresh)
   useEffect(() => {
+    const urlStatus = searchParams.get('status');
+    const urlAssignee = searchParams.get('assignee');
+    const urlSearch = searchParams.get('search');
+    
+    if (urlStatus) setStatusFilter(urlStatus);
+    if (urlAssignee) setAssigneeFilter(urlAssignee);
+    if (urlSearch) setSearchQuery(urlSearch);
+    
+    setFiltersInitialized(true);
+  }, []); // Only run once on mount
+
+  // Sync filters TO URL parameters when they change (after initialization)
+  useEffect(() => {
+    if (!filtersInitialized) return;
+    
     const params = new URLSearchParams();
     
     // Only add non-default values to URL
@@ -83,13 +90,8 @@ const Dashboard: React.FC = () => {
       params.set('search', searchQuery.trim());
     }
     
-    // Update URL without causing a re-render loop
-    const newSearch = params.toString();
-    const currentSearch = searchParams.toString();
-    if (newSearch !== currentSearch) {
-      setSearchParams(params, { replace: true });
-    }
-  }, [statusFilter, assigneeFilter, searchQuery, isFreelancer, setSearchParams]);
+    setSearchParams(params, { replace: true });
+  }, [statusFilter, assigneeFilter, searchQuery, isFreelancer, filtersInitialized, setSearchParams]);
 
   const loadDepartments = async () => {
     try {
@@ -304,7 +306,16 @@ const Dashboard: React.FC = () => {
     return passesStatusFilter && passesAssigneeFilter;
   });
 
-  // Get filtered count for assignee filter context
+  // Get ideas filtered by current assignee (for admin stats)
+  const getIdeasForCurrentAssignee = () => {
+    if (assigneeFilter === 'all') return ideas;
+    if (assigneeFilter === 'unassigned') return ideas.filter(i => i.assigned_to === null);
+    return ideas.filter(i => i.assigned_to === parseInt(assigneeFilter, 10));
+  };
+  
+  const assigneeFilteredIdeas = getIdeasForCurrentAssignee();
+
+  // Get filtered count for assignee filter context (shows count per assignee for dropdown)
   const getCountForAssignee = (assigneeId: string) => {
     const baseIdeas = statusFilter === 'all' 
       ? ideas 
@@ -317,20 +328,25 @@ const Dashboard: React.FC = () => {
     return baseIdeas.filter(i => i.assigned_to === parseInt(assigneeId, 10)).length;
   };
 
+  // For admins: stats reflect the current assignee filter
+  // For freelancers: stats are based on all their visible ideas
+  const statsBase = isAdmin ? assigneeFilteredIdeas : ideas;
+
   const stats = {
-    total: ideas.length,
-    active: ideas.filter((i) => i.status !== 'published' && i.status !== 'archived').length,
+    total: assigneeFilteredIdeas.length, // Shows count for current assignee
+    totalAll: ideas.length, // Total overall for reference
+    active: statsBase.filter((i) => i.status !== 'published' && i.status !== 'archived').length,
     my_ideas: myActiveIdeas.length,
     my_published: myPublishedIdeas.length,
     available: availableIdeas.length,
-    new: ideas.filter((i) => i.status === 'new').length,
-    assigned: ideas.filter((i) => i.status === 'assigned').length,
-    in_progress: ideas.filter((i) => i.status === 'in_progress').length,
-    submitted: ideas.filter((i) => i.status === 'submitted').length,
-    needs_fixes: ideas.filter((i) => i.status === 'needs_fixes').length,
-    reviewed: ideas.filter((i) => i.status === 'reviewed').length,
-    published: ideas.filter((i) => i.status === 'published').length,
-    archived: ideas.filter((i) => i.status === 'archived').length,
+    new: statsBase.filter((i) => i.status === 'new').length,
+    assigned: statsBase.filter((i) => i.status === 'assigned').length,
+    in_progress: statsBase.filter((i) => i.status === 'in_progress').length,
+    submitted: statsBase.filter((i) => i.status === 'submitted').length,
+    needs_fixes: statsBase.filter((i) => i.status === 'needs_fixes').length,
+    reviewed: statsBase.filter((i) => i.status === 'reviewed').length,
+    published: statsBase.filter((i) => i.status === 'published').length,
+    archived: statsBase.filter((i) => i.status === 'archived').length,
   };
   
   // Clear filters helper
@@ -343,7 +359,8 @@ const Dashboard: React.FC = () => {
     setSearchParams({}, { replace: true });
   };
   
-  const hasActiveFilters = statusFilter !== 'all' || assigneeFilter !== 'all' || searchQuery.trim() !== '';
+  const defaultStatusFilter = isFreelancer ? 'active_and_available' : 'all';
+  const hasActiveFilters = statusFilter !== defaultStatusFilter || assigneeFilter !== 'all' || searchQuery.trim() !== '';
 
   if (loading) {
     return (
