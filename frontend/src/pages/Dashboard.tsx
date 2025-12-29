@@ -12,8 +12,8 @@ const Dashboard: React.FC = () => {
   const { subscribe, isConnected } = useSocket();
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
-  // Status filter - 'all' means no status filter applied
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  // Status filter - default to 'active_and_available' for freelancers (hides published), 'all' for admins
+  const [statusFilter, setStatusFilter] = useState<string>(isFreelancer ? 'active_and_available' : 'all');
   // Assignee filter - 'all' means no assignee filter, null means unassigned, number means specific user
   const [assigneeFilter, setAssigneeFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -218,6 +218,13 @@ const Dashboard: React.FC = () => {
     // For freelancers: Apply simple category filter
     if (isFreelancer) {
       if (statusFilter === 'all') return true;
+      // Default view: Available to pick up + My active work (excludes published)
+      if (statusFilter === 'active_and_available') {
+        // Show available templates OR my non-published templates
+        const isAvailable = idea.assigned_to === null && idea.status === 'new';
+        const isMyActive = idea.assigned_to === user?.id && idea.status !== 'published' && idea.status !== 'archived';
+        return isAvailable || isMyActive;
+      }
       if (statusFilter === 'available') return idea.assigned_to === null && idea.status === 'new';
       if (statusFilter === 'my_active') return idea.assigned_to === user?.id && idea.status !== 'published' && idea.status !== 'archived';
       if (statusFilter === 'my_published') return idea.assigned_to === user?.id && idea.status === 'published';
@@ -528,14 +535,14 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => setStatusFilter('all')}
+                onClick={() => setStatusFilter('active_and_available')}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
-                  statusFilter === 'all'
+                  statusFilter === 'active_and_available'
                     ? 'bg-primary-600 text-white shadow-sm'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    : 'bg-primary-50 text-primary-700 hover:bg-primary-100 border border-primary-200'
                 }`}
               >
-                All ({getBaseIdeasForFreelancer().length})
+                🏠 My Work ({stats.available + stats.my_ideas})
               </button>
               <button
                 onClick={() => setStatusFilter('available')}
@@ -566,6 +573,16 @@ const Dashboard: React.FC = () => {
                 }`}
               >
                 ✓ My Published ({stats.my_published})
+              </button>
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                  statusFilter === 'all'
+                    ? 'bg-gray-700 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                All ({getBaseIdeasForFreelancer().length})
               </button>
             </div>
             
@@ -832,18 +849,18 @@ const Dashboard: React.FC = () => {
         )}
         
         {/* Filter Results Summary */}
-        {(searchQuery || hasActiveFilters) && (
+        {(searchQuery || (isFreelancer ? statusFilter !== 'active_and_available' : hasActiveFilters)) && (
           <div className="flex items-center justify-between pt-3 border-t border-gray-100">
             <div className="text-sm text-gray-500">
               Showing <span className="font-medium text-gray-700">{filteredIdeas.length}</span> template{filteredIdeas.length !== 1 ? 's' : ''}
               {searchQuery && <span> matching "<span className="font-medium">{searchQuery}</span>"</span>}
             </div>
-            {isFreelancer && statusFilter !== 'all' && (
+            {isFreelancer && statusFilter !== 'active_and_available' && (
               <button
-                onClick={() => setStatusFilter('all')}
+                onClick={() => setStatusFilter('active_and_available')}
                 className="text-sm text-primary-600 hover:text-primary-700 font-medium"
               >
-                Show all
+                Reset to default
               </button>
             )}
           </div>
