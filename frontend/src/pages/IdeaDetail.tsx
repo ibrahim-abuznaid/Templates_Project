@@ -8,6 +8,7 @@ import StatusBadge from '../components/StatusBadge';
 import StatusWorkflow from '../components/StatusWorkflow';
 import StatusChangeSelector from '../components/StatusChangeSelector';
 import ConfirmModal from '../components/ConfirmModal';
+import MarkdownRenderer from '../components/MarkdownRenderer';
 import {
   ArrowLeft,
   Edit,
@@ -933,168 +934,218 @@ const IdeaDetail: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="card">
-            <div className="flex justify-between items-start mb-6">
-              <div className="flex-1">
-                <div className="flex items-center flex-wrap gap-3 mb-2">
+          {/* Template Header Card */}
+          <div className="card overflow-hidden">
+            {/* Header Banner */}
+            <div className="bg-gradient-to-r from-primary-600 via-primary-500 to-indigo-500 -mx-6 -mt-6 px-6 py-5 mb-6">
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
                   {editing ? (
                     <input
                       type="text"
                       value={editData.flow_name}
                       onChange={(e) => setEditData({ ...editData, flow_name: e.target.value })}
-                      className="input-field text-2xl font-bold"
+                      className="bg-white/20 backdrop-blur-sm text-white text-2xl font-bold px-4 py-2 rounded-lg border border-white/30 placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/50 w-full max-w-xl"
                       placeholder="Flow Name"
                       required
                     />
                   ) : (
-                    <h1 className="text-2xl font-bold text-gray-900">{idea.flow_name || 'Untitled Template'}</h1>
+                    <h1 className="text-2xl font-bold text-white mb-2">{idea.flow_name || 'Untitled Template'}</h1>
                   )}
-                  <StatusBadge status={idea.status} showIcon={true} showTooltip={true} />
-                  {idea.public_library_id && idea.status === 'published' && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-full text-xs font-semibold shadow-sm">
-                      <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
-                      LIVE
-                    </span>
-                  )}
-                  {idea.public_library_id && idea.status === 'archived' && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-400 text-white rounded-full text-xs font-semibold">
-                      ARCHIVED
-                    </span>
-                  )}
+                  <div className="flex items-center flex-wrap gap-2 mt-2">
+                    <StatusBadge status={idea.status} showIcon={true} showTooltip={true} />
+                    {idea.public_library_id && idea.status === 'published' && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/20 backdrop-blur-sm text-white rounded-full text-xs font-semibold border border-white/30">
+                        <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                        LIVE
+                      </span>
+                    )}
+                    {idea.public_library_id && idea.status === 'archived' && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-white/20 backdrop-blur-sm text-white rounded-full text-xs font-semibold border border-white/30">
+                        ARCHIVED
+                      </span>
+                    )}
+                    {idea.price > 0 && (
+                      <span className="px-2.5 py-1 bg-white/20 backdrop-blur-sm text-white rounded-full text-xs font-semibold border border-white/30">
+                        ${idea.price}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center flex-wrap gap-2 text-sm text-gray-500">
-                  {idea.departments && idea.departments.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {idea.departments.map((dept) => (
-                        <span 
-                          key={dept.id}
-                          className="px-2 py-1 bg-primary-100 text-primary-700 rounded font-medium"
-                        >
-                          {dept.name}
-                        </span>
-                      ))}
-                    </div>
-                  ) : idea.department ? (
-                    <span className="px-2 py-1 bg-primary-100 text-primary-700 rounded font-medium">
-                      {idea.department}
-                    </span>
-                  ) : null}
-                  <span>• Created by {idea.created_by_name}</span>
-                  {idea.assigned_to_name && <span>• Assigned to {idea.assigned_to_name}</span>}
-                  {idea.time_save_per_week && (
-                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">
-                      {idea.time_save_per_week}
-                    </span>
-                  )}
-                  {idea.cost_per_year && (
-                    <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs">
-                      {idea.cost_per_year}
-                    </span>
-                  )}
-                  <span>• ${idea.price}</span>
-                </div>
-              </div>
 
-              <div className="flex items-center space-x-2">
-                {canEdit && !editing && (
-                  <button
-                    onClick={() => setEditing(true)}
-                    className="btn-secondary flex items-center space-x-2"
-                  >
-                    <Edit className="w-4 h-4" />
-                    <span>Edit</span>
-                  </button>
-                )}
-                {editing && (
-                  <>
+                <div className="flex items-center gap-2 ml-4">
+                  {canEdit && !editing && (
                     <button
-                      onClick={handleUpdate}
-                      className="btn-primary flex items-center space-x-2"
+                      onClick={() => setEditing(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-lg border border-white/30 transition-all"
                     >
-                      <Save className="w-4 h-4" />
-                      <span>Save</span>
+                      <Edit className="w-4 h-4" />
+                      <span>Edit</span>
                     </button>
-                    <button
-                      onClick={() => {
-                        setEditing(false);
-                        setEditData({
-                          flow_name: idea.flow_name || '',
-                          summary: idea.summary || '',
-                          description: idea.description || '',
-                          setup_guide: idea.setup_guide || '',
-                          template_url: idea.template_url || '',
-                          scribe_url: idea.scribe_url || '',
-                          time_save_per_week: idea.time_save_per_week || '',
-                          cost_per_year: idea.cost_per_year || '',
-                          author: idea.author || 'Activepieces Team',
-                          idea_notes: idea.idea_notes || '',
-                          reviewer_name: idea.reviewer_name || '',
-                          price: idea.price,
-                        });
-                        // Reset selected departments
-                        if (idea.departments && idea.departments.length > 0) {
-                          setSelectedDepartmentIds(idea.departments.map((d) => d.id));
-                        }
-                      }}
-                      className="btn-secondary"
+                  )}
+                  {editing && (
+                    <>
+                      <button
+                        onClick={handleUpdate}
+                        className="flex items-center gap-2 px-4 py-2 bg-white text-primary-600 rounded-lg font-medium hover:bg-gray-50 transition-all"
+                      >
+                        <Save className="w-4 h-4" />
+                        <span>Save</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditing(false);
+                          setEditData({
+                            flow_name: idea.flow_name || '',
+                            summary: idea.summary || '',
+                            description: idea.description || '',
+                            setup_guide: idea.setup_guide || '',
+                            template_url: idea.template_url || '',
+                            scribe_url: idea.scribe_url || '',
+                            time_save_per_week: idea.time_save_per_week || '',
+                            cost_per_year: idea.cost_per_year || '',
+                            author: idea.author || 'Activepieces Team',
+                            idea_notes: idea.idea_notes || '',
+                            reviewer_name: idea.reviewer_name || '',
+                            price: idea.price,
+                          });
+                          if (idea.departments && idea.departments.length > 0) {
+                            setSelectedDepartmentIds(idea.departments.map((d) => d.id));
+                          }
+                        }}
+                        className="px-4 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-lg border border-white/30 transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                  {isAdmin && (
+                    <button 
+                      onClick={handleDelete} 
+                      className="p-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg transition-all"
+                      title="Delete Template"
                     >
-                      Cancel
+                      <Trash2 className="w-4 h-4" />
                     </button>
-                  </>
-                )}
-                {isAdmin && (
-                  <button onClick={handleDelete} className="btn-danger">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="space-y-4">
-              {/* Summary */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Summary
-                </label>
-                {editing ? (
-                  <textarea
-                    value={editData.summary}
-                    onChange={(e) => setEditData({ ...editData, summary: e.target.value })}
-                    className="input-field"
-                    rows={2}
-                    placeholder="Brief summary for public library"
-                  />
-                ) : (
-                  <p className="text-gray-600">{idea.summary || 'No summary provided'}</p>
-                )}
-              </div>
+            {/* Quick Info Bar */}
+            <div className="flex flex-wrap items-center gap-3 pb-6 border-b border-gray-100">
+              {idea.departments && idea.departments.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {idea.departments.map((dept) => (
+                    <span 
+                      key={dept.id}
+                      className="px-3 py-1.5 bg-primary-50 text-primary-700 rounded-lg text-sm font-medium border border-primary-100"
+                    >
+                      {dept.name}
+                    </span>
+                  ))}
+                </div>
+              ) : idea.department ? (
+                <span className="px-3 py-1.5 bg-primary-50 text-primary-700 rounded-lg text-sm font-medium border border-primary-100">
+                  {idea.department}
+                </span>
+              ) : null}
+              {idea.time_save_per_week && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg text-sm font-medium border border-green-100">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {idea.time_save_per_week}
+                </span>
+              )}
+              {idea.cost_per_year && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-medium border border-emerald-100">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {idea.cost_per_year}
+                </span>
+              )}
+              {idea.author && (
+                <span className="text-sm text-gray-500">
+                  by <span className="font-medium text-gray-700">{idea.author}</span>
+                </span>
+              )}
+            </div>
 
-              {/* Description */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Description
-                </label>
+            {/* Content Sections */}
+            <div className="space-y-6 pt-6">
+              {/* Summary Section */}
+              <div className="group">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1 h-5 bg-primary-500 rounded-full"></div>
+                  <label className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                    Summary
+                  </label>
+                  {!editing && (
+                    <span className="text-xs text-gray-400 font-normal normal-case">Supports Markdown</span>
+                  )}
+                </div>
                 {editing ? (
-                  <textarea
-                    value={editData.description}
-                    onChange={(e) => setEditData({ ...editData, description: e.target.value })}
-                    className="input-field"
-                    rows={4}
-                  />
-                ) : (
-                  <p className="text-gray-600 whitespace-pre-wrap">{idea.description || 'No description provided'}</p>
-                )}
-              </div>
-
-              {/* Departments */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Departments {editing && isAdmin && <span className="text-xs text-gray-500">(Select multiple)</span>}
-                </label>
-                {editing && isAdmin ? (
                   <div className="space-y-2">
+                    <textarea
+                      value={editData.summary}
+                      onChange={(e) => setEditData({ ...editData, summary: e.target.value })}
+                      className="input-field font-mono text-sm"
+                      rows={3}
+                      placeholder="Brief summary for public library. Supports **markdown** formatting."
+                    />
+                    <p className="text-xs text-gray-500">Tip: Use **bold**, *italic*, `code`, and [links](url) for formatting</p>
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                    <MarkdownRenderer content={idea.summary || ''} />
+                  </div>
+                )}
+              </div>
+
+              {/* Description Section */}
+              <div className="group">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1 h-5 bg-blue-500 rounded-full"></div>
+                  <label className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                    Description
+                  </label>
+                  {!editing && (
+                    <span className="text-xs text-gray-400 font-normal normal-case">Supports Markdown</span>
+                  )}
+                </div>
+                {editing ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={editData.description}
+                      onChange={(e) => setEditData({ ...editData, description: e.target.value })}
+                      className="input-field font-mono text-sm"
+                      rows={8}
+                      placeholder="Detailed description of the template. Supports markdown formatting including:&#10;- Lists&#10;- **Bold** and *italic*&#10;- `code blocks`&#10;- [Links](url)"
+                    />
+                    <p className="text-xs text-gray-500">Tip: Use markdown for rich formatting. Preview will appear after saving.</p>
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                    <MarkdownRenderer content={idea.description || ''} />
+                  </div>
+                )}
+              </div>
+
+              {/* Departments Section */}
+              {editing && isAdmin && (
+                <div className="group">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-1 h-5 bg-purple-500 rounded-full"></div>
+                    <label className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                      Departments
+                    </label>
+                    <span className="text-xs text-gray-400 font-normal normal-case">Select multiple</span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-4 bg-gray-50 rounded-xl border border-gray-100">
                     {allDepartments.map((dept) => (
-                      <label key={dept.id} className="flex items-center space-x-2">
+                      <label key={dept.id} className="flex items-center gap-2 p-2 hover:bg-white rounded-lg cursor-pointer transition-colors">
                         <input
                           type="checkbox"
                           checked={selectedDepartmentIds.includes(dept.id)}
@@ -1111,55 +1162,42 @@ const IdeaDetail: React.FC = () => {
                       </label>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* Idea Notes Section */}
+              <div className="group">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1 h-5 bg-amber-500 rounded-full"></div>
+                  <label className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                    Internal Notes
+                  </label>
+                  <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">Private</span>
+                </div>
+                {editing ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={editData.idea_notes}
+                      onChange={(e) => setEditData({ ...editData, idea_notes: e.target.value })}
+                      className="input-field font-mono text-sm"
+                      rows={4}
+                      placeholder="Internal notes about the template idea. Supports markdown formatting..."
+                    />
+                  </div>
                 ) : (
-                  <div>
-                    {idea.departments && idea.departments.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {idea.departments.map((dept) => (
-                          <span 
-                            key={dept.id}
-                            className="px-3 py-1 bg-primary-100 text-primary-700 rounded font-medium"
-                          >
-                            {dept.name}
-                          </span>
-                        ))}
-                      </div>
-                    ) : idea.department ? (
-                      <p className="text-gray-600">{idea.department}</p>
-                    ) : (
-                      <p className="text-gray-600">Not specified</p>
-                    )}
+                  <div className="bg-amber-50/50 rounded-xl p-4 border border-amber-100">
+                    <MarkdownRenderer content={idea.idea_notes || ''} />
                   </div>
                 )}
               </div>
 
-              {/* Idea Notes */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Idea Notes <span className="text-xs text-gray-500">(Internal)</span>
-                </label>
-                {editing ? (
-                  <textarea
-                    value={editData.idea_notes}
-                    onChange={(e) => setEditData({ ...editData, idea_notes: e.target.value })}
-                    className="input-field"
-                    rows={3}
-                    placeholder="Internal notes about the template idea..."
-                  />
-                ) : (
-                  <p className="text-gray-600 whitespace-pre-wrap">
-                    {idea.idea_notes || 'No notes'}
-                  </p>
-                )}
-              </div>
-
-              {/* Time Save and Cost */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Time Save / Week
-                  </label>
-                  {editing ? (
+              {/* Edit Mode: Additional Fields */}
+              {editing && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Time Save / Week
+                    </label>
                     <input
                       type="text"
                       value={editData.time_save_per_week}
@@ -1167,15 +1205,11 @@ const IdeaDetail: React.FC = () => {
                       className="input-field"
                       placeholder="e.g., 2 hours"
                     />
-                  ) : (
-                    <p className="text-gray-600">{idea.time_save_per_week || 'Not specified'}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Cost Savings / Year
-                  </label>
-                  {editing ? (
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Cost Savings / Year
+                    </label>
                     <input
                       type="text"
                       value={editData.cost_per_year}
@@ -1183,214 +1217,262 @@ const IdeaDetail: React.FC = () => {
                       className="input-field"
                       placeholder="e.g., $150/year"
                     />
-                  ) : (
-                    <p className="text-gray-600">{idea.cost_per_year || 'Not specified'}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Author (read-only) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Author
-                </label>
-                  <p className="text-gray-600">{idea.author || 'Activepieces Team'}</p>
-              </div>
-
-              {/* Scribe URL (sent as blogUrl) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Scribe URL <span className="text-xs text-gray-500">(sent as Article/Blog URL)</span>
-                </label>
-                {editing ? (
-                  <input
-                    type="url"
-                    value={editData.scribe_url}
-                    onChange={(e) => setEditData({ ...editData, scribe_url: e.target.value })}
-                    className="input-field"
-                    placeholder="https://..."
-                  />
-                ) : idea.scribe_url ? (
-                  <a
-                    href={idea.scribe_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary-600 hover:underline"
-                  >
-                    {idea.scribe_url}
-                  </a>
-                ) : (
-                  <p className="text-gray-600">Not provided</p>
-                )}
-              </div>
-
-              {/* Flow JSON Upload */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Flow JSON <span className="text-xs text-gray-500">(Upload one or more flow files for publishing)</span>
-                </label>
-                <div className="flex items-center gap-4">
-                  {idea.flow_json ? (
-                    <div className="flex-1 flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-                      <FileJson className="w-5 h-5 text-green-600" />
-                      <span className="text-sm text-green-700">
-                        {(() => {
-                          try {
-                            const parsed = JSON.parse(idea.flow_json!);
-                            const count = parsed._flowCount || (parsed.flows?.length) || 1;
-                            return `${count} flow${count !== 1 ? 's' : ''} uploaded`;
-                          } catch {
-                            return 'Flow JSON uploaded';
-                          }
-                        })()}
-                      </span>
-                      <button
-                        onClick={() => {
-                          const blob = new Blob([idea.flow_json!], { type: 'application/json' });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `flows-${idea.id}.json`;
-                          a.click();
-                        }}
-                        className="ml-auto text-xs text-green-600 hover:text-green-700 underline"
-                      >
-                        Download
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500">
-                      No flow files uploaded yet
-                    </div>
-                  )}
-                  {canEdit && (
-                    <div className="flex items-center gap-2">
-                      {/* Replace/Upload button */}
-                      <input
-                        ref={flowJsonInputRef}
-                        type="file"
-                        accept=".json,application/json"
-                        onChange={(e) => handleFlowJsonUpload(e, false)}
-                        className="hidden"
-                        id="flow-json-upload"
-                        multiple
-                      />
-                      <label
-                        htmlFor="flow-json-upload"
-                        className={`btn-secondary flex items-center gap-2 cursor-pointer ${uploadingFlowJson ? 'opacity-50' : ''}`}
-                      >
-                        {uploadingFlowJson ? (
-                          <Loader className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Upload className="w-4 h-4" />
-                        )}
-                        <span>{idea.flow_json ? 'Replace' : 'Upload'}</span>
-                      </label>
-                      
-                      {/* Add More button - only shows when flows already exist */}
-                      {idea.flow_json && (
-                        <>
-                          <input
-                            ref={flowJsonAppendInputRef}
-                            type="file"
-                            accept=".json,application/json"
-                            onChange={(e) => handleFlowJsonUpload(e, true)}
-                            className="hidden"
-                            id="flow-json-append"
-                            multiple
-                          />
-                          <label
-                            htmlFor="flow-json-append"
-                            className={`btn-secondary flex items-center gap-2 cursor-pointer ${appendingFlows ? 'opacity-50' : ''}`}
-                          >
-                            {appendingFlows ? (
-                              <Loader className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Plus className="w-4 h-4" />
-                            )}
-                            <span>Add More</span>
-                          </label>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Template URL */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Template URL
-                </label>
-                {editing ? (
-                  <input
-                    type="url"
-                    value={editData.template_url}
-                    onChange={(e) => setEditData({ ...editData, template_url: e.target.value })}
-                    className="input-field"
-                  />
-                ) : idea.template_url ? (
-                  <a
-                    href={idea.template_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary-600 hover:underline"
-                  >
-                    {idea.template_url}
-                  </a>
-                ) : (
-                  <p className="text-gray-600">Not provided</p>
-                )}
-              </div>
-
-              {/* Internal Fields Section */}
-              <div className="border-t pt-4 mt-4">
-                <p className="text-xs text-gray-500 mb-3 font-medium">Internal Fields (not sent to Public Library)</p>
-                
-                {/* Reviewer */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Reviewer
-                  </label>
-                  {editing && isAdmin ? (
-                    <select
-                      value={editData.reviewer_name}
-                      onChange={(e) => setEditData({ ...editData, reviewer_name: e.target.value })}
-                      className="input-field"
-                    >
-                      <option value="">Select reviewer...</option>
-                      {adminUsers.map((admin) => (
-                        <option key={admin.id} value={admin.username}>
-                          {admin.username}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <p className="text-gray-600">{idea.reviewer_name || 'Not assigned'}</p>
-                  )}
-                </div>
-
-                {/* Price */}
-                {isAdmin && (
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Price ($)
+                      Author
+                    </label>
+                    <input
+                      type="text"
+                      value={editData.author}
+                      onChange={(e) => setEditData({ ...editData, author: e.target.value })}
+                      className="input-field"
+                      placeholder="Activepieces Team"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Links & Resources Section */}
+              <div className="group">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1 h-5 bg-indigo-500 rounded-full"></div>
+                  <label className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                    Links & Resources
+                  </label>
+                </div>
+                <div className="bg-gray-50 rounded-xl border border-gray-100 divide-y divide-gray-100">
+                  {/* Scribe URL */}
+                  <div className="p-4">
+                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                      Article / Blog URL
                     </label>
                     {editing ? (
                       <input
-                        type="number"
-                        value={editData.price}
-                        onChange={(e) => setEditData({ ...editData, price: parseFloat(e.target.value) })}
+                        type="url"
+                        value={editData.scribe_url}
+                        onChange={(e) => setEditData({ ...editData, scribe_url: e.target.value })}
                         className="input-field"
-                        min="0"
-                        step="0.01"
+                        placeholder="https://..."
                       />
+                    ) : idea.scribe_url ? (
+                      <a
+                        href={idea.scribe_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-primary-600 hover:text-primary-700 font-medium"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                        {idea.scribe_url.length > 50 ? idea.scribe_url.substring(0, 50) + '...' : idea.scribe_url}
+                      </a>
                     ) : (
-                      <p className="text-gray-600">${idea.price}</p>
+                      <span className="text-gray-400 italic">Not provided</span>
                     )}
                   </div>
-                )}
+
+                  {/* Template URL */}
+                  <div className="p-4">
+                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                      Template URL
+                    </label>
+                    {editing ? (
+                      <input
+                        type="url"
+                        value={editData.template_url}
+                        onChange={(e) => setEditData({ ...editData, template_url: e.target.value })}
+                        className="input-field"
+                        placeholder="https://..."
+                      />
+                    ) : idea.template_url ? (
+                      <a
+                        href={idea.template_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-primary-600 hover:text-primary-700 font-medium"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                        {idea.template_url.length > 50 ? idea.template_url.substring(0, 50) + '...' : idea.template_url}
+                      </a>
+                    ) : (
+                      <span className="text-gray-400 italic">Not provided</span>
+                    )}
+                  </div>
+                </div>
               </div>
+
+              {/* Flow JSON Section */}
+              <div className="group">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1 h-5 bg-green-500 rounded-full"></div>
+                  <label className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                    Flow Files
+                  </label>
+                  <span className="text-xs text-gray-400 font-normal normal-case">Required for publishing</span>
+                </div>
+                <div className={`rounded-xl border-2 border-dashed p-4 ${
+                  idea.flow_json 
+                    ? 'bg-green-50/50 border-green-200' 
+                    : 'bg-gray-50 border-gray-200'
+                }`}>
+                  <div className="flex items-center justify-between gap-4">
+                    {idea.flow_json ? (
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                          <FileJson className="w-6 h-6 text-green-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-green-800">
+                            {(() => {
+                              try {
+                                const parsed = JSON.parse(idea.flow_json!);
+                                const count = parsed._flowCount || (parsed.flows?.length) || 1;
+                                return `${count} flow${count !== 1 ? 's' : ''} uploaded`;
+                              } catch {
+                                return 'Flow JSON uploaded';
+                              }
+                            })()}
+                          </p>
+                          <button
+                            onClick={() => {
+                              const blob = new Blob([idea.flow_json!], { type: 'application/json' });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `flows-${idea.id}.json`;
+                              a.click();
+                            }}
+                            className="text-sm text-green-600 hover:text-green-700 underline"
+                          >
+                            Download JSON
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
+                          <FileJson className="w-6 h-6 text-gray-400" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-600">No flow files uploaded</p>
+                          <p className="text-sm text-gray-400">Upload flow JSON to enable publishing</p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {canEdit && (
+                      <div className="flex items-center gap-2">
+                        <input
+                          ref={flowJsonInputRef}
+                          type="file"
+                          accept=".json,application/json"
+                          onChange={(e) => handleFlowJsonUpload(e, false)}
+                          className="hidden"
+                          id="flow-json-upload"
+                          multiple
+                        />
+                        <label
+                          htmlFor="flow-json-upload"
+                          className={`inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors ${uploadingFlowJson ? 'opacity-50' : ''}`}
+                        >
+                          {uploadingFlowJson ? (
+                            <Loader className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Upload className="w-4 h-4" />
+                          )}
+                          <span>{idea.flow_json ? 'Replace' : 'Upload'}</span>
+                        </label>
+                        
+                        {idea.flow_json && (
+                          <>
+                            <input
+                              ref={flowJsonAppendInputRef}
+                              type="file"
+                              accept=".json,application/json"
+                              onChange={(e) => handleFlowJsonUpload(e, true)}
+                              className="hidden"
+                              id="flow-json-append"
+                              multiple
+                            />
+                            <label
+                              htmlFor="flow-json-append"
+                              className={`inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 cursor-pointer transition-colors ${appendingFlows ? 'opacity-50' : ''}`}
+                            >
+                              {appendingFlows ? (
+                                <Loader className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Plus className="w-4 h-4" />
+                              )}
+                              <span>Add More</span>
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Internal Fields Section - Admin Only */}
+              {isAdmin && (
+                <div className="group">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-1 h-5 bg-gray-400 rounded-full"></div>
+                    <label className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                      Internal Settings
+                    </label>
+                    <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full font-medium">Admin Only</span>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Reviewer */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                          Reviewer
+                        </label>
+                        {editing ? (
+                          <select
+                            value={editData.reviewer_name}
+                            onChange={(e) => setEditData({ ...editData, reviewer_name: e.target.value })}
+                            className="input-field"
+                          >
+                            <option value="">Select reviewer...</option>
+                            {adminUsers.map((admin) => (
+                              <option key={admin.id} value={admin.username}>
+                                {admin.username}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <p className="text-gray-700 font-medium">{idea.reviewer_name || 'Not assigned'}</p>
+                        )}
+                      </div>
+
+                      {/* Price */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                          Price ($)
+                        </label>
+                        {editing ? (
+                          <input
+                            type="number"
+                            value={editData.price}
+                            onChange={(e) => setEditData({ ...editData, price: parseFloat(e.target.value) })}
+                            className="input-field"
+                            min="0"
+                            step="0.01"
+                          />
+                        ) : (
+                          <p className="text-gray-700 font-medium">${idea.price}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Public Library Status Card */}
               <div className="border-t pt-4 mt-4">
