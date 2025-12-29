@@ -5,15 +5,17 @@ import { ideasApi, departmentsApi } from '../services/api';
 import type { Idea, Department, User } from '../types';
 import IdeaCard from '../components/IdeaCard';
 import StatusLegend from '../components/StatusLegend';
-import { Plus, Filter, Loader, Wifi, WifiOff, X, ChevronDown, Search } from 'lucide-react';
+import { Plus, Loader, Wifi, WifiOff, X, ChevronDown, Search, User as UserIcon, Users } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
   const { user, isAdmin, isFreelancer } = useAuth();
   const { subscribe, isConnected } = useSocket();
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
-  // Default to 'active' for freelancers (hides published/archived), 'all' for admins
-  const [filter, setFilter] = useState<string>(isFreelancer ? 'active' : 'all');
+  // Status filter - 'all' means no status filter applied
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  // Assignee filter - 'all' means no assignee filter, null means unassigned, number means specific user
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [recentlyUpdated, setRecentlyUpdated] = useState<number | null>(null);
@@ -33,12 +35,15 @@ const Dashboard: React.FC = () => {
   const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<number[]>([]);
   const [showDeptDropdown, setShowDeptDropdown] = useState(false);
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
+  const [freelancerUsers, setFreelancerUsers] = useState<User[]>([]);
+  const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false);
 
   useEffect(() => {
     loadIdeas();
     loadDepartments();
     if (isAdmin) {
       loadAdmins();
+      loadFreelancers();
     }
   }, [isAdmin]);
 
@@ -57,6 +62,15 @@ const Dashboard: React.FC = () => {
       setAdminUsers(response.data);
     } catch (error) {
       console.error('Failed to load admins:', error);
+    }
+  };
+
+  const loadFreelancers = async () => {
+    try {
+      const response = await ideasApi.getFreelancers();
+      setFreelancerUsers(response.data);
+    } catch (error) {
+      console.error('Failed to load freelancers:', error);
     }
   };
 
@@ -176,8 +190,24 @@ const Dashboard: React.FC = () => {
   // "My templates" = assigned to current user (excluding published/archived for active count)
   const myIdeas = ideas.filter((i) => i.assigned_to === user?.id);
   const myActiveIdeas = myIdeas.filter((i) => i.status !== 'published' && i.status !== 'archived');
+  
+  // For freelancers: templates they have published
+  const myPublishedIdeas = ideas.filter((i) => i.assigned_to === user?.id && i.status === 'published');
 
-  const filteredIdeas = ideas.filter((idea) => {
+  // Get the base ideas list for filtering
+  // For freelancers: Only show templates that are relevant to them
+  const getBaseIdeasForFreelancer = () => {
+    return ideas.filter((idea) => {
+      // Show unassigned/new templates (available to pick up)
+      if (idea.assigned_to === null && idea.status === 'new') return true;
+      // Show templates assigned to current user
+      if (idea.assigned_to === user?.id) return true;
+      // Hide everything else (templates assigned to others)
+      return false;
+    });
+  };
+
+  const filteredIdeas = (isFreelancer ? getBaseIdeasForFreelancer() : ideas).filter((idea) => {
     // First, apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
@@ -185,22 +215,62 @@ const Dashboard: React.FC = () => {
       if (!name.includes(query)) return false;
     }
     
-    // Then, apply status/category filter
-    if (filter === 'all') return true;
-    // Work in Progress = all non-completed templates
-    if (filter === 'active') return idea.status !== 'published' && idea.status !== 'archived';
-    // Assigned to me = my templates that are still active (not published/archived)
-    if (filter === 'my_ideas') return idea.assigned_to === user?.id && idea.status !== 'published' && idea.status !== 'archived';
-    // Available to pick up = unassigned NEW templates only
-    if (filter === 'available') return idea.assigned_to === null && idea.status === 'new';
-    // Status-specific filters
-    return idea.status === filter;
+    // For freelancers: Apply simple category filter
+    if (isFreelancer) {
+      if (statusFilter === 'all') return true;
+      if (statusFilter === 'available') return idea.assigned_to === null && idea.status === 'new';
+      if (statusFilter === 'my_active') return idea.assigned_to === user?.id && idea.status !== 'published' && idea.status !== 'archived';
+      if (statusFilter === 'my_published') return idea.assigned_to === user?.id && idea.status === 'published';
+      // Individual status filters - only show their own templates with that status
+      if (['assigned', 'in_progress', 'submitted', 'needs_fixes', 'reviewed'].includes(statusFilter)) {
+        return idea.assigned_to === user?.id && idea.status === statusFilter;
+      }
+      return idea.status === statusFilter;
+    }
+    
+    // For admins: Apply both status and assignee filters
+    let passesStatusFilter = true;
+    let passesAssigneeFilter = true;
+    
+    // Status filter
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'active') {
+        passesStatusFilter = idea.status !== 'published' && idea.status !== 'archived';
+      } else {
+        passesStatusFilter = idea.status === statusFilter;
+      }
+    }
+    
+    // Assignee filter
+    if (assigneeFilter !== 'all') {
+      if (assigneeFilter === 'unassigned') {
+        passesAssigneeFilter = idea.assigned_to === null;
+      } else {
+        passesAssigneeFilter = idea.assigned_to === parseInt(assigneeFilter, 10);
+      }
+    }
+    
+    return passesStatusFilter && passesAssigneeFilter;
   });
+
+  // Get filtered count for assignee filter context
+  const getCountForAssignee = (assigneeId: string) => {
+    const baseIdeas = statusFilter === 'all' 
+      ? ideas 
+      : statusFilter === 'active' 
+        ? ideas.filter(i => i.status !== 'published' && i.status !== 'archived')
+        : ideas.filter(i => i.status === statusFilter);
+    
+    if (assigneeId === 'all') return baseIdeas.length;
+    if (assigneeId === 'unassigned') return baseIdeas.filter(i => i.assigned_to === null).length;
+    return baseIdeas.filter(i => i.assigned_to === parseInt(assigneeId, 10)).length;
+  };
 
   const stats = {
     total: ideas.length,
     active: ideas.filter((i) => i.status !== 'published' && i.status !== 'archived').length,
     my_ideas: myActiveIdeas.length,
+    my_published: myPublishedIdeas.length,
     available: availableIdeas.length,
     new: ideas.filter((i) => i.status === 'new').length,
     assigned: ideas.filter((i) => i.status === 'assigned').length,
@@ -211,6 +281,15 @@ const Dashboard: React.FC = () => {
     published: ideas.filter((i) => i.status === 'published').length,
     archived: ideas.filter((i) => i.status === 'archived').length,
   };
+  
+  // Clear filters helper
+  const clearFilters = () => {
+    setStatusFilter('all');
+    setAssigneeFilter('all');
+    setSearchQuery('');
+  };
+  
+  const hasActiveFilters = statusFilter !== 'all' || assigneeFilter !== 'all' || searchQuery.trim() !== '';
 
   if (loading) {
     return (
@@ -256,123 +335,517 @@ const Dashboard: React.FC = () => {
 
       {/* Stats */}
       {isFreelancer ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="card bg-blue-50 border-blue-200">
-            <div className="text-2xl font-bold text-blue-600">{stats.my_ideas}</div>
-            <div className="text-sm text-blue-800">My Templates</div>
-          </div>
-          <div className="card bg-green-50 border-green-200">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+          <button
+            onClick={() => setStatusFilter('available')}
+            className={`card text-left transition-all duration-150 hover:shadow-md ${
+              statusFilter === 'available' 
+                ? 'bg-green-100 border-green-400 ring-2 ring-green-200' 
+                : 'bg-green-50 border-green-200 hover:border-green-300'
+            }`}
+          >
             <div className="text-2xl font-bold text-green-600">{stats.available}</div>
             <div className="text-sm text-green-800">Available</div>
-          </div>
-          <div className="card bg-yellow-50 border-yellow-200">
-            <div className="text-2xl font-bold text-yellow-600">{stats.in_progress}</div>
+          </button>
+          <button
+            onClick={() => setStatusFilter('in_progress')}
+            className={`card text-left transition-all duration-150 hover:shadow-md ${
+              statusFilter === 'in_progress' 
+                ? 'bg-yellow-100 border-yellow-400 ring-2 ring-yellow-200' 
+                : 'bg-yellow-50 border-yellow-200 hover:border-yellow-300'
+            }`}
+          >
+            <div className="text-2xl font-bold text-yellow-600">{myIdeas.filter(i => i.status === 'in_progress').length}</div>
             <div className="text-sm text-yellow-800">In Progress</div>
-          </div>
-          <div className="card bg-purple-50 border-purple-200">
-            <div className="text-2xl font-bold text-purple-600">{stats.submitted}</div>
-            <div className="text-sm text-purple-800">Submitted</div>
-          </div>
+          </button>
+          <button
+            onClick={() => setStatusFilter('submitted')}
+            className={`card text-left transition-all duration-150 hover:shadow-md ${
+              statusFilter === 'submitted' 
+                ? 'bg-pink-100 border-pink-400 ring-2 ring-pink-200' 
+                : 'bg-pink-50 border-pink-200 hover:border-pink-300'
+            }`}
+          >
+            <div className="text-2xl font-bold text-pink-600">{myIdeas.filter(i => i.status === 'submitted').length}</div>
+            <div className="text-sm text-pink-800">Submitted</div>
+          </button>
+          <button
+            onClick={() => setStatusFilter('needs_fixes')}
+            className={`card text-left transition-all duration-150 hover:shadow-md ${
+              statusFilter === 'needs_fixes' 
+                ? 'bg-red-100 border-red-400 ring-2 ring-red-200' 
+                : 'bg-red-50 border-red-200 hover:border-red-300'
+            }`}
+          >
+            <div className="text-2xl font-bold text-red-600">{myIdeas.filter(i => i.status === 'needs_fixes').length}</div>
+            <div className="text-sm text-red-800">Needs Fixes</div>
+          </button>
+          <button
+            onClick={() => setStatusFilter('reviewed')}
+            className={`card text-left transition-all duration-150 hover:shadow-md ${
+              statusFilter === 'reviewed' 
+                ? 'bg-teal-100 border-teal-400 ring-2 ring-teal-200' 
+                : 'bg-teal-50 border-teal-200 hover:border-teal-300'
+            }`}
+          >
+            <div className="text-2xl font-bold text-teal-600">{myIdeas.filter(i => i.status === 'reviewed').length}</div>
+            <div className="text-sm text-teal-800">Reviewed</div>
+          </button>
+          <button
+            onClick={() => setStatusFilter('my_published')}
+            className={`card text-left transition-all duration-150 hover:shadow-md ${
+              statusFilter === 'my_published' 
+                ? 'bg-emerald-100 border-emerald-400 ring-2 ring-emerald-200' 
+                : 'bg-emerald-50 border-emerald-200 hover:border-emerald-300'
+            }`}
+          >
+            <div className="text-2xl font-bold text-emerald-600">{stats.my_published}</div>
+            <div className="text-sm text-emerald-800">Published</div>
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-8">
-          <div className="card bg-blue-50 border-blue-200">
+          <button
+            onClick={() => { setStatusFilter('all'); setAssigneeFilter('all'); }}
+            className={`card text-left transition-all duration-150 hover:shadow-md cursor-pointer ${
+              statusFilter === 'all' && assigneeFilter === 'all'
+                ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-200' 
+                : 'bg-blue-50 border-blue-200 hover:border-blue-300'
+            }`}
+          >
             <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
             <div className="text-sm text-blue-800">Total</div>
-          </div>
-          <div className="card bg-purple-50 border-purple-200">
+          </button>
+          <button
+            onClick={() => setStatusFilter('new')}
+            className={`card text-left transition-all duration-150 hover:shadow-md cursor-pointer ${
+              statusFilter === 'new'
+                ? 'bg-purple-100 border-purple-400 ring-2 ring-purple-200' 
+                : 'bg-purple-50 border-purple-200 hover:border-purple-300'
+            }`}
+          >
             <div className="text-2xl font-bold text-purple-600">{stats.new}</div>
             <div className="text-sm text-purple-800">New</div>
-          </div>
-          <div className="card bg-indigo-50 border-indigo-200">
+          </button>
+          <button
+            onClick={() => setStatusFilter('assigned')}
+            className={`card text-left transition-all duration-150 hover:shadow-md cursor-pointer ${
+              statusFilter === 'assigned'
+                ? 'bg-indigo-100 border-indigo-400 ring-2 ring-indigo-200' 
+                : 'bg-indigo-50 border-indigo-200 hover:border-indigo-300'
+            }`}
+          >
             <div className="text-2xl font-bold text-indigo-600">{stats.assigned}</div>
             <div className="text-sm text-indigo-800">Assigned</div>
-          </div>
-          <div className="card bg-yellow-50 border-yellow-200">
+          </button>
+          <button
+            onClick={() => setStatusFilter('in_progress')}
+            className={`card text-left transition-all duration-150 hover:shadow-md cursor-pointer ${
+              statusFilter === 'in_progress'
+                ? 'bg-yellow-100 border-yellow-400 ring-2 ring-yellow-200' 
+                : 'bg-yellow-50 border-yellow-200 hover:border-yellow-300'
+            }`}
+          >
             <div className="text-2xl font-bold text-yellow-600">{stats.in_progress}</div>
             <div className="text-sm text-yellow-800">In Progress</div>
-          </div>
-          <div className="card bg-pink-50 border-pink-200">
+          </button>
+          <button
+            onClick={() => setStatusFilter('submitted')}
+            className={`card text-left transition-all duration-150 hover:shadow-md cursor-pointer ${
+              statusFilter === 'submitted'
+                ? 'bg-pink-100 border-pink-400 ring-2 ring-pink-200' 
+                : 'bg-pink-50 border-pink-200 hover:border-pink-300'
+            }`}
+          >
             <div className="text-2xl font-bold text-pink-600">{stats.submitted}</div>
             <div className="text-sm text-pink-800">Submitted</div>
-          </div>
-          <div className="card bg-red-50 border-red-200">
+          </button>
+          <button
+            onClick={() => setStatusFilter('needs_fixes')}
+            className={`card text-left transition-all duration-150 hover:shadow-md cursor-pointer ${
+              statusFilter === 'needs_fixes'
+                ? 'bg-red-100 border-red-400 ring-2 ring-red-200' 
+                : 'bg-red-50 border-red-200 hover:border-red-300'
+            }`}
+          >
             <div className="text-2xl font-bold text-red-600">{stats.needs_fixes}</div>
             <div className="text-sm text-red-800">Needs Fixes</div>
-          </div>
-          <div className="card bg-green-50 border-green-200">
+          </button>
+          <button
+            onClick={() => setStatusFilter('reviewed')}
+            className={`card text-left transition-all duration-150 hover:shadow-md cursor-pointer ${
+              statusFilter === 'reviewed'
+                ? 'bg-green-100 border-green-400 ring-2 ring-green-200' 
+                : 'bg-green-50 border-green-200 hover:border-green-300'
+            }`}
+          >
             <div className="text-2xl font-bold text-green-600">{stats.reviewed}</div>
             <div className="text-sm text-green-800">Reviewed</div>
-          </div>
-          <div className="card bg-emerald-50 border-emerald-200">
+          </button>
+          <button
+            onClick={() => setStatusFilter('published')}
+            className={`card text-left transition-all duration-150 hover:shadow-md cursor-pointer ${
+              statusFilter === 'published'
+                ? 'bg-emerald-100 border-emerald-400 ring-2 ring-emerald-200' 
+                : 'bg-emerald-50 border-emerald-200 hover:border-emerald-300'
+            }`}
+          >
             <div className="text-2xl font-bold text-emerald-600">{stats.published}</div>
             <div className="text-sm text-emerald-800">Published</div>
-          </div>
+          </button>
         </div>
       )}
 
       {/* Search & Filter */}
-      <div className="card mb-6">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-          {/* Search */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search templates by name..."
-              className="input-field pl-10 w-full"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-          
-          {/* Filter */}
-          <div className="flex items-center gap-2">
-            <Filter className="w-5 h-5 text-gray-600 hidden sm:block" />
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="input-field w-full sm:w-72"
+      <div className="card mb-6 space-y-4">
+        {/* Search Bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search templates by name..."
+            className="input-field pl-10 w-full"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
-              {isFreelancer ? (
-                <>
-                  <option value="active">📋 Work in Progress ({stats.active})</option>
-                  <option value="my_ideas">👤 Assigned to Me ({stats.my_ideas})</option>
-                  <option value="available">🆕 Available to Pick Up ({stats.available})</option>
-                  <option value="all">All (incl. Completed) ({stats.total})</option>
-                </>
-              ) : (
-                <>
-                  <option value="all">All Templates ({stats.total})</option>
-                  <option value="active">Work in Progress ({stats.active})</option>
-                </>
-              )}
-              <optgroup label="Filter by Status">
-                <option value="new">New - Unassigned ({stats.new})</option>
-                <option value="assigned">Assigned - Not Started ({stats.assigned})</option>
-                <option value="in_progress">In Progress ({stats.in_progress})</option>
-                <option value="submitted">Submitted - Awaiting Review ({stats.submitted})</option>
-                <option value="needs_fixes">Needs Fixes ({stats.needs_fixes})</option>
-                <option value="reviewed">Reviewed - Approved ({stats.reviewed})</option>
-                <option value="published">Published ({stats.published})</option>
-                <option value="archived">Archived ({stats.archived})</option>
-              </optgroup>
-            </select>
-          </div>
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
         
-        {/* Search results count */}
-        {searchQuery && (
-          <div className="mt-3 text-sm text-gray-500">
-            Found {filteredIdeas.length} template{filteredIdeas.length !== 1 ? 's' : ''} matching "{searchQuery}"
+        {/* Filters Section */}
+        {isFreelancer ? (
+          /* Freelancer Filter Pills */
+          <div className="space-y-3">
+            {/* Quick Filters Row */}
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span className="font-medium">Quick Filters:</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                  statusFilter === 'all'
+                    ? 'bg-primary-600 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                All ({getBaseIdeasForFreelancer().length})
+              </button>
+              <button
+                onClick={() => setStatusFilter('available')}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                  statusFilter === 'available'
+                    ? 'bg-green-600 text-white shadow-sm'
+                    : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'
+                }`}
+              >
+                🆕 Available ({stats.available})
+              </button>
+              <button
+                onClick={() => setStatusFilter('my_active')}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                  statusFilter === 'my_active'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                }`}
+              >
+                👤 My Active ({stats.my_ideas})
+              </button>
+              <button
+                onClick={() => setStatusFilter('my_published')}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                  statusFilter === 'my_published'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                }`}
+              >
+                ✓ My Published ({stats.my_published})
+              </button>
+            </div>
+            
+            {/* Status Filters Row */}
+            <div className="pt-2 border-t border-gray-100">
+              <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+                <span className="font-medium">By Status:</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(() => {
+                  const myAssigned = myIdeas.filter(i => i.status === 'assigned').length;
+                  const myInProgress = myIdeas.filter(i => i.status === 'in_progress').length;
+                  const mySubmitted = myIdeas.filter(i => i.status === 'submitted').length;
+                  const myNeedsFixes = myIdeas.filter(i => i.status === 'needs_fixes').length;
+                  const myReviewed = myIdeas.filter(i => i.status === 'reviewed').length;
+                  
+                  return (
+                    <>
+                      <button
+                        onClick={() => setStatusFilter('assigned')}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-150 ${
+                          statusFilter === 'assigned'
+                            ? 'bg-purple-600 text-white shadow-sm'
+                            : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'
+                        }`}
+                      >
+                        Assigned ({myAssigned})
+                      </button>
+                      <button
+                        onClick={() => setStatusFilter('in_progress')}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-150 ${
+                          statusFilter === 'in_progress'
+                            ? 'bg-yellow-600 text-white shadow-sm'
+                            : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100 border border-yellow-200'
+                        }`}
+                      >
+                        In Progress ({myInProgress})
+                      </button>
+                      <button
+                        onClick={() => setStatusFilter('submitted')}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-150 ${
+                          statusFilter === 'submitted'
+                            ? 'bg-pink-600 text-white shadow-sm'
+                            : 'bg-pink-50 text-pink-700 hover:bg-pink-100 border border-pink-200'
+                        }`}
+                      >
+                        Submitted ({mySubmitted})
+                      </button>
+                      <button
+                        onClick={() => setStatusFilter('needs_fixes')}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-150 ${
+                          statusFilter === 'needs_fixes'
+                            ? 'bg-red-600 text-white shadow-sm'
+                            : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
+                        }`}
+                      >
+                        Needs Fixes ({myNeedsFixes})
+                      </button>
+                      <button
+                        onClick={() => setStatusFilter('reviewed')}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-150 ${
+                          statusFilter === 'reviewed'
+                            ? 'bg-teal-600 text-white shadow-sm'
+                            : 'bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200'
+                        }`}
+                      >
+                        Reviewed ({myReviewed})
+                      </button>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Admin Filters */
+          <div className="space-y-4">
+            {/* Status Filter Pills */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <span className="font-medium">Status:</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                    statusFilter === 'all'
+                      ? 'bg-primary-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  All ({stats.total})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('active')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                    statusFilter === 'active'
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
+                  }`}
+                >
+                  In Progress ({stats.active})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('new')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                    statusFilter === 'new'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                  }`}
+                >
+                  New ({stats.new})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('assigned')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                    statusFilter === 'assigned'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'
+                  }`}
+                >
+                  Assigned ({stats.assigned})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('in_progress')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                    statusFilter === 'in_progress'
+                      ? 'bg-yellow-600 text-white shadow-sm'
+                      : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100 border border-yellow-200'
+                  }`}
+                >
+                  Working ({stats.in_progress})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('submitted')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                    statusFilter === 'submitted'
+                      ? 'bg-pink-600 text-white shadow-sm'
+                      : 'bg-pink-50 text-pink-700 hover:bg-pink-100 border border-pink-200'
+                  }`}
+                >
+                  Submitted ({stats.submitted})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('needs_fixes')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                    statusFilter === 'needs_fixes'
+                      ? 'bg-red-600 text-white shadow-sm'
+                      : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
+                  }`}
+                >
+                  Needs Fixes ({stats.needs_fixes})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('reviewed')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                    statusFilter === 'reviewed'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                  }`}
+                >
+                  Reviewed ({stats.reviewed})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('published')}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-150 ${
+                    statusFilter === 'published'
+                      ? 'bg-green-600 text-white shadow-sm'
+                      : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200'
+                  }`}
+                >
+                  Published ({stats.published})
+                </button>
+              </div>
+            </div>
+            
+            {/* Assignee Filter */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <Users className="w-4 h-4" />
+                <span className="font-medium">Assigned to:</span>
+              </div>
+              <div className="relative">
+                <button
+                  onClick={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors min-w-[200px]"
+                >
+                  <UserIcon className="w-4 h-4 text-gray-400" />
+                  <span className="flex-1 text-left text-sm">
+                    {assigneeFilter === 'all' 
+                      ? 'All Assignees' 
+                      : assigneeFilter === 'unassigned'
+                        ? 'Unassigned'
+                        : freelancerUsers.find(u => u.id === parseInt(assigneeFilter, 10))?.username || 'Unknown'}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showAssigneeDropdown ? 'rotate-180' : ''}`} />
+                </button>
+                
+                {showAssigneeDropdown && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-10" 
+                      onClick={() => setShowAssigneeDropdown(false)}
+                    />
+                    <div className="absolute z-20 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                      <button
+                        onClick={() => { setAssigneeFilter('all'); setShowAssigneeDropdown(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
+                          assigneeFilter === 'all' ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
+                        }`}
+                      >
+                        <Users className="w-4 h-4" />
+                        <span className="flex-1 text-left">All Assignees</span>
+                        <span className="text-xs text-gray-400">({getCountForAssignee('all')})</span>
+                      </button>
+                      <button
+                        onClick={() => { setAssigneeFilter('unassigned'); setShowAssigneeDropdown(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
+                          assigneeFilter === 'unassigned' ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
+                        }`}
+                      >
+                        <div className="w-4 h-4 rounded-full border-2 border-dashed border-gray-300" />
+                        <span className="flex-1 text-left">Unassigned</span>
+                        <span className="text-xs text-gray-400">({getCountForAssignee('unassigned')})</span>
+                      </button>
+                      <div className="border-t border-gray-100 my-1" />
+                      <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                        Creators
+                      </div>
+                      {freelancerUsers.map((freelancer) => (
+                        <button
+                          key={freelancer.id}
+                          onClick={() => { setAssigneeFilter(String(freelancer.id)); setShowAssigneeDropdown(false); }}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
+                            assigneeFilter === String(freelancer.id) ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
+                          }`}
+                        >
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
+                            <span className="text-xs font-medium text-white">
+                              {freelancer.username.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                          <span className="flex-1 text-left truncate">{freelancer.username}</span>
+                          <span className="text-xs text-gray-400">({getCountForAssignee(String(freelancer.id))})</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              
+              {/* Clear Filters Button */}
+              {hasActiveFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                  Clear filters
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        
+        {/* Filter Results Summary */}
+        {(searchQuery || hasActiveFilters) && (
+          <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+            <div className="text-sm text-gray-500">
+              Showing <span className="font-medium text-gray-700">{filteredIdeas.length}</span> template{filteredIdeas.length !== 1 ? 's' : ''}
+              {searchQuery && <span> matching "<span className="font-medium">{searchQuery}</span>"</span>}
+            </div>
+            {isFreelancer && statusFilter !== 'all' && (
+              <button
+                onClick={() => setStatusFilter('all')}
+                className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+              >
+                Show all
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -531,28 +1004,28 @@ const Dashboard: React.FC = () => {
                           className="fixed inset-0 z-[5]" 
                           onClick={() => setShowDeptDropdown(false)}
                         />
-                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                          {allDepartments.map((dept) => (
-                            <label
-                              key={dept.id}
-                              className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selectedDepartmentIds.includes(dept.id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedDepartmentIds([...selectedDepartmentIds, dept.id]);
-                                  } else {
-                                    setSelectedDepartmentIds(selectedDepartmentIds.filter(id => id !== dept.id));
-                                  }
-                                }}
-                                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-2"
-                              />
-                              <span className="text-sm text-gray-700">{dept.name}</span>
-                            </label>
-                          ))}
-                        </div>
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {allDepartments.map((dept) => (
+                          <label
+                            key={dept.id}
+                            className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedDepartmentIds.includes(dept.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedDepartmentIds([...selectedDepartmentIds, dept.id]);
+                                } else {
+                                  setSelectedDepartmentIds(selectedDepartmentIds.filter(id => id !== dept.id));
+                                }
+                              }}
+                              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-2"
+                            />
+                            <span className="text-sm text-gray-700">{dept.name}</span>
+                          </label>
+                        ))}
+                      </div>
                       </>
                     )}
                     
