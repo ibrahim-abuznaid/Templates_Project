@@ -1194,7 +1194,7 @@ const IdeaDetail: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Author
                 </label>
-                <p className="text-gray-600">{idea.author || 'Activepieces Team'}</p>
+                  <p className="text-gray-600">{idea.author || 'Activepieces Team'}</p>
               </div>
 
               {/* Scribe URL (sent as blogUrl) */}
@@ -1896,6 +1896,77 @@ const IdeaDetail: React.FC = () => {
 
         {/* Sidebar */}
         <div className="space-y-6">
+          {/* Assignment Info Card */}
+          <div className="card">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <UserIcon className="w-5 h-5" />
+              <span>Assignment</span>
+            </h3>
+            <div className="space-y-4">
+              {/* Created By */}
+              <div>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                  Created By
+                </label>
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                    <span className="text-sm font-medium text-gray-600">
+                      {idea.created_by_name?.charAt(0).toUpperCase() || '?'}
+                    </span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">{idea.created_by_name}</span>
+                </div>
+              </div>
+              
+              {/* Assigned To */}
+              <div>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                  Assigned To
+                </label>
+                {idea.assigned_to_name ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
+                      <span className="text-sm font-medium text-white">
+                        {idea.assigned_to_name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-gray-900">{idea.assigned_to_name}</span>
+                      <span className="block text-xs text-gray-500">Template Creator</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-gray-500">
+                    <div className="w-8 h-8 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center">
+                      <span className="text-gray-400">?</span>
+                    </div>
+                    <span className="text-sm italic">Not assigned yet</span>
+                  </div>
+                )}
+              </div>
+              
+              {/* Reviewer */}
+              {idea.reviewer_name && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                    Reviewer
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
+                      <span className="text-sm font-medium text-purple-600">
+                        {idea.reviewer_name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-gray-900">{idea.reviewer_name}</span>
+                      <span className="block text-xs text-gray-500">Reviewer</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Workflow Progress */}
           <StatusWorkflow currentStatus={idea.status} />
 
