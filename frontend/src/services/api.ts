@@ -105,6 +105,26 @@ export const ideasApi = {
       append 
     }),
 
+  // Download full reconstructed template (full Activepieces format with real flow name)
+  downloadTemplate: (id: number) =>
+    api.get<{
+      filename: string;
+      template: {
+        name: string;
+        type: string;
+        summary: string;
+        description: string;
+        tags: Array<{ title: string; color: string }>;
+        author: string;
+        categories: string[];
+        pieces: string[];
+        status: string;
+        blogUrl: string;
+        metadata: null;
+        flows: any[];
+      };
+    }>(`/ideas/${id}/download-template`),
+
   // Get publish preview (shows what would be sent to Public Library API)
   getPublishPreview: (id: number) =>
     api.get<{

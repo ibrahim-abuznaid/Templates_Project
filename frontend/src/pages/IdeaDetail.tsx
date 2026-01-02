@@ -1337,17 +1337,35 @@ const IdeaDetail: React.FC = () => {
                             })()}
                           </p>
                           <button
-                            onClick={() => {
-                              const blob = new Blob([idea.flow_json!], { type: 'application/json' });
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = `flows-${idea.id}.json`;
-                              a.click();
+                            onClick={async () => {
+                              try {
+                                // Get full reconstructed template with real flow name
+                                const response = await ideasApi.downloadTemplate(idea.id);
+                                const { filename, template } = response.data;
+                                
+                                // Download as properly formatted JSON
+                                const blob = new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = filename;
+                                a.click();
+                                URL.revokeObjectURL(url);
+                              } catch (error) {
+                                console.error('Download failed:', error);
+                                // Fallback to raw download
+                                const blob = new Blob([idea.flow_json!], { type: 'application/json' });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `${(idea.flow_name || 'template').replace(/[^a-zA-Z0-9-_]/g, '-')}.json`;
+                                a.click();
+                                URL.revokeObjectURL(url);
+                              }
                             }}
                             className="text-sm text-green-600 hover:text-green-700 underline"
                           >
-                            Download JSON
+                            Download Full Template
                           </button>
                         </div>
                       </div>

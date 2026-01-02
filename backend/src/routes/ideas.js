@@ -1222,6 +1222,92 @@ router.get('/:id/publish-preview', authenticateToken, authorizeRoles('admin'), a
   }
 });
 
+// Get full reconstructed template for download
+// This reconstructs the full Activepieces template format from stored data
+router.get('/:id/download-template', authenticateToken, async (req, res) => {
+  try {
+    const ideaId = req.params.id;
+    const idea = await db.prepare('SELECT * FROM ideas WHERE id = ?').get(ideaId);
+
+    if (!idea) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    // Check permissions - admin or assigned freelancer can download
+    const { role, id: userId } = req.user;
+    if (role === 'freelancer' && idea.assigned_to !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Extract flows from stored data
+    const result = extractFlowsFromJson(idea.flow_json);
+    const flows = result.success ? result.flows : [];
+
+    // Get departments for categories
+    const departments = await getIdeaDepartments(idea.id);
+    let categories = [];
+    if (departments.length > 0) {
+      categories = departments
+        .map(d => mapDepartmentToCategory(d.name))
+        .filter((cat, index, arr) => cat && arr.indexOf(cat) === index);
+    }
+    if (categories.length === 0) {
+      categories = ['PRODUCTIVITY'];
+    }
+
+    // Build tags array
+    const tags = [];
+    if (idea.cost_per_year) {
+      tags.push({ title: idea.cost_per_year, color: "#e4fded" });
+    }
+    if (idea.time_save_per_week) {
+      tags.push({ title: idea.time_save_per_week, color: "#dbeaff" });
+    }
+
+    // Get pieces used in flows (extract from flow data)
+    const pieces = new Set();
+    for (const flow of flows) {
+      // Extract pieces from trigger
+      if (flow.trigger?.settings?.pieceName) {
+        pieces.add(flow.trigger.settings.pieceName);
+      }
+      // Traverse actions to extract pieces
+      let currentAction = flow.trigger?.nextAction;
+      while (currentAction) {
+        if (currentAction.settings?.pieceName) {
+          pieces.add(currentAction.settings.pieceName);
+        }
+        currentAction = currentAction.nextAction;
+      }
+    }
+
+    // Reconstruct full template format (matches Activepieces export format)
+    const fullTemplate = {
+      name: idea.flow_name || 'Untitled Template',
+      type: idea.public_library_id ? 'OFFICIAL' : 'SHARED',
+      summary: idea.summary || '',
+      description: idea.description || '',
+      tags: tags,
+      author: idea.author || 'Activepieces Team',
+      categories: categories,
+      pieces: Array.from(pieces),
+      status: idea.status === 'published' ? 'PUBLISHED' : 'DRAFT',
+      blogUrl: idea.scribe_url || '',
+      metadata: null,
+      flows: flows
+    };
+
+    // Return the filename suggestion and the template data
+    res.json({
+      filename: `${(idea.flow_name || 'template').replace(/[^a-zA-Z0-9-_]/g, '-')}.json`,
+      template: fullTemplate
+    });
+  } catch (error) {
+    console.error('Download template error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Sync/update a published template in Public Library (admin only)
 router.post('/:id/sync-public-library', authenticateToken, authorizeRoles('admin'), async (req, res) => {
   try {
