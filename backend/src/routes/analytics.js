@@ -231,6 +231,70 @@ router.get('/summary', authenticateToken, authorizeRoles('admin'), async (req, r
   }
 });
 
+// Get published templates with missing required fields
+router.get('/incomplete-published', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    // Required fields for published templates (template_url is optional)
+    const incompleteTemplates = await db.prepare(`
+      SELECT 
+        id,
+        flow_name,
+        summary,
+        description,
+        time_save_per_week,
+        cost_per_year,
+        author,
+        scribe_url,
+        template_url,
+        flow_json,
+        status,
+        created_at,
+        updated_at
+      FROM ideas
+      WHERE status = 'published'
+        AND (
+          flow_name IS NULL OR flow_name = '' OR
+          summary IS NULL OR summary = '' OR
+          description IS NULL OR description = '' OR
+          time_save_per_week IS NULL OR time_save_per_week = '' OR
+          cost_per_year IS NULL OR cost_per_year = '' OR
+          author IS NULL OR author = '' OR
+          scribe_url IS NULL OR scribe_url = '' OR
+          flow_json IS NULL OR flow_json = ''
+        )
+      ORDER BY updated_at DESC
+    `).all();
+
+    // Add missing fields info to each template
+    const templatesWithMissingFields = incompleteTemplates.map(template => {
+      const missingFields = [];
+      if (!template.flow_name) missingFields.push('Flow Name');
+      if (!template.summary) missingFields.push('Summary');
+      if (!template.description) missingFields.push('Description');
+      if (!template.time_save_per_week) missingFields.push('Time Save/Week');
+      if (!template.cost_per_year) missingFields.push('Cost/Year');
+      if (!template.author) missingFields.push('Author');
+      if (!template.scribe_url) missingFields.push('Article/Blog URL');
+      if (!template.flow_json) missingFields.push('Flow JSON');
+      
+      return {
+        ...template,
+        missing_fields: missingFields,
+        missing_count: missingFields.length
+      };
+    });
+
+    res.json({
+      count: templatesWithMissingFields.length,
+      templates: templatesWithMissingFields,
+      generated_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Incomplete published templates error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get department analytics
 router.get('/departments', authenticateToken, authorizeRoles('admin'), async (req, res) => {
   try {

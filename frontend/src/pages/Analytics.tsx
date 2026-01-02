@@ -30,7 +30,10 @@ import {
   RefreshCw,
   Eye,
   Zap,
+  AlertTriangle,
+  ExternalLink,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 // Color palette
 const COLORS = ['#6D28D9', '#22c55e', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316'];
@@ -82,6 +85,24 @@ interface CreationData {
   top_freelancers: Array<{ username: string; templates_count: number; published_count: number }>;
 }
 
+interface IncompleteTemplate {
+  id: number;
+  flow_name: string;
+  summary: string | null;
+  description: string | null;
+  time_save_per_week: string | null;
+  cost_per_year: string | null;
+  author: string | null;
+  scribe_url: string | null;
+  template_url: string | null;
+  flow_json: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  missing_fields: string[];
+  missing_count: number;
+}
+
 const Analytics: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('monthly');
@@ -89,6 +110,7 @@ const Analytics: React.FC = () => {
   const [freelancerReports, setFreelancerReports] = useState<FreelancerReport[]>([]);
   const [creationData, setCreationData] = useState<CreationData | null>(null);
   const [reportPeriod, setReportPeriod] = useState<'weekly' | 'monthly' | 'all'>('monthly');
+  const [incompleteTemplates, setIncompleteTemplates] = useState<IncompleteTemplate[]>([]);
   
   // Format sync state
   const [showSyncModal, setShowSyncModal] = useState(false);
@@ -112,15 +134,17 @@ const Analytics: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [summaryRes, freelancerRes, creationRes] = await Promise.all([
+      const [summaryRes, freelancerRes, creationRes, incompleteRes] = await Promise.all([
         analyticsApi.getSummary(),
         analyticsApi.getFreelancerReport(reportPeriod),
         analyticsApi.getCreationRate(period),
+        analyticsApi.getIncompletePublished(),
       ]);
 
       setSummary(summaryRes.data);
       setFreelancerReports(freelancerRes.data.reports);
       setCreationData(creationRes.data);
+      setIncompleteTemplates(incompleteRes.data.templates);
     } catch (error) {
       console.error('Failed to load analytics:', error);
     } finally {
@@ -317,6 +341,61 @@ const Analytics: React.FC = () => {
                 <Users className="w-8 h-8 text-blue-600" />
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Incomplete Published Templates Warning */}
+      {incompleteTemplates.length > 0 && (
+        <div className="card bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-amber-100 rounded-xl">
+              <AlertTriangle className="w-6 h-6 text-amber-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-amber-900">
+                Published Templates Missing Required Fields
+              </h2>
+              <p className="text-sm text-amber-700">
+                {incompleteTemplates.length} template{incompleteTemplates.length !== 1 ? 's' : ''} published but incomplete. Template URL is optional, all other fields are required.
+              </p>
+            </div>
+          </div>
+          
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {incompleteTemplates.map((template) => (
+              <div 
+                key={template.id} 
+                className="bg-white rounded-xl p-4 border border-amber-200 hover:border-amber-300 transition-colors"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <Link 
+                      to={`/ideas/${template.id}`}
+                      className="font-semibold text-gray-900 hover:text-primary-600 transition-colors flex items-center gap-2"
+                    >
+                      {template.flow_name || `Template #${template.id}`}
+                      <ExternalLink className="w-4 h-4 shrink-0" />
+                    </Link>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {template.missing_fields.map((field) => (
+                        <span 
+                          key={field}
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"
+                        >
+                          {field}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
+                      {template.missing_count} missing
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

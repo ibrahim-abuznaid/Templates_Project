@@ -432,6 +432,29 @@ export const analyticsApi = {
       }>;
       generated_at: string;
     }>('/analytics/departments'),
+
+  getIncompletePublished: () =>
+    api.get<{
+      count: number;
+      templates: Array<{
+        id: number;
+        flow_name: string;
+        summary: string | null;
+        description: string | null;
+        time_save_per_week: string | null;
+        cost_per_year: string | null;
+        author: string | null;
+        scribe_url: string | null;
+        template_url: string | null;
+        flow_json: string | null;
+        status: string;
+        created_at: string;
+        updated_at: string;
+        missing_fields: string[];
+        missing_count: number;
+      }>;
+      generated_at: string;
+    }>('/analytics/incomplete-published'),
 };
 
 export default api;
