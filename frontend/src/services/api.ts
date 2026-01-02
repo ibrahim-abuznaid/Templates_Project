@@ -452,6 +452,9 @@ export const analyticsApi = {
         updated_at: string;
         missing_fields: string[];
         missing_count: number;
+        assigned_to: number | null;
+        assigned_username: string | null;
+        assigned_email: string | null;
       }>;
       generated_at: string;
     }>('/analytics/incomplete-published'),
@@ -490,6 +493,19 @@ export const analyticsApi = {
       }>;
       generated_at: string;
     }>('/analytics/maintenance'),
+
+  sendReminder: (userId: number, ideaId: number, reminderType: string, message?: string) =>
+    api.post<{ success: boolean; message: string }>('/analytics/send-reminder', {
+      user_id: userId,
+      idea_id: ideaId,
+      reminder_type: reminderType,
+      message,
+    }),
+
+  sendBulkReminders: (reminders: Array<{ user_id: number; idea_id: number; reminder_type: string; message?: string }>) =>
+    api.post<{ success: boolean; message: string; results: { sent: number; failed: number } }>('/analytics/send-bulk-reminders', {
+      reminders,
+    }),
 };
 
 export default api;

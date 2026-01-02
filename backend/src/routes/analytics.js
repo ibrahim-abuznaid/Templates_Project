@@ -1,8 +1,142 @@
 import express from 'express';
 import db from '../database/db.js';
 import { authenticateToken, authorizeRoles } from '../middleware/auth.js';
+import { createNotification } from './notifications.js';
 
 const router = express.Router();
+
+// Send maintenance reminder notification to a user about a template
+router.post('/send-reminder', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const { user_id, idea_id, reminder_type, message } = req.body;
+
+    if (!user_id || !idea_id || !reminder_type) {
+      return res.status(400).json({ error: 'user_id, idea_id, and reminder_type are required' });
+    }
+
+    // Get the idea info
+    const idea = await db.prepare('SELECT id, flow_name FROM ideas WHERE id = ?').get(idea_id);
+    if (!idea) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    // Build notification message based on type
+    let title, notificationMessage;
+    const templateName = idea.flow_name || `Template #${idea.id}`;
+
+    switch (reminder_type) {
+      case 'incomplete_fields':
+        title = '⚠️ Template Missing Required Fields';
+        notificationMessage = message || `The published template "${templateName}" is missing required fields. Please complete all required information.`;
+        break;
+      case 'stale':
+        title = '⏰ Template Needs Attention';
+        notificationMessage = message || `The template "${templateName}" hasn't been updated in a while. Please check on its progress.`;
+        break;
+      case 'no_flow':
+        title = '📄 Flow File Missing';
+        notificationMessage = message || `The template "${templateName}" is missing a flow JSON file. Please upload the flow file.`;
+        break;
+      default:
+        title = '📋 Template Reminder';
+        notificationMessage = message || `Please review the template "${templateName}".`;
+    }
+
+    const notification = await createNotification(
+      user_id,
+      'reminder',
+      title,
+      notificationMessage,
+      idea_id,
+      req.user.id
+    );
+
+    if (notification) {
+      res.json({ success: true, message: 'Reminder sent successfully', notification });
+    } else {
+      res.status(500).json({ error: 'Failed to create notification' });
+    }
+  } catch (error) {
+    console.error('Send reminder error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Send bulk reminders to multiple users
+router.post('/send-bulk-reminders', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const { reminders } = req.body;
+
+    if (!Array.isArray(reminders) || reminders.length === 0) {
+      return res.status(400).json({ error: 'reminders array is required' });
+    }
+
+    const results = { sent: 0, failed: 0, errors: [] };
+
+    for (const reminder of reminders) {
+      const { user_id, idea_id, reminder_type, message } = reminder;
+      
+      if (!user_id || !idea_id) {
+        results.failed++;
+        results.errors.push({ idea_id, error: 'Missing user_id or idea_id' });
+        continue;
+      }
+
+      const idea = await db.prepare('SELECT id, flow_name FROM ideas WHERE id = ?').get(idea_id);
+      if (!idea) {
+        results.failed++;
+        results.errors.push({ idea_id, error: 'Template not found' });
+        continue;
+      }
+
+      const templateName = idea.flow_name || `Template #${idea.id}`;
+      let title, notificationMessage;
+
+      switch (reminder_type) {
+        case 'incomplete_fields':
+          title = '⚠️ Template Missing Required Fields';
+          notificationMessage = message || `The published template "${templateName}" is missing required fields. Please complete all required information.`;
+          break;
+        case 'stale':
+          title = '⏰ Template Needs Attention';
+          notificationMessage = message || `The template "${templateName}" hasn't been updated in a while. Please check on its progress.`;
+          break;
+        case 'no_flow':
+          title = '📄 Flow File Missing';
+          notificationMessage = message || `The template "${templateName}" is missing a flow JSON file. Please upload the flow file.`;
+          break;
+        default:
+          title = '📋 Template Reminder';
+          notificationMessage = message || `Please review the template "${templateName}".`;
+      }
+
+      const notification = await createNotification(
+        user_id,
+        'reminder',
+        title,
+        notificationMessage,
+        idea_id,
+        req.user.id
+      );
+
+      if (notification) {
+        results.sent++;
+      } else {
+        results.failed++;
+        results.errors.push({ idea_id, error: 'Failed to create notification' });
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Sent ${results.sent} reminder${results.sent !== 1 ? 's' : ''}${results.failed > 0 ? `, ${results.failed} failed` : ''}`,
+      results 
+    });
+  } catch (error) {
+    console.error('Send bulk reminders error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // Get freelancer performance report (weekly/monthly)
 router.get('/freelancer-report', authenticateToken, authorizeRoles('admin'), async (req, res) => {
@@ -237,32 +371,36 @@ router.get('/incomplete-published', authenticateToken, authorizeRoles('admin'), 
     // Required fields for published templates (template_url is optional)
     const incompleteTemplates = await db.prepare(`
       SELECT 
-        id,
-        flow_name,
-        summary,
-        description,
-        time_save_per_week,
-        cost_per_year,
-        author,
-        scribe_url,
-        template_url,
-        flow_json,
-        status,
-        created_at,
-        updated_at
-      FROM ideas
-      WHERE status = 'published'
+        i.id,
+        i.flow_name,
+        i.summary,
+        i.description,
+        i.time_save_per_week,
+        i.cost_per_year,
+        i.author,
+        i.scribe_url,
+        i.template_url,
+        i.flow_json,
+        i.status,
+        i.created_at,
+        i.updated_at,
+        i.assigned_to,
+        u.username as assigned_username,
+        u.email as assigned_email
+      FROM ideas i
+      LEFT JOIN users u ON i.assigned_to = u.id
+      WHERE i.status = 'published'
         AND (
-          flow_name IS NULL OR flow_name = '' OR
-          summary IS NULL OR summary = '' OR
-          description IS NULL OR description = '' OR
-          time_save_per_week IS NULL OR time_save_per_week = '' OR
-          cost_per_year IS NULL OR cost_per_year = '' OR
-          author IS NULL OR author = '' OR
-          scribe_url IS NULL OR scribe_url = '' OR
-          flow_json IS NULL OR flow_json = ''
+          i.flow_name IS NULL OR i.flow_name = '' OR
+          i.summary IS NULL OR i.summary = '' OR
+          i.description IS NULL OR i.description = '' OR
+          i.time_save_per_week IS NULL OR i.time_save_per_week = '' OR
+          i.cost_per_year IS NULL OR i.cost_per_year = '' OR
+          i.author IS NULL OR i.author = '' OR
+          i.scribe_url IS NULL OR i.scribe_url = '' OR
+          i.flow_json IS NULL OR i.flow_json = ''
         )
-      ORDER BY updated_at DESC
+      ORDER BY i.updated_at DESC
     `).all();
 
     // Add missing fields info to each template

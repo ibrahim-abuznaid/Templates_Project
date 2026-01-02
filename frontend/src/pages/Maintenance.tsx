@@ -16,6 +16,9 @@ import {
   ChevronDown,
   ChevronUp,
   Calendar,
+  Bell,
+  Send,
+  User,
 } from 'lucide-react';
 
 interface IncompleteTemplate {
@@ -34,6 +37,9 @@ interface IncompleteTemplate {
   updated_at: string;
   missing_fields: string[];
   missing_count: number;
+  assigned_to: number | null;
+  assigned_username: string | null;
+  assigned_email: string | null;
 }
 
 interface StaleTemplate {
@@ -116,6 +122,11 @@ const Maintenance: React.FC = () => {
     duplicates: false,
   });
 
+  // Notification state
+  const [sendingReminder, setSendingReminder] = useState<number | null>(null);
+  const [reminderSuccess, setReminderSuccess] = useState<Record<number, boolean>>({});
+  const [sendingBulk, setSendingBulk] = useState(false);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -173,6 +184,55 @@ const Maintenance: React.FC = () => {
       setSyncResult({ success: false, message: 'Failed to sync formats' });
     } finally {
       setSyncLoading(false);
+    }
+  };
+
+  const sendReminder = async (userId: number, ideaId: number, reminderType: string) => {
+    setSendingReminder(ideaId);
+    try {
+      await analyticsApi.sendReminder(userId, ideaId, reminderType);
+      setReminderSuccess(prev => ({ ...prev, [ideaId]: true }));
+      // Clear success indicator after 3 seconds
+      setTimeout(() => {
+        setReminderSuccess(prev => ({ ...prev, [ideaId]: false }));
+      }, 3000);
+    } catch (error) {
+      console.error('Failed to send reminder:', error);
+    } finally {
+      setSendingReminder(null);
+    }
+  };
+
+  const sendBulkReminders = async (templates: Array<{ id: number; assigned_to: number | null }>, reminderType: string) => {
+    const remindersToSend = templates
+      .filter(t => t.assigned_to)
+      .map(t => ({
+        user_id: t.assigned_to!,
+        idea_id: t.id,
+        reminder_type: reminderType,
+      }));
+
+    if (remindersToSend.length === 0) {
+      alert('No templates with assigned users to send reminders to.');
+      return;
+    }
+
+    setSendingBulk(true);
+    try {
+      const response = await analyticsApi.sendBulkReminders(remindersToSend);
+      alert(response.data.message);
+      // Mark all as sent
+      const newSuccesses: Record<number, boolean> = {};
+      remindersToSend.forEach(r => { newSuccesses[r.idea_id] = true; });
+      setReminderSuccess(prev => ({ ...prev, ...newSuccesses }));
+      setTimeout(() => {
+        setReminderSuccess({});
+      }, 3000);
+    } catch (error) {
+      console.error('Failed to send bulk reminders:', error);
+      alert('Failed to send reminders');
+    } finally {
+      setSendingBulk(false);
     }
   };
 
@@ -285,12 +345,34 @@ const Maintenance: React.FC = () => {
           expanded={expandedSections.incomplete}
           onToggle={() => toggleSection('incomplete')}
           critical
+          headerAction={
+            incompleteTemplates.some(t => t.assigned_to) && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  sendBulkReminders(
+                    incompleteTemplates.map(t => ({ id: t.id, assigned_to: t.assigned_to })),
+                    'incomplete_fields'
+                  );
+                }}
+                disabled={sendingBulk}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50"
+              >
+                {sendingBulk ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                Notify All
+              </button>
+            )
+          }
         >
           <div className="space-y-3 max-h-96 overflow-y-auto">
             {incompleteTemplates.map((template) => (
               <div
                 key={template.id}
-                className="bg-white rounded-xl p-4 border border-amber-200 hover:border-amber-300 transition-colors"
+                className={`bg-white rounded-xl p-4 border transition-colors ${
+                  reminderSuccess[template.id] 
+                    ? 'border-green-300 bg-green-50' 
+                    : 'border-amber-200 hover:border-amber-300'
+                }`}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
@@ -301,6 +383,12 @@ const Maintenance: React.FC = () => {
                       {template.flow_name || `Template #${template.id}`}
                       <ExternalLink className="w-4 h-4 shrink-0" />
                     </Link>
+                    {template.assigned_username && (
+                      <div className="flex items-center gap-1.5 mt-1 text-sm text-gray-600">
+                        <User className="w-3.5 h-3.5" />
+                        <span>Assigned to: <span className="font-medium text-gray-800">{template.assigned_username}</span></span>
+                      </div>
+                    )}
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {template.missing_fields.map((field) => (
                         <span
@@ -312,7 +400,28 @@ const Maintenance: React.FC = () => {
                       ))}
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
+                    {template.assigned_to && (
+                      <button
+                        onClick={() => sendReminder(template.assigned_to!, template.id, 'incomplete_fields')}
+                        disabled={sendingReminder === template.id || reminderSuccess[template.id]}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                          reminderSuccess[template.id]
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-gray-100 text-gray-700 hover:bg-amber-100 hover:text-amber-700'
+                        } disabled:opacity-50`}
+                        title="Send reminder notification"
+                      >
+                        {sendingReminder === template.id ? (
+                          <Loader className="w-3.5 h-3.5 animate-spin" />
+                        ) : reminderSuccess[template.id] ? (
+                          <CheckCircle className="w-3.5 h-3.5" />
+                        ) : (
+                          <Bell className="w-3.5 h-3.5" />
+                        )}
+                        {reminderSuccess[template.id] ? 'Sent!' : 'Notify'}
+                      </button>
+                    )}
                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
                       {template.missing_count} missing
                     </span>
@@ -423,10 +532,33 @@ const Maintenance: React.FC = () => {
           color="orange"
           expanded={expandedSections.stale}
           onToggle={() => toggleSection('stale')}
+          headerAction={
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                sendBulkReminders(
+                  staleTemplates.map(t => ({ id: t.id, assigned_to: t.assigned_to })),
+                  'stale'
+                );
+              }}
+              disabled={sendingBulk}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50"
+            >
+              {sendingBulk ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              Notify All
+            </button>
+          }
         >
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {staleTemplates.map((template) => (
-              <div key={template.id} className="bg-white rounded-lg p-3 border border-orange-200 flex items-center justify-between">
+              <div 
+                key={template.id} 
+                className={`bg-white rounded-lg p-3 border flex items-center justify-between ${
+                  reminderSuccess[template.id] 
+                    ? 'border-green-300 bg-green-50' 
+                    : 'border-orange-200'
+                }`}
+              >
                 <div className="flex-1 min-w-0">
                   <Link
                     to={`/ideas/${template.id}`}
@@ -436,14 +568,38 @@ const Maintenance: React.FC = () => {
                     <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                   </Link>
                   <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
-                    <span>Assigned to: <span className="font-medium text-gray-700">{template.assigned_username}</span></span>
+                    <span className="flex items-center gap-1">
+                      <User className="w-3.5 h-3.5" />
+                      <span className="font-medium text-gray-700">{template.assigned_username}</span>
+                    </span>
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5" />
                       {template.days_since_update} days ago
                     </span>
                   </div>
                 </div>
-                <StatusBadge status={template.status} />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => sendReminder(template.assigned_to, template.id, 'stale')}
+                    disabled={sendingReminder === template.id || reminderSuccess[template.id]}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                      reminderSuccess[template.id]
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-gray-100 text-gray-700 hover:bg-orange-100 hover:text-orange-700'
+                    } disabled:opacity-50`}
+                    title="Send reminder notification"
+                  >
+                    {sendingReminder === template.id ? (
+                      <Loader className="w-3.5 h-3.5 animate-spin" />
+                    ) : reminderSuccess[template.id] ? (
+                      <CheckCircle className="w-3.5 h-3.5" />
+                    ) : (
+                      <Bell className="w-3.5 h-3.5" />
+                    )}
+                    {reminderSuccess[template.id] ? 'Sent!' : 'Notify'}
+                  </button>
+                  <StatusBadge status={template.status} />
+                </div>
               </div>
             ))}
           </div>
@@ -591,7 +747,8 @@ const CollapsibleSection: React.FC<{
   onToggle: () => void;
   children: React.ReactNode;
   critical?: boolean;
-}> = ({ title, subtitle, icon, color, expanded, onToggle, children, critical }) => {
+  headerAction?: React.ReactNode;
+}> = ({ title, subtitle, icon, color, expanded, onToggle, children, critical, headerAction }) => {
   const borderColors: Record<string, string> = {
     amber: 'border-amber-200',
     purple: 'border-purple-200',
@@ -612,25 +769,28 @@ const CollapsibleSection: React.FC<{
 
   return (
     <div className={`card border-2 ${borderColors[color]} ${critical ? 'bg-gradient-to-br ' + bgColors[color] : ''}`}>
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center justify-between"
-      >
-        <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-xl bg-white shadow-sm border ${borderColors[color]}`}>
-            {icon}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={onToggle}
+          className="flex-1 flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-xl bg-white shadow-sm border ${borderColors[color]}`}>
+              {icon}
+            </div>
+            <div className="text-left">
+              <h2 className="text-lg font-bold text-gray-900">{title}</h2>
+              <p className="text-sm text-gray-600">{subtitle}</p>
+            </div>
           </div>
-          <div className="text-left">
-            <h2 className="text-lg font-bold text-gray-900">{title}</h2>
-            <p className="text-sm text-gray-600">{subtitle}</p>
-          </div>
-        </div>
-        {expanded ? (
-          <ChevronUp className="w-5 h-5 text-gray-400" />
-        ) : (
-          <ChevronDown className="w-5 h-5 text-gray-400" />
-        )}
-      </button>
+          {expanded ? (
+            <ChevronUp className="w-5 h-5 text-gray-400" />
+          ) : (
+            <ChevronDown className="w-5 h-5 text-gray-400" />
+          )}
+        </button>
+        {headerAction && <div className="ml-3">{headerAction}</div>}
+      </div>
       {expanded && <div className="mt-4 pt-4 border-t border-gray-200">{children}</div>}
     </div>
   );
