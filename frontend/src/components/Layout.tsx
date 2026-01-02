@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle, Zap, ChevronDown, BarChart3 } from 'lucide-react';
+import { LogOut, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle, Zap, ChevronDown, BarChart3, Wrench } from 'lucide-react';
 import NotificationsInbox from './NotificationsInbox';
 import InviteUserModal from './InviteUserModal';
 
@@ -84,6 +84,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     >
                       <BarChart3 className="w-4 h-4" />
                       <span>Analytics</span>
+                    </Link>
+                  )}
+
+                  {isAdmin && (
+                    <Link
+                      to="/maintenance"
+                      className={isActive('/maintenance') ? 'nav-link-active' : 'nav-link'}
+                    >
+                      <Wrench className="w-4 h-4" />
+                      <span>Maintenance</span>
                     </Link>
                   )}
 

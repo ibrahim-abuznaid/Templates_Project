@@ -13,6 +13,7 @@ import MyEarnings from './pages/MyEarnings';
 import BlockersOverview from './pages/BlockersOverview';
 import QuickPublish from './pages/QuickPublish';
 import Analytics from './pages/Analytics';
+import Maintenance from './pages/Maintenance';
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -117,6 +118,16 @@ const AppRoutes: React.FC = () => {
           <PrivateRoute>
             <Layout>
               <Analytics />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/maintenance"
+        element={
+          <PrivateRoute>
+            <Layout>
+              <Maintenance />
             </Layout>
           </PrivateRoute>
         }

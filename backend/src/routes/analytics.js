@@ -321,4 +321,81 @@ router.get('/departments', authenticateToken, authorizeRoles('admin'), async (re
   }
 });
 
+// Get maintenance data (stale templates, orphans, duplicates, etc.)
+router.get('/maintenance', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    // 1. Stale assigned templates (assigned but not updated for 14+ days)
+    const staleAssigned = await db.prepare(`
+      SELECT 
+        i.id,
+        i.flow_name,
+        i.status,
+        i.assigned_to,
+        u.username as assigned_username,
+        i.updated_at,
+        EXTRACT(DAY FROM NOW() - i.updated_at)::integer as days_since_update
+      FROM ideas i
+      LEFT JOIN users u ON i.assigned_to = u.id
+      WHERE i.assigned_to IS NOT NULL
+        AND i.status NOT IN ('published', 'archived', 'new')
+        AND i.updated_at < NOW() - INTERVAL '14 days'
+      ORDER BY i.updated_at ASC
+    `).all();
+
+    // 2. Templates without departments
+    const noDepartments = await db.prepare(`
+      SELECT 
+        i.id,
+        i.flow_name,
+        i.status,
+        i.created_at
+      FROM ideas i
+      LEFT JOIN idea_departments id ON i.id = id.idea_id
+      WHERE id.idea_id IS NULL
+      ORDER BY i.created_at DESC
+    `).all();
+
+    // 3. Templates without flow_json (excluding new status)
+    const noFlowJson = await db.prepare(`
+      SELECT 
+        id,
+        flow_name,
+        status,
+        created_at
+      FROM ideas
+      WHERE (flow_json IS NULL OR flow_json = '')
+        AND status NOT IN ('new', 'archived')
+      ORDER BY created_at DESC
+    `).all();
+
+    // 4. Duplicate templates (same flow_name)
+    const duplicates = await db.prepare(`
+      SELECT 
+        flow_name,
+        COUNT(*) as count,
+        json_agg(json_build_object('id', id, 'status', status, 'created_at', created_at) ORDER BY created_at DESC) as templates
+      FROM ideas
+      WHERE flow_name IS NOT NULL AND flow_name != ''
+      GROUP BY flow_name
+      HAVING COUNT(*) > 1
+      ORDER BY count DESC
+    `).all();
+
+    res.json({
+      stale_assigned: staleAssigned,
+      no_departments: noDepartments,
+      no_flow_json: noFlowJson,
+      duplicates: duplicates.map(d => ({
+        flow_name: d.flow_name,
+        count: parseInt(d.count),
+        templates: d.templates
+      })),
+      generated_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Maintenance data error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

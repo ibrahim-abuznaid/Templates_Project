@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { analyticsApi, ideasApi } from '../services/api';
+import { analyticsApi } from '../services/api';
 import {
   BarChart,
   Bar,
@@ -27,11 +27,8 @@ import {
   BarChart3,
   PieChart as PieChartIcon,
   Download,
-  RefreshCw,
-  Eye,
-  Zap,
+  Wrench,
   AlertTriangle,
-  ExternalLink,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -85,24 +82,6 @@ interface CreationData {
   top_freelancers: Array<{ username: string; templates_count: number; published_count: number }>;
 }
 
-interface IncompleteTemplate {
-  id: number;
-  flow_name: string;
-  summary: string | null;
-  description: string | null;
-  time_save_per_week: string | null;
-  cost_per_year: string | null;
-  author: string | null;
-  scribe_url: string | null;
-  template_url: string | null;
-  flow_json: string | null;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  missing_fields: string[];
-  missing_count: number;
-}
-
 const Analytics: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('monthly');
@@ -110,22 +89,7 @@ const Analytics: React.FC = () => {
   const [freelancerReports, setFreelancerReports] = useState<FreelancerReport[]>([]);
   const [creationData, setCreationData] = useState<CreationData | null>(null);
   const [reportPeriod, setReportPeriod] = useState<'weekly' | 'monthly' | 'all'>('monthly');
-  const [incompleteTemplates, setIncompleteTemplates] = useState<IncompleteTemplate[]>([]);
-  
-  // Format sync state
-  const [showSyncModal, setShowSyncModal] = useState(false);
-  const [syncPreview, setSyncPreview] = useState<{
-    stats: { total: number; needsUpdate: number; alreadyCorrect: number; publishedNeedsUpdate: number };
-    needsUpdate: Array<{
-      id: number;
-      flow_name: string;
-      time_save_per_week: { current: string; normalized: string | null };
-      cost_per_year: { current: string; normalized: string | null };
-      isPublished: boolean;
-    }>;
-  } | null>(null);
-  const [syncLoading, setSyncLoading] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string; publicLibrarySynced?: number } | null>(null);
+  const [maintenanceIssues, setMaintenanceIssues] = useState(0);
 
   useEffect(() => {
     loadData();
@@ -144,7 +108,7 @@ const Analytics: React.FC = () => {
       setSummary(summaryRes.data);
       setFreelancerReports(freelancerRes.data.reports);
       setCreationData(creationRes.data);
-      setIncompleteTemplates(incompleteRes.data.templates);
+      setMaintenanceIssues(incompleteRes.data.count);
     } catch (error) {
       console.error('Failed to load analytics:', error);
     } finally {
@@ -192,42 +156,6 @@ const Analytics: React.FC = () => {
     a.click();
   };
 
-  // Format sync functions
-  const loadSyncPreview = async () => {
-    setSyncLoading(true);
-    setSyncResult(null);
-    try {
-      const response = await ideasApi.previewFormatSync();
-      setSyncPreview(response.data);
-      setShowSyncModal(true);
-    } catch (error) {
-      console.error('Failed to load sync preview:', error);
-      setSyncResult({ success: false, message: 'Failed to load preview' });
-    } finally {
-      setSyncLoading(false);
-    }
-  };
-
-  const executeSyncFormats = async () => {
-    setSyncLoading(true);
-    try {
-      const response = await ideasApi.syncFormats();
-      setSyncResult({ 
-        success: true, 
-        message: response.data.message,
-        publicLibrarySynced: response.data.stats.publicLibrarySynced
-      });
-      // Refresh the preview to show updated stats
-      const previewResponse = await ideasApi.previewFormatSync();
-      setSyncPreview(previewResponse.data);
-    } catch (error) {
-      console.error('Failed to sync formats:', error);
-      setSyncResult({ success: false, message: 'Failed to sync formats' });
-    } finally {
-      setSyncLoading(false);
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -245,20 +173,23 @@ const Analytics: React.FC = () => {
           <p className="text-gray-500 mt-1">Track template creation and freelancer performance</p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Format Sync Button */}
-          <button
-            onClick={loadSyncPreview}
-            disabled={syncLoading}
+          {maintenanceIssues > 0 && (
+            <Link
+              to="/maintenance"
+              className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-700 rounded-lg border border-amber-200 hover:bg-amber-100 transition-colors"
+            >
+              <AlertTriangle className="w-4 h-4" />
+              <span className="font-medium">{maintenanceIssues} issue{maintenanceIssues !== 1 ? 's' : ''}</span>
+            </Link>
+          )}
+          
+          <Link
+            to="/maintenance"
             className="btn-secondary flex items-center gap-2"
-            title="Sync all template formats (cost/time)"
           >
-            {syncLoading ? (
-              <Loader className="w-4 h-4 animate-spin" />
-            ) : (
-              <RefreshCw className="w-4 h-4" />
-            )}
-            Sync Formats
-          </button>
+            <Wrench className="w-4 h-4" />
+            Maintenance
+          </Link>
           
           <select
             value={period}
@@ -341,61 +272,6 @@ const Analytics: React.FC = () => {
                 <Users className="w-8 h-8 text-blue-600" />
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Incomplete Published Templates Warning */}
-      {incompleteTemplates.length > 0 && (
-        <div className="card bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-amber-100 rounded-xl">
-              <AlertTriangle className="w-6 h-6 text-amber-600" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-amber-900">
-                Published Templates Missing Required Fields
-              </h2>
-              <p className="text-sm text-amber-700">
-                {incompleteTemplates.length} template{incompleteTemplates.length !== 1 ? 's' : ''} published but incomplete. Template URL is optional, all other fields are required.
-              </p>
-            </div>
-          </div>
-          
-          <div className="space-y-3 max-h-96 overflow-y-auto">
-            {incompleteTemplates.map((template) => (
-              <div 
-                key={template.id} 
-                className="bg-white rounded-xl p-4 border border-amber-200 hover:border-amber-300 transition-colors"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <Link 
-                      to={`/ideas/${template.id}`}
-                      className="font-semibold text-gray-900 hover:text-primary-600 transition-colors flex items-center gap-2"
-                    >
-                      {template.flow_name || `Template #${template.id}`}
-                      <ExternalLink className="w-4 h-4 shrink-0" />
-                    </Link>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {template.missing_fields.map((field) => (
-                        <span 
-                          key={field}
-                          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"
-                        >
-                          {field}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
-                      {template.missing_count} missing
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       )}
@@ -639,176 +515,6 @@ const Analytics: React.FC = () => {
         </div>
       </div>
 
-      {/* Format Sync Modal */}
-      {showSyncModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden">
-            {/* Modal Header */}
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center">
-                  <Zap className="w-5 h-5 text-primary-600" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">Format Sync</h2>
-                  <p className="text-sm text-gray-500">Normalize time and cost formats across all templates</p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setShowSyncModal(false);
-                  setSyncPreview(null);
-                  setSyncResult(null);
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Modal Content */}
-            <div className="p-6 overflow-y-auto max-h-[50vh]">
-              {syncResult && (
-                <div className={`mb-4 p-4 rounded-xl ${syncResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
-                  <div className="flex items-center gap-2">
-                    {syncResult.success ? (
-                      <CheckCircle className="w-5 h-5" />
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                    )}
-                    <div>
-                      <span className="font-medium">{syncResult.message}</span>
-                      {syncResult.success && syncResult.publicLibrarySynced !== undefined && syncResult.publicLibrarySynced > 0 && (
-                        <p className="text-sm mt-1">📚 {syncResult.publicLibrarySynced} templates also synced to Public Library</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {syncPreview && (
-                <>
-                  {/* Stats */}
-                  <div className="grid grid-cols-4 gap-4 mb-6">
-                    <div className="bg-gray-50 rounded-xl p-4 text-center">
-                      <p className="text-2xl font-bold text-gray-900">{syncPreview.stats.total}</p>
-                      <p className="text-sm text-gray-500">Total Templates</p>
-                    </div>
-                    <div className="bg-amber-50 rounded-xl p-4 text-center">
-                      <p className="text-2xl font-bold text-amber-600">{syncPreview.stats.needsUpdate}</p>
-                      <p className="text-sm text-amber-700">Need Update</p>
-                    </div>
-                    <div className="bg-purple-50 rounded-xl p-4 text-center">
-                      <p className="text-2xl font-bold text-purple-600">{syncPreview.stats.publishedNeedsUpdate}</p>
-                      <p className="text-sm text-purple-700">Published (→ Library)</p>
-                    </div>
-                    <div className="bg-green-50 rounded-xl p-4 text-center">
-                      <p className="text-2xl font-bold text-green-600">{syncPreview.stats.alreadyCorrect}</p>
-                      <p className="text-sm text-green-700">Already Correct</p>
-                    </div>
-                  </div>
-
-                  {/* Info about Public Library sync */}
-                  {syncPreview.stats.publishedNeedsUpdate > 0 && (
-                    <div className="mb-4 p-3 rounded-lg bg-purple-50 border border-purple-200">
-                      <p className="text-sm text-purple-800">
-                        <strong>{syncPreview.stats.publishedNeedsUpdate}</strong> templates are published to the Public Library and will be automatically synced there too.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Preview Changes */}
-                  {syncPreview.needsUpdate.length > 0 && (
-                    <div>
-                      <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                        <Eye className="w-4 h-4" />
-                        Changes Preview
-                      </h3>
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {syncPreview.needsUpdate.slice(0, 20).map((item) => (
-                          <div key={item.id} className={`rounded-lg p-3 text-sm ${item.isPublished ? 'bg-purple-50 border border-purple-200' : 'bg-gray-50'}`}>
-                            <div className="flex items-center gap-2 mb-2">
-                              <p className="font-medium text-gray-900 truncate flex-1">{item.flow_name}</p>
-                              {item.isPublished && (
-                                <span className="shrink-0 px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 rounded-full">
-                                  📚 Published
-                                </span>
-                              )}
-                            </div>
-                            <div className="grid grid-cols-2 gap-4 text-xs">
-                              {item.time_save_per_week.normalized && (
-                                <div>
-                                  <span className="text-gray-500">Time:</span>{' '}
-                                  <span className="line-through text-red-500">{item.time_save_per_week.current || '(empty)'}</span>
-                                  {' → '}
-                                  <span className="text-green-600 font-medium">{item.time_save_per_week.normalized}</span>
-                                </div>
-                              )}
-                              {item.cost_per_year.normalized && (
-                                <div>
-                                  <span className="text-gray-500">Cost:</span>{' '}
-                                  <span className="line-through text-red-500">{item.cost_per_year.current || '(empty)'}</span>
-                                  {' → '}
-                                  <span className="text-green-600 font-medium">{item.cost_per_year.normalized}</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                        {syncPreview.needsUpdate.length > 20 && (
-                          <p className="text-center text-gray-500 text-sm py-2">
-                            ... and {syncPreview.needsUpdate.length - 20} more
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {syncPreview.stats.needsUpdate === 0 && (
-                    <div className="text-center py-8">
-                      <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
-                      <p className="text-lg font-medium text-gray-900">All formats are correct!</p>
-                      <p className="text-gray-500">No templates need updating.</p>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-6 border-t border-gray-100 flex items-center justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowSyncModal(false);
-                  setSyncPreview(null);
-                  setSyncResult(null);
-                }}
-                className="btn-secondary"
-              >
-                Close
-              </button>
-              {syncPreview && syncPreview.stats.needsUpdate > 0 && (
-                <button
-                  onClick={executeSyncFormats}
-                  disabled={syncLoading}
-                  className="btn-primary flex items-center gap-2"
-                >
-                  {syncLoading ? (
-                    <Loader className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-4 h-4" />
-                  )}
-                  Apply Changes ({syncPreview.stats.needsUpdate} templates)
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

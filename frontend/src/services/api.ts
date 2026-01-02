@@ -455,6 +455,41 @@ export const analyticsApi = {
       }>;
       generated_at: string;
     }>('/analytics/incomplete-published'),
+
+  getMaintenanceData: () =>
+    api.get<{
+      stale_assigned: Array<{
+        id: number;
+        flow_name: string;
+        status: string;
+        assigned_to: number;
+        assigned_username: string;
+        updated_at: string;
+        days_since_update: number;
+      }>;
+      no_departments: Array<{
+        id: number;
+        flow_name: string;
+        status: string;
+        created_at: string;
+      }>;
+      no_flow_json: Array<{
+        id: number;
+        flow_name: string;
+        status: string;
+        created_at: string;
+      }>;
+      duplicates: Array<{
+        flow_name: string;
+        count: number;
+        templates: Array<{
+          id: number;
+          status: string;
+          created_at: string;
+        }>;
+      }>;
+      generated_at: string;
+    }>('/analytics/maintenance'),
 };
 
 export default api;
