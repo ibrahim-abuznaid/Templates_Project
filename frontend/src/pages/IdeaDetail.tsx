@@ -405,7 +405,13 @@ const IdeaDetail: React.FC = () => {
       const response = await ideasApi.uploadFlowJsonMultiple(Number(id), fileContents, append);
       console.log('📚 [FLOW UPLOAD] Response:', response.data);
       
-      loadIdea();
+      // Only update flow_json in the idea state, preserving the user's unsaved editData
+      setIdea(prev => prev ? { 
+        ...prev, 
+        flow_json: response.data.flow_json,
+        _flowCount: response.data._flowCount 
+      } : null);
+      
       showModal({
         type: 'success',
         title: append ? 'Flows Added' : 'Upload Successful',
