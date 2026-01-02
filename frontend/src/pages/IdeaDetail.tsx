@@ -1556,13 +1556,15 @@ const IdeaDetail: React.FC = () => {
                             LIVE
                           </span>
                         </div>
-                        <p className="text-sm text-green-700 mb-2">
+                        <p className="text-sm text-green-700">
                           This template is published and visible to all Activepieces users.
                         </p>
-                        <div className="flex items-center gap-2 text-xs text-green-600">
-                          <span>ID:</span>
-                          <code className="bg-green-100 px-2 py-0.5 rounded font-mono">{idea.public_library_id}</code>
-                        </div>
+                        {isAdmin && (
+                          <div className="flex items-center gap-2 text-xs text-green-600 mt-2">
+                            <span>ID:</span>
+                            <code className="bg-green-100 px-2 py-0.5 rounded font-mono">{idea.public_library_id}</code>
+                          </div>
+                        )}
                       </div>
                     </div>
                     
@@ -1626,13 +1628,15 @@ const IdeaDetail: React.FC = () => {
                             ARCHIVED
                           </span>
                         </div>
-                        <p className="text-sm text-gray-600 mb-2">
+                        <p className="text-sm text-gray-600">
                           This template is archived (hidden) in the Public Library. Change status to "Published" to make it live again.
                         </p>
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          <span>ID:</span>
-                          <code className="bg-gray-100 px-2 py-0.5 rounded font-mono">{idea.public_library_id}</code>
-                        </div>
+                        {isAdmin && (
+                          <div className="flex items-center gap-2 text-xs text-gray-500 mt-2">
+                            <span>ID:</span>
+                            <code className="bg-gray-100 px-2 py-0.5 rounded font-mono">{idea.public_library_id}</code>
+                          </div>
+                        )}
                       </div>
                     </div>
                     
