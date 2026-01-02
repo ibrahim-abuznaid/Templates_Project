@@ -192,6 +192,54 @@ export const ideasApi = {
       _publishedToLibrary: boolean;
       _publishError?: string;
     }>('/ideas/quick-publish', data),
+
+  // Admin: Preview format changes (dry run)
+  previewFormatSync: () =>
+    api.get<{
+      success: boolean;
+      stats: {
+        total: number;
+        needsUpdate: number;
+        alreadyCorrect: number;
+        publishedNeedsUpdate: number;
+      };
+      needsUpdate: Array<{
+        id: number;
+        flow_name: string;
+        time_save_per_week: { current: string; normalized: string | null };
+        cost_per_year: { current: string; normalized: string | null };
+        isPublished: boolean;
+      }>;
+      alreadyCorrect: Array<{
+        id: number;
+        flow_name: string;
+        time_save_per_week: string;
+        cost_per_year: string;
+        isPublished: boolean;
+      }>;
+    }>('/ideas/admin/sync-formats/preview'),
+
+  // Admin: Sync/normalize all template formats (also updates Public Library)
+  syncFormats: () =>
+    api.post<{
+      success: boolean;
+      message: string;
+      stats: {
+        total: number;
+        updated: number;
+        skipped: number;
+        publicLibrarySynced: number;
+        publicLibraryErrors: number;
+      };
+      changes: Array<{
+        id: number;
+        flow_name: string;
+        time_save_per_week: { from: string; to: string } | null;
+        cost_per_year: { from: string; to: string } | null;
+        public_library_synced: boolean;
+        public_library_error?: string;
+      }>;
+    }>('/ideas/admin/sync-formats'),
 };
 
 // Departments endpoints

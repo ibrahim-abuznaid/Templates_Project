@@ -8,6 +8,44 @@ import IdeaCard from '../components/IdeaCard';
 import StatusLegend from '../components/StatusLegend';
 import { Plus, Loader, Wifi, WifiOff, X, ChevronDown, Search, User as UserIcon, Users } from 'lucide-react';
 
+// Format normalization helpers
+const normalizeCostPerYear = (value: string): string => {
+  if (!value || typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (/^\$[\d,]+\/year$/i.test(trimmed)) return trimmed;
+  const numericMatch = trimmed.replace(/,/g, '').match(/[\d.]+/);
+  if (!numericMatch) return value;
+  const numericValue = parseFloat(numericMatch[0]);
+  if (isNaN(numericValue)) return value;
+  const formattedNumber = numericValue.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  return `$${formattedNumber}/year`;
+};
+
+const normalizeTimeSavePerWeek = (value: string): string => {
+  if (!value || typeof value !== 'string') return value;
+  const trimmed = value.trim().toLowerCase();
+  if (/^[\d.]+\s+(hours?|minutes?)$/i.test(trimmed)) {
+    const match = trimmed.match(/^([\d.]+)\s*(hours?|minutes?)$/i);
+    if (match) {
+      const num = match[1];
+      const unit = match[2].toLowerCase();
+      const normalizedUnit = unit.startsWith('hour') 
+        ? (parseFloat(num) === 1 ? 'hour' : 'hours')
+        : (parseFloat(num) === 1 ? 'minute' : 'minutes');
+      return `${num} ${normalizedUnit}`;
+    }
+  }
+  const numericMatch = trimmed.match(/^([\d.]+)/);
+  if (!numericMatch) return value;
+  const numericValue = parseFloat(numericMatch[1]);
+  if (isNaN(numericValue)) return value;
+  const isMinutes = /min|m$|mins/i.test(trimmed);
+  if (isMinutes) {
+    return `${numericValue} ${numericValue === 1 ? 'minute' : 'minutes'}`;
+  }
+  return `${numericValue} ${numericValue === 1 ? 'hour' : 'hours'}`;
+};
+
 const Dashboard: React.FC = () => {
   const { user, isAdmin, isFreelancer } = useAuth();
   const { subscribe, isConnected } = useSocket();
@@ -1124,9 +1162,11 @@ const Dashboard: React.FC = () => {
                         type="text"
                         value={newIdea.time_save_per_week}
                         onChange={(e) => setNewIdea({ ...newIdea, time_save_per_week: e.target.value })}
+                        onBlur={(e) => setNewIdea({ ...newIdea, time_save_per_week: normalizeTimeSavePerWeek(e.target.value) })}
                         className="input-field"
                         placeholder="e.g., 2 hours"
                       />
+                      <p className="text-xs text-gray-400 mt-1">Auto-formats on blur</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1136,9 +1176,11 @@ const Dashboard: React.FC = () => {
                         type="text"
                         value={newIdea.cost_per_year}
                         onChange={(e) => setNewIdea({ ...newIdea, cost_per_year: e.target.value })}
+                        onBlur={(e) => setNewIdea({ ...newIdea, cost_per_year: normalizeCostPerYear(e.target.value) })}
                         className="input-field"
                         placeholder="e.g., $150/year"
                       />
+                      <p className="text-xs text-gray-400 mt-1">Auto-formats on blur</p>
                     </div>
                   </div>
 

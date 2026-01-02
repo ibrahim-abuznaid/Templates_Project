@@ -49,6 +49,99 @@ const setIdeaDepartments = async (ideaId, departmentIds) => {
   }
 };
 
+// ========================================
+// Format Normalization Helpers
+// ========================================
+
+/**
+ * Normalize cost/money saving to "$X/year" format
+ * Handles various input formats:
+ * - "150" -> "$150/year"
+ * - "$150" -> "$150/year"
+ * - "150/year" -> "$150/year"
+ * - "$150/year" -> "$150/year"
+ * - "150 per year" -> "$150/year"
+ * - "150/yr" -> "$150/year"
+ * - "$1,500" -> "$1,500/year"
+ * - "1500" -> "$1,500/year"
+ */
+const normalizeCostPerYear = (value) => {
+  if (!value || typeof value !== 'string') return value;
+  
+  // Already correctly formatted
+  if (/^\$[\d,]+\/year$/i.test(value.trim())) {
+    return value.trim();
+  }
+  
+  // Extract numeric value (handles commas)
+  const numericMatch = value.replace(/,/g, '').match(/[\d.]+/);
+  if (!numericMatch) return value; // Can't parse, return as-is
+  
+  const numericValue = parseFloat(numericMatch[0]);
+  if (isNaN(numericValue)) return value;
+  
+  // Format with commas for thousands
+  const formattedNumber = numericValue.toLocaleString('en-US', { 
+    maximumFractionDigits: 0 
+  });
+  
+  return `$${formattedNumber}/year`;
+};
+
+/**
+ * Normalize time saving to "X hours" or "X minutes" format
+ * Handles various input formats:
+ * - "2" -> "2 hours"
+ * - "2h" -> "2 hours"
+ * - "2 hrs" -> "2 hours"
+ * - "2 hours" -> "2 hours"
+ * - "2hours" -> "2 hours"
+ * - "30 min" -> "30 minutes"
+ * - "30m" -> "30 minutes"
+ * - "1.5 hours" -> "1.5 hours"
+ * - "90 minutes" -> "90 minutes"
+ */
+const normalizeTimeSavePerWeek = (value) => {
+  if (!value || typeof value !== 'string') return value;
+  
+  const trimmed = value.trim().toLowerCase();
+  
+  // Already correctly formatted
+  if (/^[\d.]+\s+(hours?|minutes?)$/i.test(trimmed)) {
+    // Just fix capitalization and spacing
+    const match = trimmed.match(/^([\d.]+)\s*(hours?|minutes?)$/i);
+    if (match) {
+      const num = match[1];
+      const unit = match[2].toLowerCase();
+      const normalizedUnit = unit.startsWith('hour') 
+        ? (parseFloat(num) === 1 ? 'hour' : 'hours')
+        : (parseFloat(num) === 1 ? 'minute' : 'minutes');
+      return `${num} ${normalizedUnit}`;
+    }
+  }
+  
+  // Try to extract number and determine unit
+  const numericMatch = trimmed.match(/^([\d.]+)/);
+  if (!numericMatch) return value; // Can't parse, return as-is
+  
+  const numericValue = parseFloat(numericMatch[1]);
+  if (isNaN(numericValue)) return value;
+  
+  // Check for minute indicators
+  const isMinutes = /min|m$|mins/i.test(trimmed);
+  
+  // Check for hour indicators or default to hours
+  const isHours = /hour|hr|hrs|h$|h\s/i.test(trimmed) || !isMinutes;
+  
+  if (isMinutes) {
+    const unit = numericValue === 1 ? 'minute' : 'minutes';
+    return `${numericValue} ${unit}`;
+  } else {
+    const unit = numericValue === 1 ? 'hour' : 'hours';
+    return `${numericValue} ${unit}`;
+  }
+};
+
 // Helper function to notify assignee about status changes
 const notifyStatusChange = (idea, newStatus, changedByUserId) => {
   if (!idea.assigned_to || idea.assigned_to === changedByUserId) return;
@@ -557,6 +650,10 @@ router.post('/', authenticateToken, authorizeRoles('admin'), async (req, res) =>
       return res.status(400).json({ error: 'Flow name is required' });
     }
 
+    // Normalize cost and time formats
+    const normalizedTimeSave = normalizeTimeSavePerWeek(time_save_per_week);
+    const normalizedCost = normalizeCostPerYear(cost_per_year);
+
     const result = await db.prepare(`
       INSERT INTO ideas (
         flow_name,
@@ -581,8 +678,8 @@ router.post('/', authenticateToken, authorizeRoles('admin'), async (req, res) =>
       flow_name,
       summary || '',
       description || '', 
-      time_save_per_week || '',
-      cost_per_year || '',
+      normalizedTimeSave || '',
+      normalizedCost || '',
       author || 'Activepieces Team',
       idea_notes || '',
       scribe_url || '',
@@ -639,6 +736,14 @@ router.put('/:id', authenticateToken, async (req, res) => {
     const department_ids = updates.department_ids;
     delete updates.department_ids; // Remove from updates object
     const oldStatus = idea.status;
+
+    // Normalize cost and time formats if provided
+    if (updates.time_save_per_week !== undefined) {
+      updates.time_save_per_week = normalizeTimeSavePerWeek(updates.time_save_per_week);
+    }
+    if (updates.cost_per_year !== undefined) {
+      updates.cost_per_year = normalizeCostPerYear(updates.cost_per_year);
+    }
 
     if (role === 'freelancer') {
       if (idea.assigned_to !== userId) {
@@ -1382,6 +1487,10 @@ router.post('/quick-publish', authenticateToken, authorizeRoles('admin'), async 
       flows: result.flows
     });
 
+    // Normalize cost and time formats
+    const normalizedTimeSave = normalizeTimeSavePerWeek(time_save_per_week);
+    const normalizedCost = normalizeCostPerYear(cost_per_year);
+
     // Create the template with 'published' status directly
     const insertResult = await db.prepare(`
       INSERT INTO ideas (
@@ -1405,8 +1514,8 @@ router.post('/quick-publish', authenticateToken, authorizeRoles('admin'), async 
       flow_name,
       summary || '',
       description || '', 
-      time_save_per_week || '',
-      cost_per_year || '',
+      normalizedTimeSave || '',
+      normalizedCost || '',
       author || 'Activepieces Team',
       idea_notes || '',
       scribe_url || '',
@@ -1529,6 +1638,161 @@ router.delete('/:id/public-library', authenticateToken, authorizeRoles('admin'),
   } catch (error) {
     console.error('Delete from Public Library error:', error);
     res.status(500).json({ error: 'Failed to delete template from Public Library: ' + error.message });
+  }
+});
+
+// ========================================
+// Format Sync/Normalization Endpoint
+// ========================================
+
+// Sync all templates to normalize cost_per_year and time_save_per_week formats (admin only)
+// Also updates published templates in Public Library
+router.post('/admin/sync-formats', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    // Get all templates with non-empty cost_per_year or time_save_per_week
+    // Include public_library_id and status to sync with Public Library
+    const templates = await db.prepare(`
+      SELECT id, time_save_per_week, cost_per_year, public_library_id, status, flow_name
+      FROM ideas 
+      WHERE (time_save_per_week IS NOT NULL AND time_save_per_week != '')
+         OR (cost_per_year IS NOT NULL AND cost_per_year != '')
+    `).all();
+
+    let updated = 0;
+    let skipped = 0;
+    let publicLibrarySynced = 0;
+    let publicLibraryErrors = 0;
+    const changes = [];
+
+    for (const template of templates) {
+      const normalizedTime = normalizeTimeSavePerWeek(template.time_save_per_week);
+      const normalizedCost = normalizeCostPerYear(template.cost_per_year);
+      
+      const timeChanged = normalizedTime !== template.time_save_per_week;
+      const costChanged = normalizedCost !== template.cost_per_year;
+      
+      if (timeChanged || costChanged) {
+        // Update local database
+        await db.prepare(`
+          UPDATE ideas 
+          SET time_save_per_week = ?, cost_per_year = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(normalizedTime || '', normalizedCost || '', template.id);
+        
+        updated++;
+        
+        const change = {
+          id: template.id,
+          flow_name: template.flow_name,
+          time_save_per_week: timeChanged ? { from: template.time_save_per_week, to: normalizedTime } : null,
+          cost_per_year: costChanged ? { from: template.cost_per_year, to: normalizedCost } : null,
+          public_library_synced: false
+        };
+
+        // If template is published in Public Library, sync there too
+        if (template.public_library_id && template.status === 'published') {
+          try {
+            // Get the full updated template data
+            const updatedIdea = await db.prepare('SELECT * FROM ideas WHERE id = ?').get(template.id);
+            await updatePublicLibraryTemplate(template.public_library_id, updatedIdea);
+            publicLibrarySynced++;
+            change.public_library_synced = true;
+            console.log(`📚 Synced format changes to Public Library for template ${template.id}`);
+          } catch (syncError) {
+            console.error(`📚 Failed to sync template ${template.id} to Public Library:`, syncError.message);
+            publicLibraryErrors++;
+            change.public_library_error = syncError.message;
+          }
+        }
+        
+        changes.push(change);
+      } else {
+        skipped++;
+      }
+    }
+
+    console.log(`📊 Format sync completed: ${updated} updated locally, ${publicLibrarySynced} synced to Public Library, ${skipped} already correct`);
+
+    res.json({
+      success: true,
+      message: `Format sync completed: ${updated} templates updated, ${publicLibrarySynced} synced to Public Library, ${skipped} already correct`,
+      stats: {
+        total: templates.length,
+        updated,
+        skipped,
+        publicLibrarySynced,
+        publicLibraryErrors
+      },
+      changes: changes.slice(0, 50) // Only return first 50 changes for preview
+    });
+  } catch (error) {
+    console.error('Format sync error:', error);
+    res.status(500).json({ error: 'Failed to sync formats: ' + error.message });
+  }
+});
+
+// Preview format changes without applying (admin only) - useful for dry run
+router.get('/admin/sync-formats/preview', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    // Get all templates with non-empty cost_per_year or time_save_per_week
+    // Include public_library_id and status to show which templates will be synced to Public Library
+    const templates = await db.prepare(`
+      SELECT id, flow_name, time_save_per_week, cost_per_year, public_library_id, status 
+      FROM ideas 
+      WHERE (time_save_per_week IS NOT NULL AND time_save_per_week != '')
+         OR (cost_per_year IS NOT NULL AND cost_per_year != '')
+    `).all();
+
+    const needsUpdate = [];
+    const alreadyCorrect = [];
+    let publishedNeedsUpdate = 0;
+
+    for (const template of templates) {
+      const normalizedTime = normalizeTimeSavePerWeek(template.time_save_per_week);
+      const normalizedCost = normalizeCostPerYear(template.cost_per_year);
+      
+      const timeChanged = normalizedTime !== template.time_save_per_week;
+      const costChanged = normalizedCost !== template.cost_per_year;
+      const isPublished = template.public_library_id && template.status === 'published';
+      
+      if (timeChanged || costChanged) {
+        if (isPublished) publishedNeedsUpdate++;
+        needsUpdate.push({
+          id: template.id,
+          flow_name: template.flow_name,
+          time_save_per_week: timeChanged 
+            ? { current: template.time_save_per_week, normalized: normalizedTime } 
+            : { current: template.time_save_per_week, normalized: null },
+          cost_per_year: costChanged 
+            ? { current: template.cost_per_year, normalized: normalizedCost }
+            : { current: template.cost_per_year, normalized: null },
+          isPublished // Flag to indicate this will also update Public Library
+        });
+      } else {
+        alreadyCorrect.push({
+          id: template.id,
+          flow_name: template.flow_name,
+          time_save_per_week: template.time_save_per_week,
+          cost_per_year: template.cost_per_year,
+          isPublished
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      stats: {
+        total: templates.length,
+        needsUpdate: needsUpdate.length,
+        alreadyCorrect: alreadyCorrect.length,
+        publishedNeedsUpdate // Number of published templates that need update
+      },
+      needsUpdate,
+      alreadyCorrect
+    });
+  } catch (error) {
+    console.error('Format preview error:', error);
+    res.status(500).json({ error: 'Failed to preview formats: ' + error.message });
   }
 });
 
