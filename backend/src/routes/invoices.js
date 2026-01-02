@@ -260,6 +260,54 @@ router.get('/history', authenticateToken, authorizeRoles('admin'), async (req, r
   }
 });
 
+// Revert/Unpay invoice (admin only) - moves items back to pending
+router.post('/:invoiceId/revert', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+
+    // Get the invoice
+    const invoice = await db.prepare(`
+      SELECT * FROM invoices WHERE id = ?
+    `).get(invoiceId);
+
+    if (!invoice) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    if (invoice.status !== 'paid') {
+      return res.status(400).json({ error: 'Only paid invoices can be reverted' });
+    }
+
+    // Get all items associated with this invoice
+    const items = await db.prepare(`
+      SELECT id FROM invoice_items WHERE invoice_id = ?
+    `).all(invoiceId);
+
+    // Revert each item to pending status
+    for (const item of items) {
+      await db.prepare(`
+        UPDATE invoice_items 
+        SET invoice_id = NULL, status = 'pending'
+        WHERE id = ?
+      `).run(item.id);
+    }
+
+    // Delete the invoice record
+    await db.prepare(`
+      DELETE FROM invoices WHERE id = ?
+    `).run(invoiceId);
+
+    res.json({ 
+      success: true, 
+      message: `Invoice ${invoice.invoice_number} has been reverted. ${items.length} items moved back to pending.`,
+      itemsReverted: items.length
+    });
+  } catch (error) {
+    console.error('Revert invoice error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get invoice details
 router.get('/:invoiceId', authenticateToken, async (req, res) => {
   try {

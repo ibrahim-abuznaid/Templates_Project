@@ -270,6 +270,9 @@ export const invoicesApi = {
   
   getDetails: (invoiceId: number) =>
     api.get<{ invoice: Invoice; items: InvoiceItem[] }>(`/invoices/${invoiceId}`),
+  
+  revertInvoice: (invoiceId: number) =>
+    api.post<{ success: boolean; message: string; itemsReverted: number }>(`/invoices/${invoiceId}/revert`),
 };
 
 // Blockers endpoints

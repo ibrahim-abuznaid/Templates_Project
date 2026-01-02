@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { invoicesApi } from '../services/api';
 import type { PendingInvoiceSummary, Invoice, InvoiceItem } from '../types';
-import { Download, Loader, User, CheckCircle, Clock } from 'lucide-react';
+import { Download, Loader, User, CheckCircle, Clock, Undo2 } from 'lucide-react';
 import ConfirmModal from '../components/ConfirmModal';
 
 const InvoiceManagement: React.FC = () => {
@@ -71,6 +71,43 @@ const InvoiceManagement: React.FC = () => {
     } catch (error) {
       console.error('Failed to load pending items:', error);
     }
+  };
+
+  const handleRevertInvoice = (invoice: Invoice) => {
+    showModal({
+      type: 'warning',
+      title: 'Revert Invoice',
+      message: `Are you sure you want to revert invoice ${invoice.invoice_number}?\n\nThis will move all ${invoice.freelancer_name}'s items back to pending status so they can be paid again.`,
+      confirmText: 'Yes, Revert',
+      onConfirm: async () => {
+        try {
+          setProcessing(true);
+          const response = await invoicesApi.revertInvoice(invoice.id);
+          
+          showModal({
+            type: 'success',
+            title: 'Invoice Reverted',
+            message: response.data.message,
+            showCancel: false,
+            confirmText: 'OK',
+          });
+          
+          // Reload data
+          loadPendingInvoices();
+          loadInvoiceHistory();
+        } catch (error: any) {
+          showModal({
+            type: 'error',
+            title: 'Revert Failed',
+            message: error.response?.data?.error || 'Failed to revert invoice',
+            showCancel: false,
+            confirmText: 'OK',
+          });
+        } finally {
+          setProcessing(false);
+        }
+      },
+    });
   };
 
   const handleGenerateInvoice = (freelancerId: number) => {
@@ -237,7 +274,7 @@ const InvoiceManagement: React.FC = () => {
                     <td className="px-4 py-3 text-sm text-gray-600">
                       {new Date(item.completed_at).toLocaleDateString()}
                     </td>
-                    <td className="px-4 py-3 text-right font-medium">${item.amount.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right font-medium">${Number(item.amount).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -265,6 +302,7 @@ const InvoiceManagement: React.FC = () => {
                   <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Period</th>
                   <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Paid</th>
                   <th className="px-4 py-2 text-right text-sm font-medium text-gray-700">Amount</th>
+                  <th className="px-4 py-2 text-center text-sm font-medium text-gray-700">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -280,6 +318,17 @@ const InvoiceManagement: React.FC = () => {
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-green-600">
                       ${Number(invoice.total_amount).toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        onClick={() => handleRevertInvoice(invoice)}
+                        disabled={processing}
+                        className="inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-medium text-orange-700 bg-orange-100 hover:bg-orange-200 rounded-md transition-colors disabled:opacity-50"
+                        title="Revert this invoice and move items back to pending"
+                      >
+                        <Undo2 className="w-3.5 h-3.5" />
+                        <span>Revert</span>
+                      </button>
                     </td>
                   </tr>
                 ))}
