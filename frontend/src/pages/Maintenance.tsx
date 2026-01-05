@@ -20,7 +20,6 @@ import {
   Send,
   User,
   Cloud,
-  Upload,
 } from 'lucide-react';
 
 interface IncompleteTemplate {
@@ -119,7 +118,7 @@ const Maintenance: React.FC = () => {
   const [bulkSyncResult, setBulkSyncResult] = useState<{
     success: boolean;
     message: string;
-    stats?: { total: number; synced: number; created: number; updated: number; errors: number };
+    stats?: { total: number; synced: number; skippedValidation: number; errors: number; notInLibrary: number };
   } | null>(null);
 
   // Expanded sections
@@ -198,7 +197,7 @@ const Maintenance: React.FC = () => {
   };
 
   const executeBulkSyncPublicLibrary = async () => {
-    if (!confirm('This will sync ALL published templates to the Public Library. Templates without a public_library_id will be created, and existing ones will be updated. Continue?')) {
+    if (!confirm('This will UPDATE all templates that are already in the Public Library.\n\n⚠️ Safety Features:\n• Only updates existing templates (no new creations)\n• Validates all required fields before syncing\n• Rate-limited to avoid API overload\n\nContinue?')) {
       return;
     }
     
@@ -376,7 +375,8 @@ const Maintenance: React.FC = () => {
             </div>
             <div>
               <h2 className="text-xl font-bold text-sky-900">Public Library Sync</h2>
-              <p className="text-sky-700">Sync all published templates to the Activepieces Public Library</p>
+              <p className="text-sky-700">Update existing templates in the Activepieces Public Library</p>
+              <p className="text-xs text-sky-600 mt-1">⚠️ Only updates existing templates • Validates required fields • Rate-limited</p>
             </div>
           </div>
           <button
@@ -387,9 +387,9 @@ const Maintenance: React.FC = () => {
             {bulkSyncLoading ? (
               <Loader className="w-4 h-4 animate-spin" />
             ) : (
-              <Upload className="w-4 h-4" />
+              <RefreshCw className="w-4 h-4" />
             )}
-            {bulkSyncLoading ? 'Syncing...' : 'Sync All to Public Library'}
+            {bulkSyncLoading ? 'Syncing...' : 'Sync Existing Templates'}
           </button>
         </div>
 
@@ -406,28 +406,41 @@ const Maintenance: React.FC = () => {
                   {bulkSyncResult.message}
                 </p>
                 {bulkSyncResult.stats && (
-                  <div className="mt-3 grid grid-cols-5 gap-3">
-                    <div className="bg-white rounded-lg p-2 text-center">
-                      <p className="text-lg font-bold text-gray-900">{bulkSyncResult.stats.total}</p>
-                      <p className="text-xs text-gray-500">Total</p>
+                  <>
+                    <div className="mt-3 grid grid-cols-5 gap-3">
+                      <div className="bg-white rounded-lg p-2 text-center">
+                        <p className="text-lg font-bold text-gray-900">{bulkSyncResult.stats.total}</p>
+                        <p className="text-xs text-gray-500">In Library</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-2 text-center">
+                        <p className="text-lg font-bold text-green-600">{bulkSyncResult.stats.synced}</p>
+                        <p className="text-xs text-gray-500">Updated</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-2 text-center">
+                        <p className="text-lg font-bold text-amber-600">{bulkSyncResult.stats.skippedValidation}</p>
+                        <p className="text-xs text-gray-500">Skipped</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-2 text-center">
+                        <p className="text-lg font-bold text-red-600">{bulkSyncResult.stats.errors}</p>
+                        <p className="text-xs text-gray-500">Errors</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-2 text-center">
+                        <p className="text-lg font-bold text-gray-400">{bulkSyncResult.stats.notInLibrary}</p>
+                        <p className="text-xs text-gray-500">Not in Library</p>
+                      </div>
                     </div>
-                    <div className="bg-white rounded-lg p-2 text-center">
-                      <p className="text-lg font-bold text-sky-600">{bulkSyncResult.stats.synced}</p>
-                      <p className="text-xs text-gray-500">Synced</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-2 text-center">
-                      <p className="text-lg font-bold text-green-600">{bulkSyncResult.stats.created}</p>
-                      <p className="text-xs text-gray-500">Created</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-2 text-center">
-                      <p className="text-lg font-bold text-amber-600">{bulkSyncResult.stats.updated}</p>
-                      <p className="text-xs text-gray-500">Updated</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-2 text-center">
-                      <p className="text-lg font-bold text-red-600">{bulkSyncResult.stats.errors}</p>
-                      <p className="text-xs text-gray-500">Errors</p>
-                    </div>
-                  </div>
+                    {bulkSyncResult.stats.notInLibrary > 0 && (
+                      <p className="mt-2 text-xs text-gray-500">
+                        💡 {bulkSyncResult.stats.notInLibrary} published template(s) are not yet in the Public Library. 
+                        Use the template detail page to publish them individually.
+                      </p>
+                    )}
+                    {bulkSyncResult.stats.skippedValidation > 0 && (
+                      <p className="mt-1 text-xs text-amber-600">
+                        ⚠️ {bulkSyncResult.stats.skippedValidation} template(s) skipped due to missing required fields (flow_name, summary, description, or flow_json).
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             </div>

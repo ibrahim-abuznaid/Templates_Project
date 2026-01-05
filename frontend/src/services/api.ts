@@ -241,7 +241,7 @@ export const ideasApi = {
       }>;
     }>('/ideas/admin/sync-formats'),
 
-  // Admin: Sync ALL published templates to Public Library
+  // Admin: Sync published templates (already in Public Library) - UPDATE ONLY, no new creations
   syncAllToPublicLibrary: () =>
     api.post<{
       success: boolean;
@@ -249,15 +249,16 @@ export const ideasApi = {
       stats: {
         total: number;
         synced: number;
-        created: number;
-        updated: number;
+        skippedValidation: number;
         errors: number;
+        notInLibrary: number;
       };
       details: Array<{
         id: number;
         flow_name: string;
-        action: 'created' | 'updated' | 'error';
+        action: 'updated' | 'skipped' | 'error';
         public_library_id?: string;
+        reason?: string;
         error?: string;
       }>;
     }>('/ideas/admin/sync-all-public-library'),

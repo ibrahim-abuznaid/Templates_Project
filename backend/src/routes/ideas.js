@@ -1447,62 +1447,113 @@ router.post('/:id/sync-public-library', authenticateToken, authorizeRoles('admin
   }
 });
 
-// Bulk sync ALL published templates to Public Library (admin only)
+// Helper function to validate template has all required fields for Public Library
+const validateTemplateForPublicLibrary = (template) => {
+  const missingFields = [];
+  
+  // Required fields for Public Library
+  if (!template.flow_name || template.flow_name.trim() === '') {
+    missingFields.push('flow_name');
+  }
+  if (!template.summary || template.summary.trim() === '') {
+    missingFields.push('summary');
+  }
+  if (!template.description || template.description.trim() === '') {
+    missingFields.push('description');
+  }
+  if (!template.flow_json || template.flow_json.trim() === '') {
+    missingFields.push('flow_json');
+  } else {
+    // Validate flow_json is valid and has flows
+    const result = extractFlowsFromJson(template.flow_json);
+    if (!result.success || result.flows.length === 0) {
+      missingFields.push('flow_json (invalid or empty)');
+    }
+  }
+  
+  return {
+    valid: missingFields.length === 0,
+    missingFields
+  };
+};
+
+// Helper function for rate limiting - delay between API calls
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Bulk sync published templates to Public Library (admin only)
+// SAFETY: Only updates existing templates (with public_library_id), does NOT create new ones
+// Includes rate limiting and validation
 router.post('/admin/sync-all-public-library', authenticateToken, authorizeRoles('admin'), async (req, res) => {
   try {
-    console.log('📚 [BULK SYNC] Starting bulk sync of all published templates to Public Library...');
+    console.log('📚 [BULK SYNC] Starting bulk sync of published templates to Public Library...');
+    console.log('📚 [BULK SYNC] Safety mode: Only updating existing templates (not creating new ones)');
     
-    // Get all published templates
+    // Get only published templates that ALREADY have a public_library_id
+    // This ensures we only UPDATE existing templates, never create new ones
     const publishedTemplates = await db.prepare(`
       SELECT * FROM ideas 
-      WHERE status = 'published'
+      WHERE status = 'published' 
+        AND public_library_id IS NOT NULL 
+        AND public_library_id != ''
       ORDER BY id
     `).all();
 
-    console.log(`📚 [BULK SYNC] Found ${publishedTemplates.length} published templates`);
+    // Also get count of published templates WITHOUT public_library_id (for info)
+    const notInLibrary = await db.prepare(`
+      SELECT COUNT(*) as count FROM ideas 
+      WHERE status = 'published' 
+        AND (public_library_id IS NULL OR public_library_id = '')
+    `).get();
+
+    console.log(`📚 [BULK SYNC] Found ${publishedTemplates.length} templates already in Public Library`);
+    console.log(`📚 [BULK SYNC] ${notInLibrary.count} published templates are NOT in Public Library (will be skipped)`);
 
     const results = {
       total: publishedTemplates.length,
       synced: 0,
-      created: 0,
-      updated: 0,
       skipped: 0,
+      skippedValidation: 0,
       errors: 0,
+      notInLibrary: notInLibrary.count,
       details: []
     };
 
-    for (const template of publishedTemplates) {
+    // Rate limiting: 500ms delay between API calls to avoid overwhelming the API
+    const RATE_LIMIT_DELAY = 500;
+
+    for (let i = 0; i < publishedTemplates.length; i++) {
+      const template = publishedTemplates[i];
+      
+      // Validate template has all required fields
+      const validation = validateTemplateForPublicLibrary(template);
+      
+      if (!validation.valid) {
+        console.log(`📚 [BULK SYNC] Skipping template ${template.id}: Missing required fields: ${validation.missingFields.join(', ')}`);
+        results.skippedValidation++;
+        results.details.push({
+          id: template.id,
+          flow_name: template.flow_name,
+          action: 'skipped',
+          reason: `Missing fields: ${validation.missingFields.join(', ')}`
+        });
+        continue;
+      }
+
       try {
-        if (template.public_library_id) {
-          // Template already has a public library ID - update it
-          await updatePublicLibraryTemplate(template.public_library_id, template);
-          results.updated++;
-          results.synced++;
-          results.details.push({
-            id: template.id,
-            flow_name: template.flow_name,
-            action: 'updated',
-            public_library_id: template.public_library_id
-          });
-          console.log(`📚 [BULK SYNC] Updated template ${template.id}: ${template.flow_name}`);
-        } else {
-          // Template doesn't have a public library ID - create it
-          const publicLibraryId = await publishToPublicLibrary(template);
-          
-          // Update local database with the public library ID
-          await db.prepare(`
-            UPDATE ideas SET public_library_id = ? WHERE id = ?
-          `).run(publicLibraryId, template.id);
-          
-          results.created++;
-          results.synced++;
-          results.details.push({
-            id: template.id,
-            flow_name: template.flow_name,
-            action: 'created',
-            public_library_id: publicLibraryId
-          });
-          console.log(`📚 [BULK SYNC] Created template ${template.id}: ${template.flow_name} -> ${publicLibraryId}`);
+        // Update the template in Public Library
+        await updatePublicLibraryTemplate(template.public_library_id, template);
+        results.synced++;
+        results.details.push({
+          id: template.id,
+          flow_name: template.flow_name,
+          action: 'updated',
+          public_library_id: template.public_library_id
+        });
+        console.log(`📚 [BULK SYNC] [${i + 1}/${publishedTemplates.length}] Updated template ${template.id}: ${template.flow_name}`);
+        
+        // Rate limiting: wait before next request (skip for last item)
+        if (i < publishedTemplates.length - 1) {
+          await delay(RATE_LIMIT_DELAY);
         }
       } catch (error) {
         console.error(`📚 [BULK SYNC] Error syncing template ${template.id}:`, error.message);
@@ -1518,9 +1569,9 @@ router.post('/admin/sync-all-public-library', authenticateToken, authorizeRoles(
 
     // Log the bulk sync activity
     await logActivity(null, req.user.id, 'bulk_sync_public_library', 
-      `Bulk synced ${results.synced} templates to Public Library (${results.created} created, ${results.updated} updated, ${results.errors} errors)`);
+      `Bulk synced ${results.synced} templates to Public Library (${results.skippedValidation} skipped due to missing fields, ${results.errors} errors)`);
 
-    console.log(`📚 [BULK SYNC] Completed: ${results.synced} synced, ${results.created} created, ${results.updated} updated, ${results.errors} errors`);
+    console.log(`📚 [BULK SYNC] Completed: ${results.synced} synced, ${results.skippedValidation} skipped (validation), ${results.errors} errors`);
 
     res.json({
       success: true,
@@ -1528,9 +1579,9 @@ router.post('/admin/sync-all-public-library', authenticateToken, authorizeRoles(
       stats: {
         total: results.total,
         synced: results.synced,
-        created: results.created,
-        updated: results.updated,
-        errors: results.errors
+        skippedValidation: results.skippedValidation,
+        errors: results.errors,
+        notInLibrary: results.notInLibrary
       },
       details: results.details
     });
