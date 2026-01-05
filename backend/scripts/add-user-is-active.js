@@ -6,13 +6,30 @@
  */
 
 import pg from 'pg';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// Load .env file
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+dotenv.config({ path: join(__dirname, '..', '.env') });
 
 const { Pool } = pg;
 
 async function migrate() {
+  if (!process.env.DATABASE_URL) {
+    console.error('❌ DATABASE_URL environment variable not set!');
+    console.log('Make sure you have a .env file in the backend directory with DATABASE_URL');
+    process.exit(1);
+  }
+
+  console.log('Connecting to database...');
+  console.log('DATABASE_URL:', process.env.DATABASE_URL.replace(/:[^:@]+@/, ':****@')); // Hide password
+  
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: { rejectUnauthorized: false }
   });
 
   try {
