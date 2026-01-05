@@ -45,6 +45,7 @@ interface IncompleteTemplate {
   assigned_to: number | null;
   assigned_username: string | null;
   assigned_email: string | null;
+  fix_count?: number;
 }
 
 interface StaleTemplate {
@@ -55,6 +56,7 @@ interface StaleTemplate {
   assigned_username: string;
   updated_at: string;
   days_since_update: number;
+  fix_count?: number;
 }
 
 interface OrphanedTemplate {
@@ -62,6 +64,15 @@ interface OrphanedTemplate {
   flow_name: string;
   status: string;
   created_at: string;
+  fix_count?: number;
+}
+
+interface NoFlowTemplate {
+  id: number;
+  flow_name: string;
+  status: string;
+  created_at: string;
+  fix_count?: number;
 }
 
 interface DuplicateGroup {
@@ -71,6 +82,7 @@ interface DuplicateGroup {
     id: number;
     status: string;
     created_at: string;
+    fix_count?: number;
   }>;
 }
 
@@ -122,7 +134,7 @@ const Maintenance: React.FC = () => {
   const [staleTemplates, setStaleTemplates] = useState<StaleTemplate[]>([]);
   const [orphanedTemplates, setOrphanedTemplates] = useState<OrphanedTemplate[]>([]);
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
-  const [noFlowJsonTemplates, setNoFlowJsonTemplates] = useState<OrphanedTemplate[]>([]);
+  const [noFlowJsonTemplates, setNoFlowJsonTemplates] = useState<NoFlowTemplate[]>([]);
 
   // Format sync state
   const [syncPreview, setSyncPreview] = useState<SyncPreview | null>(null);
@@ -752,7 +764,7 @@ const Maintenance: React.FC = () => {
                     )}
                     {reminderSuccess[template.id] ? 'Sent!' : 'Notify'}
                   </button>
-                  <StatusBadge status={template.status} />
+                  <StatusBadge status={template.status as any} fixCount={template.fix_count} />
                 </div>
               </div>
             ))}
@@ -782,7 +794,7 @@ const Maintenance: React.FC = () => {
                     <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                   </Link>
                 </div>
-                <StatusBadge status={template.status} />
+                <StatusBadge status={template.status as any} fixCount={template.fix_count} />
               </div>
             ))}
           </div>
@@ -811,7 +823,7 @@ const Maintenance: React.FC = () => {
                     <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                   </Link>
                 </div>
-                <StatusBadge status={template.status} />
+                <StatusBadge status={template.status as any} fixCount={template.fix_count} />
               </div>
             ))}
           </div>
@@ -847,7 +859,7 @@ const Maintenance: React.FC = () => {
                       </Link>
                       <div className="flex items-center gap-3">
                         <span className="text-gray-500">{new Date(t.created_at).toLocaleDateString()}</span>
-                        <StatusBadge status={t.status} small />
+                        <StatusBadge status={t.status as any} fixCount={t.fix_count} size="sm" />
                       </div>
                     </div>
                   ))}
@@ -1037,7 +1049,10 @@ const CollapsibleSection: React.FC<{
   );
 };
 
-const StatusBadge: React.FC<{ status: string; small?: boolean }> = ({ status, small }) => {
+const StatusBadge: React.FC<{ status: string; small?: boolean; size?: string; fixCount?: number }> = ({ status, small, size, fixCount = 0 }) => {
+  // Check if this is a resubmission (submitted status with previous fixes)
+  const isResubmission = status === 'submitted' && fixCount > 0;
+  
   const statusColors: Record<string, string> = {
     new: 'bg-blue-100 text-blue-700',
     assigned: 'bg-purple-100 text-purple-700',
@@ -1050,10 +1065,20 @@ const StatusBadge: React.FC<{ status: string; small?: boolean }> = ({ status, sm
   };
 
   const formatStatus = (s: string) => s.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+  
+  // Override for resubmissions
+  const displayStatus = isResubmission ? 'Resubmitted' : formatStatus(status);
+  const colorClass = isResubmission ? 'bg-amber-100 text-amber-800 border border-amber-300' : (statusColors[status] || 'bg-gray-100 text-gray-700');
+  const isSmall = small || size === 'sm';
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium ${statusColors[status] || 'bg-gray-100 text-gray-700'} ${small ? 'text-xs' : 'text-xs'}`}>
-      {formatStatus(status)}
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium ${colorClass} ${isSmall ? 'text-xs' : 'text-xs'}`}>
+      {displayStatus}
+      {isResubmission && fixCount > 1 && (
+        <span className="bg-amber-200 text-amber-900 px-1 py-0.5 rounded-full text-[10px] font-semibold">
+          ×{fixCount}
+        </span>
+      )}
     </span>
   );
 };

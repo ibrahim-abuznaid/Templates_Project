@@ -1041,7 +1041,7 @@ const IdeaDetail: React.FC = () => {
                     <h1 className="text-2xl font-bold text-white mb-2">{idea.flow_name || 'Untitled Template'}</h1>
                   )}
                   <div className="flex items-center flex-wrap gap-2 mt-2">
-                    <StatusBadge status={idea.status} showIcon={true} showTooltip={true} />
+                    <StatusBadge status={idea.status} showIcon={true} showTooltip={true} fixCount={idea.fix_count} />
                     {idea.public_library_id && idea.status === 'published' && (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/20 backdrop-blur-sm text-white rounded-full text-xs font-semibold border border-white/30">
                         <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>

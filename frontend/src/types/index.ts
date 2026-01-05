@@ -98,6 +98,7 @@ export interface Idea {
   created_by_name: string;
   public_library_id: string | null; // ID returned from publish API
   departments?: Department[]; // Array of departments
+  fix_count?: number; // Number of times marked as needs_fixes (for resubmission tracking)
   created_at: string;
   updated_at: string;
   // Deprecated fields - kept for backward compatibility
@@ -155,6 +156,7 @@ export interface DepartmentTemplate {
   status: IdeaStatus;
   price: number;
   assigned_to: string | null;
+  fix_count?: number;
   created_at: string;
   updated_at: string;
   // Deprecated

@@ -120,7 +120,7 @@ const DepartmentView: React.FC = () => {
                       <p className="text-sm text-gray-500 mt-2 line-clamp-2">{template.short_description}</p>
                     )}
                   </div>
-                  <StatusBadge status={template.status} />
+                  <StatusBadge status={template.status} fixCount={template.fix_count} />
                 </div>
 
                 <div className="flex flex-wrap gap-4 text-sm text-gray-600 mt-3 pt-3 border-t border-gray-100">

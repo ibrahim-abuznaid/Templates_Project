@@ -10,6 +10,7 @@ import {
   Rocket,
   Archive,
   Info,
+  RotateCcw,
 } from 'lucide-react';
 
 interface StatusBadgeProps {
@@ -17,15 +18,20 @@ interface StatusBadgeProps {
   showTooltip?: boolean;
   showIcon?: boolean;
   size?: 'sm' | 'md' | 'lg';
+  fixCount?: number; // Number of times marked as needs_fixes
 }
 
 const StatusBadge: React.FC<StatusBadgeProps> = ({ 
   status, 
   showTooltip = true, 
   showIcon = true,
-  size = 'md' 
+  size = 'md',
+  fixCount = 0
 }) => {
   const [showInfo, setShowInfo] = useState(false);
+  
+  // Check if this is a resubmission (submitted status with previous fixes)
+  const isResubmission = status === 'submitted' && fixCount > 0;
 
   const statusConfig: Record<IdeaStatus, { 
     label: string; 
@@ -93,7 +99,13 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({
   };
 
   const config = statusConfig[status];
-  const Icon = config.icon;
+  
+  // Override for resubmissions
+  const displayLabel = isResubmission ? 'Resubmitted' : config.label;
+  const displayDescription = isResubmission 
+    ? `Work resubmitted after ${fixCount} fix request${fixCount > 1 ? 's' : ''}`
+    : config.description;
+  const Icon = isResubmission ? RotateCcw : config.icon;
 
   const sizeClasses = {
     sm: 'text-xs px-2 py-0.5',
@@ -107,15 +119,25 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({
     lg: 'w-5 h-5'
   };
 
+  // Special styling for resubmissions - use amber/orange to differentiate from fresh submissions
+  const badgeClassName = isResubmission 
+    ? 'bg-amber-100 text-amber-800 border border-amber-300' 
+    : config.className;
+
   return (
     <div className="relative inline-block group">
       <span 
-        className={`badge ${config.className} ${sizeClasses[size]} flex items-center space-x-1.5 cursor-help transition-all hover:shadow-md`}
+        className={`badge ${badgeClassName} ${sizeClasses[size]} flex items-center space-x-1.5 cursor-help transition-all hover:shadow-md`}
         onMouseEnter={() => setShowInfo(true)}
         onMouseLeave={() => setShowInfo(false)}
       >
         {showIcon && <Icon className={iconSizes[size]} />}
-        <span>{config.label}</span>
+        <span>{displayLabel}</span>
+        {isResubmission && fixCount > 1 && (
+          <span className="ml-0.5 text-xs bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-full font-semibold">
+            ×{fixCount}
+          </span>
+        )}
         {showTooltip && <Info className={`${iconSizes[size]} opacity-60`} />}
       </span>
       
@@ -125,10 +147,10 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({
           <div className="relative z-10">
             <div className="font-semibold mb-2 flex items-center space-x-2">
               <Icon className="w-4 h-4" />
-              <span>{config.label}</span>
+              <span>{displayLabel}</span>
             </div>
             <p className="text-gray-300 mb-2 text-xs leading-relaxed">
-              {config.description}
+              {displayDescription}
             </p>
             <div className="pt-2 border-t border-gray-700">
               <p className="text-xs text-gray-400 font-medium">Next Step:</p>

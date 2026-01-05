@@ -780,6 +780,13 @@ router.put('/:id', authenticateToken, async (req, res) => {
     if (updates.status && updates.status !== oldStatus) {
       notifyStatusChange(idea, updates.status, userId);
       
+      // Increment fix_count when marked as needs_fixes
+      if (updates.status === 'needs_fixes') {
+        await db.prepare(`
+          UPDATE ideas SET fix_count = COALESCE(fix_count, 0) + 1 WHERE id = ?
+        `).run(ideaId);
+      }
+      
       if (updates.status === 'reviewed' && idea.assigned_to && idea.price > 0) {
         const existingInvoiceItem = await db.prepare(`
           SELECT id FROM invoice_items 

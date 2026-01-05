@@ -382,6 +382,7 @@ router.get('/incomplete-published', authenticateToken, authorizeRoles('admin'), 
         i.template_url,
         i.flow_json,
         i.status,
+        COALESCE(i.fix_count, 0) as fix_count,
         i.created_at,
         i.updated_at,
         i.assigned_to,
@@ -468,6 +469,7 @@ router.get('/maintenance', authenticateToken, authorizeRoles('admin'), async (re
         i.id,
         i.flow_name,
         i.status,
+        COALESCE(i.fix_count, 0) as fix_count,
         i.assigned_to,
         u.username as assigned_username,
         i.updated_at,
@@ -486,6 +488,7 @@ router.get('/maintenance', authenticateToken, authorizeRoles('admin'), async (re
         i.id,
         i.flow_name,
         i.status,
+        COALESCE(i.fix_count, 0) as fix_count,
         i.created_at
       FROM ideas i
       LEFT JOIN idea_departments id ON i.id = id.idea_id
@@ -499,6 +502,7 @@ router.get('/maintenance', authenticateToken, authorizeRoles('admin'), async (re
         id,
         flow_name,
         status,
+        COALESCE(fix_count, 0) as fix_count,
         created_at
       FROM ideas
       WHERE (flow_json IS NULL OR flow_json = '')
@@ -511,7 +515,7 @@ router.get('/maintenance', authenticateToken, authorizeRoles('admin'), async (re
       SELECT 
         flow_name,
         COUNT(*) as count,
-        json_agg(json_build_object('id', id, 'status', status, 'created_at', created_at) ORDER BY created_at DESC) as templates
+        json_agg(json_build_object('id', id, 'status', status, 'fix_count', COALESCE(fix_count, 0), 'created_at', created_at) ORDER BY created_at DESC) as templates
       FROM ideas
       WHERE flow_name IS NOT NULL AND flow_name != ''
       GROUP BY flow_name
