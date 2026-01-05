@@ -381,6 +381,9 @@ const Dashboard: React.FC = () => {
     assigned: statsBase.filter((i) => i.status === 'assigned').length,
     in_progress: statsBase.filter((i) => i.status === 'in_progress').length,
     submitted: statsBase.filter((i) => i.status === 'submitted').length,
+    // Breakdown of submitted: new submissions vs resubmissions
+    submitted_new: statsBase.filter((i) => i.status === 'submitted' && (i.fix_count || 0) === 0).length,
+    submitted_resubmitted: statsBase.filter((i) => i.status === 'submitted' && (i.fix_count || 0) > 0).length,
     needs_fixes: statsBase.filter((i) => i.status === 'needs_fixes').length,
     reviewed: statsBase.filter((i) => i.status === 'reviewed').length,
     published: statsBase.filter((i) => i.status === 'published').length,
@@ -568,6 +571,12 @@ const Dashboard: React.FC = () => {
           >
             <div className="text-2xl font-bold text-pink-600">{stats.submitted}</div>
             <div className="text-sm text-pink-800">Submitted</div>
+            {stats.submitted_resubmitted > 0 && (
+              <div className="text-xs text-pink-600 mt-1 flex items-center gap-2">
+                <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{stats.submitted_new} new</span>
+                <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">{stats.submitted_resubmitted} resub</span>
+              </div>
+            )}
           </button>
           <button
             onClick={() => setStatusFilter('needs_fixes')}

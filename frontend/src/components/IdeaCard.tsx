@@ -18,10 +18,16 @@ const statusConfig: Record<string, { dot: string; text: string; label: string }>
   archived: { dot: 'bg-gray-300', text: 'text-gray-400', label: 'Archived' },
 };
 
+// Resubmission config (when fix_count > 0 and status is submitted)
+const resubmittedConfig = { dot: 'bg-amber-500', text: 'text-amber-700', label: 'Resubmitted' };
+
 const IdeaCard: React.FC<IdeaCardProps> = ({ idea, isHighlighted = false }) => {
   const description = idea.summary || idea.short_description;
   const price = Number(idea.price || 0);
-  const status = statusConfig[idea.status] || statusConfig.new;
+  
+  // Check if this is a resubmission
+  const isResubmission = idea.status === 'submitted' && (idea.fix_count || 0) > 0;
+  const status = isResubmission ? resubmittedConfig : (statusConfig[idea.status] || statusConfig.new);
 
   return (
     <Link to={`/ideas/${idea.id}`} className="block h-full group">
@@ -42,6 +48,11 @@ const IdeaCard: React.FC<IdeaCardProps> = ({ idea, isHighlighted = false }) => {
             <span className={`text-xs font-medium ${status.text}`}>
               {status.label}
             </span>
+            {isResubmission && (idea.fix_count || 0) > 1 && (
+              <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full font-semibold">
+                ×{idea.fix_count}
+              </span>
+            )}
           </div>
 
           {/* Title */}
