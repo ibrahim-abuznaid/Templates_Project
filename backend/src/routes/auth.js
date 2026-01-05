@@ -303,12 +303,13 @@ router.delete('/invitations/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Get all users (for mentions)
+// Get all users (for mentions) - excludes disabled accounts
 router.get('/users', authenticateToken, async (req, res) => {
   try {
     const users = await db.prepare(`
       SELECT id, username, handle, role
       FROM users
+      WHERE COALESCE(is_active, true) = true
       ORDER BY username
     `).all();
 

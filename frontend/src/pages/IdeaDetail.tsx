@@ -769,9 +769,12 @@ const IdeaDetail: React.FC = () => {
     commentInputRef.current.focus();
   };
 
+  // Filter users for mentions: exclude current user (can't mention yourself)
   const filteredUsers = allUsers.filter(
-    u => u.handle.toLowerCase().includes(mentionSearch) || 
-         u.username.toLowerCase().includes(mentionSearch)
+    u => u.id !== user?.id && (
+      u.handle.toLowerCase().includes(mentionSearch) || 
+      u.username.toLowerCase().includes(mentionSearch)
+    )
   );
   const visibleMentionOptions = filteredUsers.slice(0, 5);
 
