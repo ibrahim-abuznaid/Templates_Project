@@ -101,8 +101,8 @@ const DepartmentView: React.FC = () => {
           <div className="space-y-4">
             {templates.map((template) => (
               <div 
-                key={template.template_id} 
-                onClick={() => navigate(`/ideas/${template.template_id}`)}
+                key={template.id} 
+                onClick={() => navigate(`/ideas/${template.id}`)}
                 className="card hover:shadow-lg transition-all cursor-pointer hover:border-primary-300 transform hover:-translate-y-1"
               >
                 <div className="flex justify-between items-start mb-3">

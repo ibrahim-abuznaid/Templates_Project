@@ -148,8 +148,8 @@ export interface DepartmentSummary {
 }
 
 export interface DepartmentTemplate {
+  id: number;
   department: string;
-  template_id: number;
   flow_name: string | null;
   summary: string | null;
   status: IdeaStatus;
