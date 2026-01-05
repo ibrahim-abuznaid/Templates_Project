@@ -32,6 +32,7 @@ import {
   FileJson,
   Eye,
   RefreshCw,
+  UserMinus,
 } from 'lucide-react';
 
 // Format normalization helpers
@@ -659,6 +660,46 @@ const IdeaDetail: React.FC = () => {
       });
       console.error('Failed to self-assign idea:', error);
     }
+  };
+
+  const handleUnassign = async () => {
+    if (!idea) return;
+    
+    const isSelfUnassign = idea.assigned_to === user?.id;
+    const confirmMessage = isSelfUnassign
+      ? 'Are you sure you want to unassign yourself from this template? The status will be reset to "New".'
+      : `Are you sure you want to unassign ${idea.assigned_to_name} from this template? The status will be reset to "New".`;
+
+    showModal({
+      type: 'confirm',
+      title: 'Unassign Template',
+      message: confirmMessage,
+      confirmText: 'Unassign',
+      onConfirm: async () => {
+        try {
+          await ideasApi.unassign(Number(id));
+          loadIdea();
+          showModal({
+            type: 'success',
+            title: 'Unassigned',
+            message: isSelfUnassign 
+              ? 'You have been unassigned from this template.'
+              : `${idea.assigned_to_name} has been unassigned from this template.`,
+            showCancel: false,
+            confirmText: 'OK',
+          });
+        } catch (error: any) {
+          showModal({
+            type: 'error',
+            title: 'Unassign Failed',
+            message: error.response?.data?.error || 'Failed to unassign from template',
+            showCancel: false,
+            confirmText: 'OK',
+          });
+          console.error('Failed to unassign:', error);
+        }
+      },
+    });
   };
 
   const handleAddComment = async (e: React.FormEvent) => {
@@ -2076,16 +2117,29 @@ const IdeaDetail: React.FC = () => {
                   Assigned To
                 </label>
                 {idea.assigned_to_name ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
-                      <span className="text-sm font-medium text-white">
-                        {idea.assigned_to_name.charAt(0).toUpperCase()}
-                      </span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
+                        <span className="text-sm font-medium text-white">
+                          {idea.assigned_to_name.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-gray-900">{idea.assigned_to_name}</span>
+                        <span className="block text-xs text-gray-500">Template Creator</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-sm font-medium text-gray-900">{idea.assigned_to_name}</span>
-                      <span className="block text-xs text-gray-500">Template Creator</span>
-                    </div>
+                    {/* Unassign button - show for admins or for freelancers who are assigned */}
+                    {(isAdmin || (isFreelancer && idea.assigned_to === user?.id)) && 
+                     !['published', 'reviewed'].includes(idea.status) && (
+                      <button
+                        onClick={handleUnassign}
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Unassign from template"
+                      >
+                        <UserMinus className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 text-gray-500">
@@ -2168,6 +2222,25 @@ const IdeaDetail: React.FC = () => {
                 <p className="text-sm text-gray-500 text-center">
                   This template is available. Click to start working on it.
                 </p>
+              </div>
+            )}
+
+            {/* Unassign Option for assigned freelancers */}
+            {isFreelancer && idea.assigned_to === user?.id && !['published', 'reviewed'].includes(idea.status) && (
+              <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-600">
+                    <span className="font-medium">Can't continue?</span>
+                    <span className="block text-xs text-gray-500">Release this template for others</span>
+                  </div>
+                  <button
+                    onClick={handleUnassign}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 border border-gray-300 hover:border-red-300 rounded-lg transition-colors"
+                  >
+                    <UserMinus className="w-4 h-4" />
+                    <span>Unassign</span>
+                  </button>
+                </div>
               </div>
             )}
 

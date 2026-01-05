@@ -85,6 +85,9 @@ export const ideasApi = {
   selfAssign: (id: number) =>
     api.post<Idea>(`/ideas/${id}/self-assign`),
   
+  unassign: (id: number) =>
+    api.post<Idea>(`/ideas/${id}/unassign`),
+  
   addComment: (id: number, comment: string) =>
     api.post(`/ideas/${id}/comments`, { comment }),
   

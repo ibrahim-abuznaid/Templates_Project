@@ -953,6 +953,82 @@ router.post('/:id/self-assign', authenticateToken, authorizeRoles('freelancer'),
   }
 });
 
+// Unassign from an idea (freelancers can unassign themselves, admins can unassign anyone)
+router.post('/:id/unassign', authenticateToken, async (req, res) => {
+  try {
+    const ideaId = req.params.id;
+    const userId = req.user.id;
+    const isAdmin = req.user.role === 'admin';
+
+    const idea = await db.prepare('SELECT * FROM ideas WHERE id = ?').get(ideaId);
+
+    if (!idea) {
+      return res.status(404).json({ error: 'Idea not found' });
+    }
+
+    if (idea.assigned_to === null) {
+      return res.status(400).json({ error: 'This template is not assigned to anyone' });
+    }
+
+    // Freelancers can only unassign themselves
+    if (!isAdmin && idea.assigned_to !== userId) {
+      return res.status(403).json({ error: 'You can only unassign yourself from templates' });
+    }
+
+    // Check if template is in a state that allows unassignment
+    const nonUnassignableStatuses = ['published', 'reviewed'];
+    if (nonUnassignableStatuses.includes(idea.status)) {
+      return res.status(400).json({ error: `Cannot unassign from a template with status "${idea.status}"` });
+    }
+
+    // Get the previous assignee info for the activity log
+    const previousAssignee = await db.prepare('SELECT username FROM users WHERE id = ?').get(idea.assigned_to);
+
+    await db.prepare(`
+      UPDATE ideas 
+      SET assigned_to = NULL, status = 'new', updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(ideaId);
+
+    const actionMessage = isAdmin && idea.assigned_to !== userId
+      ? `Admin ${req.user.username} unassigned ${previousAssignee?.username || 'user'}`
+      : `${req.user.username} unassigned themselves`;
+
+    await logActivity(ideaId, userId, 'unassigned', actionMessage);
+
+    // Notify the previous assignee if admin unassigned them
+    if (isAdmin && idea.assigned_to !== userId) {
+      await createNotification(
+        idea.assigned_to,
+        'status',
+        '🔓 Template Unassigned',
+        `You have been unassigned from "${idea.flow_name || `Template #${idea.id}`}"`,
+        idea.id,
+        userId
+      );
+    }
+
+    const updatedIdea = await db.prepare(`
+      SELECT i.*, 
+             u1.username as created_by_name,
+             u2.username as assigned_to_name
+      FROM ideas i
+      LEFT JOIN users u1 ON i.created_by = u1.id
+      LEFT JOIN users u2 ON i.assigned_to = u2.id
+      WHERE i.id = ?
+    `).get(ideaId);
+
+    // Emit real-time event (idea now available again)
+    emitToAll('idea:unassigned', updatedIdea);
+    emitToFreelancers('idea:unassigned', updatedIdea);
+
+    res.json(updatedIdea);
+  } catch (error) {
+    console.error('Unassign idea error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get comments for an idea
 router.get('/:id/comments', authenticateToken, async (req, res) => {
   try {
