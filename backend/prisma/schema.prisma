@@ -13,6 +13,7 @@ model User {
   password      String         @db.VarChar(255)
   role          String         @db.VarChar(50)
   email         String?        @db.VarChar(255)
+  isActive      Boolean        @default(true) @map("is_active")
   createdAt     DateTime?      @default(now()) @map("created_at") @db.Timestamp(6)
   activities    ActivityLog[]
   blockers      Blocker[]

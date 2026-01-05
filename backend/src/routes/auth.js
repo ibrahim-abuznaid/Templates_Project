@@ -38,6 +38,11 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // Check if account is disabled
+    if (user.is_active === false) {
+      return res.status(403).json({ error: 'This account has been disabled. Please contact an administrator.' });
+    }
+
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
       process.env.JWT_SECRET,
@@ -310,6 +315,127 @@ router.get('/users', authenticateToken, async (req, res) => {
     res.json(users);
   } catch (error) {
     console.error('Get users error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get all users with full details (admin only)
+router.get('/users/manage', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can access user management' });
+    }
+
+    const users = await db.prepare(`
+      SELECT 
+        u.id, 
+        u.username, 
+        u.email, 
+        u.handle, 
+        u.role, 
+        COALESCE(u.is_active, true) as is_active,
+        u.created_at,
+        COUNT(DISTINCT i_assigned.id) as templates_assigned,
+        COUNT(DISTINCT i_created.id) as templates_created
+      FROM users u
+      LEFT JOIN ideas i_assigned ON u.id = i_assigned.assigned_to
+      LEFT JOIN ideas i_created ON u.id = i_created.created_by
+      GROUP BY u.id, u.username, u.email, u.handle, u.role, u.is_active, u.created_at
+      ORDER BY u.created_at DESC
+    `).all();
+
+    res.json(users);
+  } catch (error) {
+    console.error('Get users for management error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Toggle user active status (admin only)
+router.put('/users/:id/toggle-active', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can manage users' });
+    }
+
+    const userId = parseInt(req.params.id);
+
+    // Prevent admin from disabling themselves
+    if (userId === req.user.id) {
+      return res.status(400).json({ error: 'You cannot disable your own account' });
+    }
+
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const newActiveStatus = user.is_active === false ? true : false;
+
+    await db.prepare(`
+      UPDATE users 
+      SET is_active = ?
+      WHERE id = ?
+    `).run(newActiveStatus, userId);
+
+    const updatedUser = await db.prepare(`
+      SELECT id, username, email, handle, role, is_active, created_at
+      FROM users WHERE id = ?
+    `).get(userId);
+
+    res.json({
+      message: newActiveStatus ? 'User account enabled' : 'User account disabled',
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error('Toggle user active error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Set user active status explicitly (admin only)
+router.put('/users/:id/set-active', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can manage users' });
+    }
+
+    const userId = parseInt(req.params.id);
+    const { is_active } = req.body;
+
+    if (typeof is_active !== 'boolean') {
+      return res.status(400).json({ error: 'is_active must be a boolean' });
+    }
+
+    // Prevent admin from disabling themselves
+    if (userId === req.user.id && !is_active) {
+      return res.status(400).json({ error: 'You cannot disable your own account' });
+    }
+
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    await db.prepare(`
+      UPDATE users 
+      SET is_active = ?
+      WHERE id = ?
+    `).run(is_active, userId);
+
+    const updatedUser = await db.prepare(`
+      SELECT id, username, email, handle, role, is_active, created_at
+      FROM users WHERE id = ?
+    `).get(userId);
+
+    res.json({
+      message: is_active ? 'User account enabled' : 'User account disabled',
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error('Set user active error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

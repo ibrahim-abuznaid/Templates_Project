@@ -325,6 +325,26 @@ export const invitationsApi = {
 export const usersApi = {
   getAll: () =>
     api.get<UserBasic[]>('/auth/users'),
+  
+  // Admin user management
+  getAllForManagement: () =>
+    api.get<Array<{
+      id: number;
+      username: string;
+      email: string;
+      handle: string;
+      role: string;
+      is_active: boolean;
+      created_at: string;
+      templates_assigned: number;
+      templates_created: number;
+    }>>('/auth/users/manage'),
+  
+  toggleActive: (userId: number) =>
+    api.put<{ message: string; user: any }>(`/auth/users/${userId}/toggle-active`),
+  
+  setActive: (userId: number, isActive: boolean) =>
+    api.put<{ message: string; user: any }>(`/auth/users/${userId}/set-active`, { is_active: isActive }),
 };
 
 // Invoice endpoints

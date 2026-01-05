@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { analyticsApi, ideasApi } from '../services/api';
+import { analyticsApi, ideasApi, usersApi } from '../services/api';
 import {
   Wrench,
   AlertTriangle,
@@ -19,6 +19,10 @@ import {
   Bell,
   Send,
   User,
+  Users,
+  UserX,
+  UserCheck,
+  Shield,
   Cloud,
 } from 'lucide-react';
 
@@ -90,6 +94,18 @@ interface MaintenanceStats {
   formatIssues: number;
 }
 
+interface ManagedUser {
+  id: number;
+  username: string;
+  email: string;
+  handle: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+  templates_assigned: number;
+  templates_created: number;
+}
+
 const Maintenance: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<MaintenanceStats>({
@@ -121,6 +137,10 @@ const Maintenance: React.FC = () => {
     stats?: { total: number; synced: number; skippedValidation: number; errors: number; notInLibrary: number };
   } | null>(null);
 
+  // User management state
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [togglingUser, setTogglingUser] = useState<number | null>(null);
+
   // Expanded sections
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     incomplete: true,
@@ -129,6 +149,7 @@ const Maintenance: React.FC = () => {
     orphaned: false,
     noFlow: false,
     duplicates: false,
+    users: false,
   });
 
   // Notification state
@@ -143,10 +164,11 @@ const Maintenance: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [incompleteRes, maintenanceRes, formatPreviewRes] = await Promise.all([
+      const [incompleteRes, maintenanceRes, formatPreviewRes, usersRes] = await Promise.all([
         analyticsApi.getIncompletePublished(),
         analyticsApi.getMaintenanceData(),
         ideasApi.previewFormatSync(),
+        usersApi.getAllForManagement(),
       ]);
 
       setIncompleteTemplates(incompleteRes.data.templates);
@@ -155,6 +177,7 @@ const Maintenance: React.FC = () => {
       setDuplicateGroups(maintenanceRes.data.duplicates);
       setNoFlowJsonTemplates(maintenanceRes.data.no_flow_json);
       setSyncPreview(formatPreviewRes.data);
+      setUsers(usersRes.data);
 
       setStats({
         incompletePublished: incompleteRes.data.count,
@@ -266,6 +289,24 @@ const Maintenance: React.FC = () => {
       setSendingBulk(false);
     }
   };
+
+  const toggleUserActive = async (userId: number) => {
+    setTogglingUser(userId);
+    try {
+      const response = await usersApi.toggleActive(userId);
+      // Update the user in the list
+      setUsers(prev => prev.map(u => 
+        u.id === userId ? { ...u, is_active: response.data.user.is_active } : u
+      ));
+    } catch (error) {
+      console.error('Failed to toggle user status:', error);
+      alert('Failed to update user status');
+    } finally {
+      setTogglingUser(null);
+    }
+  };
+
+  const disabledUsersCount = users.filter(u => !u.is_active).length;
 
   const totalIssues = stats.incompletePublished + stats.staleAssigned + stats.noDepartments + 
                       stats.noFlowJson + stats.duplicates + stats.formatIssues;
@@ -816,6 +857,91 @@ const Maintenance: React.FC = () => {
           </div>
         </CollapsibleSection>
       )}
+
+      {/* User Management */}
+      <CollapsibleSection
+        title="User Management"
+        subtitle={`${users.length} user${users.length !== 1 ? 's' : ''} total${disabledUsersCount > 0 ? `, ${disabledUsersCount} disabled` : ''}`}
+        icon={<Users className="w-5 h-5 text-indigo-600" />}
+        color="indigo"
+        expanded={expandedSections.users}
+        onToggle={() => toggleSection('users')}
+      >
+        <div className="space-y-2 max-h-[500px] overflow-y-auto">
+          {users.map((user) => (
+            <div 
+              key={user.id} 
+              className={`rounded-lg p-4 border flex items-center justify-between ${
+                user.is_active 
+                  ? 'bg-white border-gray-200' 
+                  : 'bg-gray-50 border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  user.is_active 
+                    ? 'bg-gradient-to-br from-primary-400 to-primary-600' 
+                    : 'bg-gray-400'
+                }`}>
+                  <span className="text-sm font-semibold text-white">
+                    {user.username.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className={`font-medium ${user.is_active ? 'text-gray-900' : 'text-gray-500'}`}>
+                      {user.username}
+                    </span>
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                      user.role === 'admin' 
+                        ? 'bg-purple-100 text-purple-700' 
+                        : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {user.role === 'admin' ? 'Reviewer' : 'Builder'}
+                    </span>
+                    {!user.is_active && (
+                      <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700">
+                        Disabled
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
+                    {user.email && <span>{user.email}</span>}
+                    <span>•</span>
+                    <span>{user.templates_created} created</span>
+                    <span>•</span>
+                    <span>{user.templates_assigned} assigned</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => toggleUserActive(user.id)}
+                  disabled={togglingUser === user.id}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                    user.is_active
+                      ? 'bg-gray-100 text-gray-700 hover:bg-red-50 hover:text-red-600'
+                      : 'bg-green-100 text-green-700 hover:bg-green-200'
+                  } disabled:opacity-50`}
+                >
+                  {togglingUser === user.id ? (
+                    <Loader className="w-4 h-4 animate-spin" />
+                  ) : user.is_active ? (
+                    <UserX className="w-4 h-4" />
+                  ) : (
+                    <UserCheck className="w-4 h-4" />
+                  )}
+                  {user.is_active ? 'Disable' : 'Enable'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-gray-500 mt-4 p-3 bg-gray-50 rounded-lg">
+          <Shield className="w-4 h-4 inline mr-1" />
+          Disabled users cannot log in but their history and associations are preserved. You can re-enable them at any time.
+        </p>
+      </CollapsibleSection>
     </div>
   );
 };
@@ -869,6 +995,7 @@ const CollapsibleSection: React.FC<{
     blue: 'border-blue-200',
     red: 'border-red-200',
     gray: 'border-gray-200',
+    indigo: 'border-indigo-200',
   };
 
   const bgColors: Record<string, string> = {
@@ -878,6 +1005,7 @@ const CollapsibleSection: React.FC<{
     blue: 'from-blue-50 to-sky-50',
     red: 'from-red-50 to-rose-50',
     gray: 'from-gray-50 to-slate-50',
+    indigo: 'from-indigo-50 to-violet-50',
   };
 
   return (
