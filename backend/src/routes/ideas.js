@@ -1447,6 +1447,99 @@ router.post('/:id/sync-public-library', authenticateToken, authorizeRoles('admin
   }
 });
 
+// Bulk sync ALL published templates to Public Library (admin only)
+router.post('/admin/sync-all-public-library', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    console.log('📚 [BULK SYNC] Starting bulk sync of all published templates to Public Library...');
+    
+    // Get all published templates
+    const publishedTemplates = await db.prepare(`
+      SELECT * FROM ideas 
+      WHERE status = 'published'
+      ORDER BY id
+    `).all();
+
+    console.log(`📚 [BULK SYNC] Found ${publishedTemplates.length} published templates`);
+
+    const results = {
+      total: publishedTemplates.length,
+      synced: 0,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errors: 0,
+      details: []
+    };
+
+    for (const template of publishedTemplates) {
+      try {
+        if (template.public_library_id) {
+          // Template already has a public library ID - update it
+          await updatePublicLibraryTemplate(template.public_library_id, template);
+          results.updated++;
+          results.synced++;
+          results.details.push({
+            id: template.id,
+            flow_name: template.flow_name,
+            action: 'updated',
+            public_library_id: template.public_library_id
+          });
+          console.log(`📚 [BULK SYNC] Updated template ${template.id}: ${template.flow_name}`);
+        } else {
+          // Template doesn't have a public library ID - create it
+          const publicLibraryId = await publishToPublicLibrary(template);
+          
+          // Update local database with the public library ID
+          await db.prepare(`
+            UPDATE ideas SET public_library_id = ? WHERE id = ?
+          `).run(publicLibraryId, template.id);
+          
+          results.created++;
+          results.synced++;
+          results.details.push({
+            id: template.id,
+            flow_name: template.flow_name,
+            action: 'created',
+            public_library_id: publicLibraryId
+          });
+          console.log(`📚 [BULK SYNC] Created template ${template.id}: ${template.flow_name} -> ${publicLibraryId}`);
+        }
+      } catch (error) {
+        console.error(`📚 [BULK SYNC] Error syncing template ${template.id}:`, error.message);
+        results.errors++;
+        results.details.push({
+          id: template.id,
+          flow_name: template.flow_name,
+          action: 'error',
+          error: error.message
+        });
+      }
+    }
+
+    // Log the bulk sync activity
+    await logActivity(null, req.user.id, 'bulk_sync_public_library', 
+      `Bulk synced ${results.synced} templates to Public Library (${results.created} created, ${results.updated} updated, ${results.errors} errors)`);
+
+    console.log(`📚 [BULK SYNC] Completed: ${results.synced} synced, ${results.created} created, ${results.updated} updated, ${results.errors} errors`);
+
+    res.json({
+      success: true,
+      message: `Successfully synced ${results.synced} templates to Public Library`,
+      stats: {
+        total: results.total,
+        synced: results.synced,
+        created: results.created,
+        updated: results.updated,
+        errors: results.errors
+      },
+      details: results.details
+    });
+  } catch (error) {
+    console.error('Bulk sync to Public Library error:', error);
+    res.status(500).json({ error: 'Failed to bulk sync templates: ' + error.message });
+  }
+});
+
 // Quick Publish - Create and publish template in one step (admin only)
 // This is a temporary/convenience endpoint to quickly import templates from external sources
 router.post('/quick-publish', authenticateToken, authorizeRoles('admin'), async (req, res) => {

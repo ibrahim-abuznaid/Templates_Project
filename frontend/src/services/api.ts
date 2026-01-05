@@ -240,6 +240,27 @@ export const ideasApi = {
         public_library_error?: string;
       }>;
     }>('/ideas/admin/sync-formats'),
+
+  // Admin: Sync ALL published templates to Public Library
+  syncAllToPublicLibrary: () =>
+    api.post<{
+      success: boolean;
+      message: string;
+      stats: {
+        total: number;
+        synced: number;
+        created: number;
+        updated: number;
+        errors: number;
+      };
+      details: Array<{
+        id: number;
+        flow_name: string;
+        action: 'created' | 'updated' | 'error';
+        public_library_id?: string;
+        error?: string;
+      }>;
+    }>('/ideas/admin/sync-all-public-library'),
 };
 
 // Departments endpoints

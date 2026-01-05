@@ -19,6 +19,8 @@ import {
   Bell,
   Send,
   User,
+  Cloud,
+  Upload,
 } from 'lucide-react';
 
 interface IncompleteTemplate {
@@ -112,6 +114,14 @@ const Maintenance: React.FC = () => {
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncResult, setSyncResult] = useState<{ success: boolean; message: string; publicLibrarySynced?: number } | null>(null);
 
+  // Public Library bulk sync state
+  const [bulkSyncLoading, setBulkSyncLoading] = useState(false);
+  const [bulkSyncResult, setBulkSyncResult] = useState<{
+    success: boolean;
+    message: string;
+    stats?: { total: number; synced: number; created: number; updated: number; errors: number };
+  } | null>(null);
+
   // Expanded sections
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     incomplete: true,
@@ -184,6 +194,28 @@ const Maintenance: React.FC = () => {
       setSyncResult({ success: false, message: 'Failed to sync formats' });
     } finally {
       setSyncLoading(false);
+    }
+  };
+
+  const executeBulkSyncPublicLibrary = async () => {
+    if (!confirm('This will sync ALL published templates to the Public Library. Templates without a public_library_id will be created, and existing ones will be updated. Continue?')) {
+      return;
+    }
+    
+    setBulkSyncLoading(true);
+    setBulkSyncResult(null);
+    try {
+      const response = await ideasApi.syncAllToPublicLibrary();
+      setBulkSyncResult({
+        success: true,
+        message: response.data.message,
+        stats: response.data.stats,
+      });
+    } catch (error) {
+      console.error('Failed to bulk sync to Public Library:', error);
+      setBulkSyncResult({ success: false, message: 'Failed to sync templates to Public Library' });
+    } finally {
+      setBulkSyncLoading(false);
     }
   };
 
@@ -334,6 +366,74 @@ const Maintenance: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Public Library Sync */}
+      <div className="card bg-gradient-to-br from-sky-50 to-indigo-50 border-2 border-sky-200">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-sky-100 rounded-xl">
+              <Cloud className="w-8 h-8 text-sky-600" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-sky-900">Public Library Sync</h2>
+              <p className="text-sky-700">Sync all published templates to the Activepieces Public Library</p>
+            </div>
+          </div>
+          <button
+            onClick={executeBulkSyncPublicLibrary}
+            disabled={bulkSyncLoading}
+            className="btn-primary flex items-center gap-2 bg-sky-600 hover:bg-sky-700"
+          >
+            {bulkSyncLoading ? (
+              <Loader className="w-4 h-4 animate-spin" />
+            ) : (
+              <Upload className="w-4 h-4" />
+            )}
+            {bulkSyncLoading ? 'Syncing...' : 'Sync All to Public Library'}
+          </button>
+        </div>
+
+        {bulkSyncResult && (
+          <div className={`mt-4 p-4 rounded-xl ${bulkSyncResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+            <div className="flex items-start gap-3">
+              {bulkSyncResult.success ? (
+                <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+              ) : (
+                <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5" />
+              )}
+              <div className="flex-1">
+                <p className={`font-medium ${bulkSyncResult.success ? 'text-green-800' : 'text-red-800'}`}>
+                  {bulkSyncResult.message}
+                </p>
+                {bulkSyncResult.stats && (
+                  <div className="mt-3 grid grid-cols-5 gap-3">
+                    <div className="bg-white rounded-lg p-2 text-center">
+                      <p className="text-lg font-bold text-gray-900">{bulkSyncResult.stats.total}</p>
+                      <p className="text-xs text-gray-500">Total</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 text-center">
+                      <p className="text-lg font-bold text-sky-600">{bulkSyncResult.stats.synced}</p>
+                      <p className="text-xs text-gray-500">Synced</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 text-center">
+                      <p className="text-lg font-bold text-green-600">{bulkSyncResult.stats.created}</p>
+                      <p className="text-xs text-gray-500">Created</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 text-center">
+                      <p className="text-lg font-bold text-amber-600">{bulkSyncResult.stats.updated}</p>
+                      <p className="text-xs text-gray-500">Updated</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 text-center">
+                      <p className="text-lg font-bold text-red-600">{bulkSyncResult.stats.errors}</p>
+                      <p className="text-xs text-gray-500">Errors</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Incomplete Published Templates */}
       {stats.incompletePublished > 0 && (
