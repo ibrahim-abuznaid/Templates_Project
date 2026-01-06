@@ -12,6 +12,7 @@ import invoicesRoutes from './routes/invoices.js';
 import blockersRoutes from './routes/blockers.js';
 import departmentsRoutes from './routes/departments.js';
 import analyticsRoutes from './routes/analytics.js';
+import uploadsRoutes from './routes/uploads.js';
 import { initializeSocket } from './socket.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -49,6 +50,9 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' }));  // Increased to handle large flow JSON files
 
+// Serve uploaded files statically
+app.use('/uploads', express.static(join(__dirname, '../uploads')));
+
 // Initialize PostgreSQL database
 console.log('🐘 Initializing PostgreSQL database (v17)...');
 const { initDatabase } = await import('./database/db.js');
@@ -63,6 +67,7 @@ app.use('/api/invoices', invoicesRoutes);
 app.use('/api/blockers', blockersRoutes);
 app.use('/api/departments', departmentsRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/uploads', uploadsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

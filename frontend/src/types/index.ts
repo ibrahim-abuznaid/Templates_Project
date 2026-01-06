@@ -119,6 +119,7 @@ export interface Comment {
   user_id: number;
   username: string;
   comment: string;
+  images?: string | string[]; // JSON string or array of image URLs
   created_at: string;
 }
 

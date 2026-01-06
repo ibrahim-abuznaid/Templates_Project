@@ -88,8 +88,8 @@ export const ideasApi = {
   unassign: (id: number) =>
     api.post<Idea>(`/ideas/${id}/unassign`),
   
-  addComment: (id: number, comment: string) =>
-    api.post(`/ideas/${id}/comments`, { comment }),
+  addComment: (id: number, comment: string, images?: string[]) =>
+    api.post(`/ideas/${id}/comments`, { comment, images }),
   
   getFreelancers: () =>
     api.get<User[]>('/ideas/users/freelancers'),
@@ -379,6 +379,15 @@ export const invoicesApi = {
   
   updateItem: (itemId: number, data: { description?: string; amount?: number }) =>
     api.put<{ success: boolean; message: string }>(`/invoices/items/${itemId}`, data),
+};
+
+// Uploads endpoints
+export const uploadsApi = {
+  uploadImage: (imageData: string, filename?: string) =>
+    api.post<{ success: boolean; url: string; filename: string }>('/uploads/image', { image: imageData, filename }),
+  
+  deleteImage: (filename: string) =>
+    api.delete<{ success: boolean }>(`/uploads/image/${filename}`),
 };
 
 // Blockers endpoints

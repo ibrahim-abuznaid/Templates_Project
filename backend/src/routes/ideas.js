@@ -1079,17 +1079,20 @@ router.get('/:id/activity', authenticateToken, async (req, res) => {
 // Add comment
 router.post('/:id/comments', authenticateToken, async (req, res) => {
   try {
-    const { comment } = req.body;
+    const { comment, images } = req.body;
     const ideaId = req.params.id;
 
-    if (!comment) {
-      return res.status(400).json({ error: 'Comment is required' });
+    if (!comment && (!images || images.length === 0)) {
+      return res.status(400).json({ error: 'Comment or images are required' });
     }
 
+    // Store images as JSON string if provided
+    const imagesJson = images && images.length > 0 ? JSON.stringify(images) : null;
+
     const result = await db.prepare(`
-      INSERT INTO comments (idea_id, user_id, comment)
-      VALUES (?, ?, ?)
-    `).run(ideaId, req.user.id, comment);
+      INSERT INTO comments (idea_id, user_id, comment, images)
+      VALUES (?, ?, ?, ?)
+    `).run(ideaId, req.user.id, comment || '', imagesJson);
 
     // Handle @mentions in comment
     const mentions = parseMentions(comment);

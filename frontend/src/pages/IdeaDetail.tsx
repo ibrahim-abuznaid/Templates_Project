@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { ideasApi, usersApi, blockersApi, departmentsApi } from '../services/api';
+import { ideasApi, usersApi, blockersApi, departmentsApi, uploadsApi } from '../services/api';
 import type { IdeaDetail as IdeaDetailType, User, UserBasic, Blocker, BlockerType, BlockerPriority, IdeaStatus, Department } from '../types';
 import StatusBadge from '../components/StatusBadge';
 import StatusWorkflow from '../components/StatusWorkflow';
@@ -33,6 +33,7 @@ import {
   Eye,
   RefreshCw,
   UserMinus,
+  Paperclip,
 } from 'lucide-react';
 
 // Format normalization helpers
@@ -91,7 +92,10 @@ const IdeaDetail: React.FC = () => {
   const [mentionSearch, setMentionSearch] = useState('');
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
+  const commentImageInputRef = useRef<HTMLInputElement>(null);
   const mentionListRef = useRef<(HTMLButtonElement | null)[]>([]);
+  const [commentImages, setCommentImages] = useState<{ url: string; uploading: boolean; file?: File }[]>([]);
+  const [uploadingCommentImage, setUploadingCommentImage] = useState(false);
   const [blockers, setBlockers] = useState<Blocker[]>([]);
   const [showBlockerForm, setShowBlockerForm] = useState(false);
   const [showResolvedBlockers, setShowResolvedBlockers] = useState(false);
@@ -704,16 +708,108 @@ const IdeaDetail: React.FC = () => {
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!comment.trim()) return;
+    if (!comment.trim() && commentImages.length === 0) return;
 
     try {
-      await ideasApi.addComment(Number(id), comment);
+      // Get uploaded image URLs (filter out any still uploading)
+      const imageUrls = commentImages
+        .filter(img => !img.uploading && img.url)
+        .map(img => img.url);
+
+      await ideasApi.addComment(Number(id), comment, imageUrls.length > 0 ? imageUrls : undefined);
       setComment('');
+      setCommentImages([]);
       setShowMentionList(false);
       loadIdea();
     } catch (error) {
       console.error('Failed to add comment:', error);
     }
+  };
+
+  // Handle pasting images into comment
+  const handleCommentPaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          await uploadCommentImage(file);
+        }
+        break;
+      }
+    }
+  };
+
+  // Handle file input change
+  const handleCommentImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    for (let i = 0; i < files.length; i++) {
+      await uploadCommentImage(files[i]);
+    }
+    
+    // Reset file input
+    if (commentImageInputRef.current) {
+      commentImageInputRef.current.value = '';
+    }
+  };
+
+  // Upload a single image
+  const uploadCommentImage = async (file: File) => {
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      console.error('Not an image file');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image too large. Maximum size is 5MB.');
+      return;
+    }
+
+    // Add placeholder while uploading
+    setCommentImages(prev => [...prev, { url: '', uploading: true }]);
+    setUploadingCommentImage(true);
+
+    try {
+      // Convert to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(file);
+      const base64 = await base64Promise;
+
+      // Upload to server
+      const response = await uploadsApi.uploadImage(base64, file.name);
+      
+      // Update with actual URL
+      setCommentImages(prev => 
+        prev.map((img, idx) => 
+          idx === prev.length - 1 && img.uploading 
+            ? { url: response.data.url, uploading: false }
+            : img
+        )
+      );
+    } catch (error) {
+      console.error('Failed to upload image:', error);
+      // Remove failed upload
+      setCommentImages(prev => prev.filter((img, idx) => !(idx === prev.length - 1 && img.uploading)));
+    } finally {
+      setUploadingCommentImage(false);
+    }
+  };
+
+  // Remove a comment image
+  const removeCommentImage = (index: number) => {
+    setCommentImages(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -2008,9 +2104,50 @@ const IdeaDetail: React.FC = () => {
                   value={comment}
                   onChange={handleCommentChange}
                   onKeyDown={handleCommentKeyDown}
-                  className="input-field mb-3"
+                  onPaste={handleCommentPaste}
+                  className="input-field mb-2"
                   rows={3}
-                  placeholder="Add a comment... Use @handle to mention someone"
+                  placeholder="Add a comment... Use @handle to mention someone. Paste or attach images."
+                />
+                
+                {/* Image previews */}
+                {commentImages.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {commentImages.map((img, index) => (
+                      <div key={index} className="relative group">
+                        {img.uploading ? (
+                          <div className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center">
+                            <Loader className="w-5 h-5 animate-spin text-gray-400" />
+                          </div>
+                        ) : (
+                          <>
+                            <img 
+                              src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3001'}${img.url}`}
+                              alt="Preview" 
+                              className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeCommentImage(index)}
+                              className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Hidden file input */}
+                <input
+                  ref={commentImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleCommentImageSelect}
+                  className="hidden"
                 />
                 
                 {showMentionList && visibleMentionOptions.length > 0 && (
@@ -2057,11 +2194,28 @@ const IdeaDetail: React.FC = () => {
               </div>
               
               <div className="flex items-center justify-between">
-                <button type="submit" className="btn-primary">
-                  Add Comment
-                </button>
+                <div className="flex items-center gap-2">
+                  <button type="submit" className="btn-primary" disabled={uploadingCommentImage}>
+                    {uploadingCommentImage ? (
+                      <>
+                        <Loader className="w-4 h-4 animate-spin mr-2" />
+                        Uploading...
+                      </>
+                    ) : (
+                      'Add Comment'
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => commentImageInputRef.current?.click()}
+                    className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-lg transition-colors"
+                    title="Attach image"
+                  >
+                    <Paperclip className="w-5 h-5" />
+                  </button>
+                </div>
                 <span className="text-xs text-gray-500">
-                  Tip: Type @ to mention someone
+                  Tip: Type @ to mention • Ctrl+V to paste images
                 </span>
               </div>
             </form>
@@ -2070,21 +2224,52 @@ const IdeaDetail: React.FC = () => {
               {idea.comments.length === 0 ? (
                 <p className="text-gray-500 text-sm">No comments yet.</p>
               ) : (
-                idea.comments.map((c: any) => (
-                  <div key={c.id} className="border-l-4 border-primary-200 pl-4 py-2">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <UserIcon className="w-4 h-4 text-gray-500" />
-                      <span className="font-medium text-gray-900">{c.username}</span>
-                      {c.handle && (
-                        <span className="text-sm text-gray-500">@{c.handle}</span>
+                idea.comments.map((c: any) => {
+                  // Parse images from JSON if present
+                  let images: string[] = [];
+                  try {
+                    if (c.images) {
+                      images = typeof c.images === 'string' ? JSON.parse(c.images) : c.images;
+                    }
+                  } catch (e) {
+                    console.error('Failed to parse comment images:', e);
+                  }
+                  
+                  return (
+                    <div key={c.id} className="border-l-4 border-primary-200 pl-4 py-2">
+                      <div className="flex items-center space-x-2 mb-1">
+                        <UserIcon className="w-4 h-4 text-gray-500" />
+                        <span className="font-medium text-gray-900">{c.username}</span>
+                        {c.handle && (
+                          <span className="text-sm text-gray-500">@{c.handle}</span>
+                        )}
+                        <span className="text-sm text-gray-500">
+                          {new Date(c.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                      {c.comment && <p className="text-gray-700">{renderCommentText(c.comment)}</p>}
+                      {images.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {images.map((imgUrl: string, idx: number) => (
+                            <a
+                              key={idx}
+                              href={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3001'}${imgUrl}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block"
+                            >
+                              <img
+                                src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3001'}${imgUrl}`}
+                                alt={`Comment attachment ${idx + 1}`}
+                                className="max-w-xs max-h-48 rounded-lg border border-gray-200 hover:border-primary-400 transition-colors cursor-pointer"
+                              />
+                            </a>
+                          ))}
+                        </div>
                       )}
-                      <span className="text-sm text-gray-500">
-                        {new Date(c.created_at).toLocaleString()}
-                      </span>
                     </div>
-                    <p className="text-gray-700">{renderCommentText(c.comment)}</p>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
