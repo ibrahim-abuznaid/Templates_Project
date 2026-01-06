@@ -226,8 +226,8 @@ router.post('/generate/:freelancerId', authenticateToken, authorizeRoles('admin'
   }
 });
 
-// Get invoice history (admin only)
-router.get('/history', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+// Get invoice history (admins see all or filtered, freelancers see only their own)
+router.get('/history', authenticateToken, async (req, res) => {
   try {
     const { freelancerId, limit = 50 } = req.query;
     
@@ -244,7 +244,12 @@ router.get('/history', authenticateToken, authorizeRoles('admin'), async (req, r
     
     const params = [];
     
-    if (freelancerId) {
+    // Freelancers can only see their own invoices
+    if (req.user.role !== 'admin') {
+      query += ' WHERE inv.freelancer_id = ?';
+      params.push(req.user.id);
+    } else if (freelancerId) {
+      // Admins can filter by specific freelancer
       query += ' WHERE inv.freelancer_id = ?';
       params.push(freelancerId);
     }
