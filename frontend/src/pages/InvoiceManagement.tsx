@@ -8,6 +8,7 @@ import {
   ExternalLink, Calendar, Save
 } from 'lucide-react';
 import ConfirmModal from '../components/ConfirmModal';
+import html2pdf from 'html2pdf.js';
 
 interface Freelancer {
   id: number;
@@ -259,7 +260,7 @@ const InvoiceManagement: React.FC = () => {
     showModal({
       type: 'confirm',
       title: 'Generate Invoice',
-      message: `Generate and pay invoice for ${freelancerName}?\n\nThis will create CSV and PDF files for download.`,
+      message: `Generate and pay invoice for ${freelancerName}?\n\nThis will download the invoice as CSV and PDF files.`,
       confirmText: 'Generate & Pay',
       onConfirm: async () => {
         try {
@@ -269,8 +270,8 @@ const InvoiceManagement: React.FC = () => {
           // Download CSV
           downloadFile(response.data.csv, `invoice_${response.data.invoice.invoice_number}.csv`, 'text/csv');
           
-          // Download PDF (as HTML first, can be printed to PDF)
-          downloadFile(response.data.pdfHtml, `invoice_${response.data.invoice.invoice_number}.html`, 'text/html');
+          // Download PDF
+          await downloadPDF(response.data.pdfHtml, `invoice_${response.data.invoice.invoice_number}.pdf`);
           
           showModal({
             type: 'success',
@@ -309,6 +310,30 @@ const InvoiceManagement: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
+  };
+
+  const downloadPDF = async (htmlContent: string, filename: string) => {
+    // Create a temporary container for the HTML
+    const container = document.createElement('div');
+    container.innerHTML = htmlContent;
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.top = '0';
+    document.body.appendChild(container);
+
+    const options = {
+      margin: 10,
+      filename: filename,
+      image: { type: 'jpeg' as const, quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'mm' as const, format: 'a4', orientation: 'portrait' as const }
+    };
+
+    try {
+      await html2pdf().set(options).from(container).save();
+    } finally {
+      document.body.removeChild(container);
+    }
   };
 
   const totalPendingAmount = freelancers.reduce((sum, f) => sum + Number(f.pending_total || 0), 0);
