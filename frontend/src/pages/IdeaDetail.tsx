@@ -841,15 +841,21 @@ const IdeaDetail: React.FC = () => {
   };
 
   // Delete a comment
-  const handleDeleteComment = async (commentId: number) => {
-    if (!confirm('Are you sure you want to delete this comment?')) return;
-
-    try {
-      await ideasApi.deleteComment(commentId);
-      loadIdea();
-    } catch (error) {
-      console.error('Failed to delete comment:', error);
-    }
+  const handleDeleteComment = (commentId: number) => {
+    showModal({
+      type: 'warning',
+      title: 'Delete Comment',
+      message: 'Are you sure you want to delete this comment? This action cannot be undone.',
+      confirmText: 'Delete',
+      onConfirm: async () => {
+        try {
+          await ideasApi.deleteComment(commentId);
+          loadIdea();
+        } catch (error) {
+          console.error('Failed to delete comment:', error);
+        }
+      }
+    });
   };
 
   const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {

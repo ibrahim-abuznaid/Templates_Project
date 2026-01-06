@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { analyticsApi, ideasApi, usersApi } from '../services/api';
+import ConfirmModal from '../components/ConfirmModal';
 import {
   Wrench,
   AlertTriangle,
@@ -168,6 +169,31 @@ const Maintenance: React.FC = () => {
   const [sendingReminder, setSendingReminder] = useState<number | null>(null);
   const [reminderSuccess, setReminderSuccess] = useState<Record<number, boolean>>({});
   const [sendingBulk, setSendingBulk] = useState(false);
+  
+  // Modal state
+  const [modal, setModal] = useState<{
+    isOpen: boolean;
+    type: 'confirm' | 'success' | 'error' | 'info' | 'warning';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+    showCancel?: boolean;
+    confirmText?: string;
+  }>({
+    isOpen: false,
+    type: 'confirm',
+    title: '',
+    message: '',
+    showCancel: true,
+  });
+
+  const showModal = (config: Partial<typeof modal> & { title: string; message: string }) => {
+    setModal({ ...modal, isOpen: true, showCancel: true, ...config });
+  };
+
+  const closeModal = () => {
+    setModal({ ...modal, isOpen: false });
+  };
 
   useEffect(() => {
     loadData();
@@ -231,11 +257,19 @@ const Maintenance: React.FC = () => {
     }
   };
 
-  const executeBulkSyncPublicLibrary = async () => {
-    if (!confirm('This will UPDATE all templates that are already in the Public Library.\n\n⚠️ Safety Features:\n• Only updates existing templates (no new creations)\n• Validates all required fields before syncing\n• Rate-limited to avoid API overload\n\nContinue?')) {
-      return;
-    }
-    
+  const executeBulkSyncPublicLibrary = () => {
+    showModal({
+      type: 'warning',
+      title: 'Bulk Sync to Public Library',
+      message: 'This will UPDATE all templates that are already in the Public Library.\n\n⚠️ Safety Features:\n• Only updates existing templates (no new creations)\n• Validates all required fields before syncing\n• Rate-limited to avoid API overload\n\nContinue?',
+      confirmText: 'Start Sync',
+      onConfirm: async () => {
+        await performBulkSync();
+      }
+    });
+  };
+
+  const performBulkSync = async () => {
     setBulkSyncLoading(true);
     setBulkSyncResult(null);
     try {
@@ -333,6 +367,18 @@ const Maintenance: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Confirm Modal */}
+      <ConfirmModal
+        isOpen={modal.isOpen}
+        onClose={closeModal}
+        onConfirm={modal.onConfirm}
+        title={modal.title}
+        message={modal.message}
+        type={modal.type}
+        confirmText={modal.confirmText}
+        showCancel={modal.showCancel}
+      />
+
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
