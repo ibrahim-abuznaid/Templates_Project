@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { ideasApi, usersApi, blockersApi, departmentsApi, uploadsApi } from '../services/api';
+import { ideasApi, usersApi, blockersApi, departmentsApi, uploadsApi, getUploadsBaseUrl } from '../services/api';
 import type { IdeaDetail as IdeaDetailType, User, UserBasic, Blocker, BlockerType, BlockerPriority, IdeaStatus, Department } from '../types';
 import StatusBadge from '../components/StatusBadge';
 import StatusWorkflow from '../components/StatusWorkflow';
@@ -2122,7 +2122,7 @@ const IdeaDetail: React.FC = () => {
                         ) : (
                           <>
                             <img 
-                              src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3001'}${img.url}`}
+                              src={`${getUploadsBaseUrl()}${img.url}`}
                               alt="Preview" 
                               className="w-20 h-20 object-cover rounded-lg border border-gray-200"
                             />
@@ -2253,13 +2253,13 @@ const IdeaDetail: React.FC = () => {
                           {images.map((imgUrl: string, idx: number) => (
                             <a
                               key={idx}
-                              href={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3001'}${imgUrl}`}
+                              href={`${getUploadsBaseUrl()}${imgUrl}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="block"
                             >
                               <img
-                                src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3001'}${imgUrl}`}
+                                src={`${getUploadsBaseUrl()}${imgUrl}`}
                                 alt={`Comment attachment ${idx + 1}`}
                                 className="max-w-xs max-h-48 rounded-lg border border-gray-200 hover:border-primary-400 transition-colors cursor-pointer"
                               />

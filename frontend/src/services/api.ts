@@ -4,6 +4,18 @@ import axios from 'axios';
 // Use environment variable in production, proxy in development
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
+// Helper to get the base URL for uploaded files (images, etc.)
+// In production, uploads are served from the same server as the API
+export const getUploadsBaseUrl = (): string => {
+  const apiUrl = import.meta.env.VITE_API_URL;
+  if (apiUrl) {
+    // Remove /api suffix to get the server base URL
+    return apiUrl.replace(/\/api\/?$/, '');
+  }
+  // In development, use relative URL (Vite proxy will handle it)
+  return '';
+};
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
