@@ -118,8 +118,10 @@ export interface Comment {
   idea_id: number;
   user_id: number;
   username: string;
+  handle?: string;
   comment: string;
   images?: string | string[]; // JSON string or array of image URLs
+  edited_at?: string | null;
   created_at: string;
 }
 

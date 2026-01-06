@@ -103,6 +103,12 @@ export const ideasApi = {
   addComment: (id: number, comment: string, images?: string[]) =>
     api.post(`/ideas/${id}/comments`, { comment, images }),
   
+  editComment: (commentId: number, comment: string) =>
+    api.put(`/ideas/comments/${commentId}`, { comment }),
+  
+  deleteComment: (commentId: number) =>
+    api.delete(`/ideas/comments/${commentId}`),
+  
   getFreelancers: () =>
     api.get<User[]>('/ideas/users/freelancers'),
 

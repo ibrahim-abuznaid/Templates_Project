@@ -1142,6 +1142,99 @@ router.post('/:id/comments', authenticateToken, async (req, res) => {
   }
 });
 
+// Edit comment (owner or admin)
+router.put('/comments/:commentId', authenticateToken, async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { comment } = req.body;
+
+    if (!comment || !comment.trim()) {
+      return res.status(400).json({ error: 'Comment text is required' });
+    }
+
+    // Get the existing comment
+    const existingComment = await db.prepare(`
+      SELECT c.*, i.id as idea_id
+      FROM comments c
+      JOIN ideas i ON c.idea_id = i.id
+      WHERE c.id = ?
+    `).get(commentId);
+
+    if (!existingComment) {
+      return res.status(404).json({ error: 'Comment not found' });
+    }
+
+    // Check if user is owner or admin
+    if (existingComment.user_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only edit your own comments' });
+    }
+
+    // Update comment
+    await db.prepare(`
+      UPDATE comments 
+      SET comment = ?, edited_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(comment, commentId);
+
+    // Get updated comment
+    const updatedComment = await db.prepare(`
+      SELECT c.*, u.username, u.handle
+      FROM comments c
+      JOIN users u ON c.user_id = u.id
+      WHERE c.id = ?
+    `).get(commentId);
+
+    // Emit real-time update
+    emitToIdea(existingComment.idea_id, 'comment:updated', { 
+      ideaId: existingComment.idea_id, 
+      comment: updatedComment 
+    });
+
+    res.json(updatedComment);
+  } catch (error) {
+    console.error('Edit comment error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete comment (owner or admin)
+router.delete('/comments/:commentId', authenticateToken, async (req, res) => {
+  try {
+    const { commentId } = req.params;
+
+    // Get the existing comment
+    const existingComment = await db.prepare(`
+      SELECT c.*, i.id as idea_id
+      FROM comments c
+      JOIN ideas i ON c.idea_id = i.id
+      WHERE c.id = ?
+    `).get(commentId);
+
+    if (!existingComment) {
+      return res.status(404).json({ error: 'Comment not found' });
+    }
+
+    // Check if user is owner or admin
+    if (existingComment.user_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only delete your own comments' });
+    }
+
+    // Delete comment
+    await db.prepare('DELETE FROM comments WHERE id = ?').run(commentId);
+
+    // Emit real-time delete event
+    emitToIdea(existingComment.idea_id, 'comment:deleted', { 
+      ideaId: existingComment.idea_id, 
+      commentId: parseInt(commentId) 
+    });
+
+    res.json({ success: true, message: 'Comment deleted' });
+  } catch (error) {
+    console.error('Delete comment error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Delete idea (admin only) - CASCADE DELETE for PostgreSQL
 router.delete('/:id', authenticateToken, authorizeRoles('admin'), async (req, res) => {
   try {

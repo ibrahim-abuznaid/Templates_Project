@@ -96,6 +96,8 @@ const IdeaDetail: React.FC = () => {
   const mentionListRef = useRef<(HTMLButtonElement | null)[]>([]);
   const [commentImages, setCommentImages] = useState<{ url: string; uploading: boolean; file?: File }[]>([]);
   const [uploadingCommentImage, setUploadingCommentImage] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
   const [blockers, setBlockers] = useState<Blocker[]>([]);
   const [showBlockerForm, setShowBlockerForm] = useState(false);
   const [showResolvedBlockers, setShowResolvedBlockers] = useState(false);
@@ -810,6 +812,44 @@ const IdeaDetail: React.FC = () => {
   // Remove a comment image
   const removeCommentImage = (index: number) => {
     setCommentImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Start editing a comment
+  const startEditingComment = (commentId: number, currentText: string) => {
+    setEditingCommentId(commentId);
+    setEditingCommentText(currentText);
+  };
+
+  // Cancel editing
+  const cancelEditingComment = () => {
+    setEditingCommentId(null);
+    setEditingCommentText('');
+  };
+
+  // Save edited comment
+  const saveEditedComment = async () => {
+    if (!editingCommentId || !editingCommentText.trim()) return;
+
+    try {
+      await ideasApi.editComment(editingCommentId, editingCommentText);
+      setEditingCommentId(null);
+      setEditingCommentText('');
+      loadIdea();
+    } catch (error) {
+      console.error('Failed to edit comment:', error);
+    }
+  };
+
+  // Delete a comment
+  const handleDeleteComment = async (commentId: number) => {
+    if (!confirm('Are you sure you want to delete this comment?')) return;
+
+    try {
+      await ideasApi.deleteComment(commentId);
+      loadIdea();
+    } catch (error) {
+      console.error('Failed to delete comment:', error);
+    }
   };
 
   const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -2235,37 +2275,95 @@ const IdeaDetail: React.FC = () => {
                     console.error('Failed to parse comment images:', e);
                   }
                   
+                  const isOwner = c.user_id === user?.id;
+                  const canModify = isOwner || isAdmin;
+                  const isEditing = editingCommentId === c.id;
+                  
                   return (
-                    <div key={c.id} className="border-l-4 border-primary-200 pl-4 py-2">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <UserIcon className="w-4 h-4 text-gray-500" />
-                        <span className="font-medium text-gray-900">{c.username}</span>
-                        {c.handle && (
-                          <span className="text-sm text-gray-500">@{c.handle}</span>
-                        )}
-                        <span className="text-sm text-gray-500">
-                          {new Date(c.created_at).toLocaleString()}
-                        </span>
-                      </div>
-                      {c.comment && <p className="text-gray-700">{renderCommentText(c.comment)}</p>}
-                      {images.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {images.map((imgUrl: string, idx: number) => (
-                            <a
-                              key={idx}
-                              href={`${getUploadsBaseUrl()}${imgUrl}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block"
-                            >
-                              <img
-                                src={`${getUploadsBaseUrl()}${imgUrl}`}
-                                alt={`Comment attachment ${idx + 1}`}
-                                className="max-w-xs max-h-48 rounded-lg border border-gray-200 hover:border-primary-400 transition-colors cursor-pointer"
-                              />
-                            </a>
-                          ))}
+                    <div key={c.id} className="border-l-4 border-primary-200 pl-4 py-2 group">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center space-x-2">
+                          <UserIcon className="w-4 h-4 text-gray-500" />
+                          <span className="font-medium text-gray-900">{c.username}</span>
+                          {c.handle && (
+                            <span className="text-sm text-gray-500">@{c.handle}</span>
+                          )}
+                          <span className="text-sm text-gray-500">
+                            {new Date(c.created_at).toLocaleString()}
+                          </span>
+                          {c.edited_at && (
+                            <span className="text-xs text-gray-400 italic" title={`Edited on ${new Date(c.edited_at).toLocaleString()}`}>
+                              (edited {new Date(c.edited_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                            </span>
+                          )}
                         </div>
+                        {canModify && !isEditing && (
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => startEditingComment(c.id, c.comment)}
+                              className="p-1 text-gray-400 hover:text-primary-600 hover:bg-gray-100 rounded transition-colors"
+                              title="Edit comment"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteComment(c.id)}
+                              className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                              title="Delete comment"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {isEditing ? (
+                        <div className="mt-2">
+                          <textarea
+                            value={editingCommentText}
+                            onChange={(e) => setEditingCommentText(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm"
+                            rows={3}
+                            autoFocus
+                          />
+                          <div className="flex items-center gap-2 mt-2">
+                            <button
+                              onClick={saveEditedComment}
+                              className="px-3 py-1.5 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition-colors"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={cancelEditingComment}
+                              className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {c.comment && <p className="text-gray-700">{renderCommentText(c.comment)}</p>}
+                          {images.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {images.map((imgUrl: string, idx: number) => (
+                                <a
+                                  key={idx}
+                                  href={`${getUploadsBaseUrl()}${imgUrl}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block"
+                                >
+                                  <img
+                                    src={`${getUploadsBaseUrl()}${imgUrl}`}
+                                    alt={`Comment attachment ${idx + 1}`}
+                                    className="max-w-xs max-h-48 rounded-lg border border-gray-200 hover:border-primary-400 transition-colors cursor-pointer"
+                                  />
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   );
