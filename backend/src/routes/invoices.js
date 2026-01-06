@@ -118,7 +118,7 @@ router.get('/pending/:freelancerId', authenticateToken, async (req, res) => {
         i.flow_name,
         i.department
       FROM invoice_items ii
-      JOIN ideas i ON ii.idea_id = i.id
+      LEFT JOIN ideas i ON ii.idea_id = i.id
       WHERE ii.freelancer_id = ? AND ii.status = 'pending'
       ORDER BY ii.completed_at DESC
     `).all(freelancerId);
@@ -162,7 +162,7 @@ router.post('/generate/:freelancerId', authenticateToken, authorizeRoles('admin'
         i.flow_name,
         i.department
       FROM invoice_items ii
-      JOIN ideas i ON ii.idea_id = i.id
+      LEFT JOIN ideas i ON ii.idea_id = i.id
       WHERE ii.freelancer_id = ? AND ii.status = 'pending'
       ORDER BY ii.completed_at ASC
     `).all(freelancerId);
