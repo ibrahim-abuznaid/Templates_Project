@@ -308,6 +308,147 @@ router.post('/:invoiceId/revert', authenticateToken, authorizeRoles('admin'), as
   }
 });
 
+// Get all freelancers for selection (admin only)
+router.get('/freelancers/all', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const freelancers = await db.prepare(`
+      SELECT 
+        u.id,
+        u.username,
+        u.email,
+        u.handle,
+        u.is_active,
+        (SELECT COUNT(*) FROM invoice_items WHERE freelancer_id = u.id AND status = 'pending') as pending_items,
+        (SELECT COALESCE(SUM(amount), 0) FROM invoice_items WHERE freelancer_id = u.id AND status = 'pending') as pending_total
+      FROM users u
+      WHERE u.role = 'freelancer'
+      ORDER BY u.username
+    `).all();
+    
+    res.json(freelancers);
+  } catch (error) {
+    console.error('Get all freelancers error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Add manual invoice item (admin only)
+router.post('/items/manual', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const { freelancer_id, description, amount, completed_at } = req.body;
+    
+    if (!freelancer_id || !description || amount === undefined) {
+      return res.status(400).json({ error: 'Missing required fields: freelancer_id, description, amount' });
+    }
+    
+    // Verify freelancer exists
+    const freelancer = await db.prepare('SELECT id, username FROM users WHERE id = ? AND role = ?')
+      .get(freelancer_id, 'freelancer');
+    
+    if (!freelancer) {
+      return res.status(404).json({ error: 'Freelancer not found' });
+    }
+    
+    const completedDate = completed_at || new Date().toISOString();
+    
+    const result = await db.prepare(`
+      INSERT INTO invoice_items (
+        freelancer_id, 
+        idea_id, 
+        idea_title, 
+        amount, 
+        completed_at, 
+        status,
+        is_manual
+      )
+      VALUES (?, NULL, ?, ?, ?, 'pending', true)
+    `).run(freelancer_id, description, parseFloat(amount), completedDate);
+    
+    res.json({ 
+      success: true, 
+      message: `Manual item added for ${freelancer.username}`,
+      item_id: result.lastInsertRowid
+    });
+  } catch (error) {
+    console.error('Add manual invoice item error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete pending invoice item (admin only)
+router.delete('/items/:itemId', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    
+    // Verify item exists and is pending
+    const item = await db.prepare(`
+      SELECT ii.*, u.username as freelancer_name 
+      FROM invoice_items ii
+      JOIN users u ON ii.freelancer_id = u.id
+      WHERE ii.id = ? AND ii.status = 'pending'
+    `).get(itemId);
+    
+    if (!item) {
+      return res.status(404).json({ error: 'Pending item not found' });
+    }
+    
+    await db.prepare('DELETE FROM invoice_items WHERE id = ?').run(itemId);
+    
+    res.json({ 
+      success: true, 
+      message: `Item removed from ${item.freelancer_name}'s pending invoice`
+    });
+  } catch (error) {
+    console.error('Delete invoice item error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update pending invoice item (admin only)
+router.put('/items/:itemId', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const { description, amount } = req.body;
+    
+    // Verify item exists and is pending
+    const item = await db.prepare(`
+      SELECT * FROM invoice_items WHERE id = ? AND status = 'pending'
+    `).get(itemId);
+    
+    if (!item) {
+      return res.status(404).json({ error: 'Pending item not found' });
+    }
+    
+    // Only allow editing manual items or update amount
+    const updates = [];
+    const params = [];
+    
+    if (description !== undefined) {
+      updates.push('idea_title = ?');
+      params.push(description);
+    }
+    if (amount !== undefined) {
+      updates.push('amount = ?');
+      params.push(parseFloat(amount));
+    }
+    
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+    
+    params.push(itemId);
+    
+    await db.prepare(`
+      UPDATE invoice_items SET ${updates.join(', ')} WHERE id = ?
+    `).run(...params);
+    
+    res.json({ success: true, message: 'Item updated' });
+  } catch (error) {
+    console.error('Update invoice item error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get invoice details
 router.get('/:invoiceId', authenticateToken, async (req, res) => {
   try {

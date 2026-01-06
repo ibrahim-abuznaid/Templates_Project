@@ -206,7 +206,7 @@ export interface InvoiceItem {
   id: number;
   invoice_id: number | null;
   freelancer_id: number;
-  idea_id: number;
+  idea_id: number | null;
   idea_title: string;
   use_case?: string;
   flow_name?: string;
@@ -214,6 +214,7 @@ export interface InvoiceItem {
   amount: number;
   completed_at: string;
   status: 'pending' | 'invoiced' | 'paid';
+  is_manual?: boolean;
   created_at: string;
 }
 

@@ -366,6 +366,19 @@ export const invoicesApi = {
   
   revertInvoice: (invoiceId: number) =>
     api.post<{ success: boolean; message: string; itemsReverted: number }>(`/invoices/${invoiceId}/revert`),
+  
+  // Manual invoice management
+  getAllFreelancers: () =>
+    api.get<{ id: number; username: string; email: string; handle: string; is_active: boolean; pending_items: number; pending_total: number }[]>('/invoices/freelancers/all'),
+  
+  addManualItem: (data: { freelancer_id: number; description: string; amount: number; completed_at?: string }) =>
+    api.post<{ success: boolean; message: string; item_id: number }>('/invoices/items/manual', data),
+  
+  deleteItem: (itemId: number) =>
+    api.delete<{ success: boolean; message: string }>(`/invoices/items/${itemId}`),
+  
+  updateItem: (itemId: number, data: { description?: string; amount?: number }) =>
+    api.put<{ success: boolean; message: string }>(`/invoices/items/${itemId}`, data),
 };
 
 // Blockers endpoints
