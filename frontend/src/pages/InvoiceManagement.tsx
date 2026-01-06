@@ -313,26 +313,40 @@ const InvoiceManagement: React.FC = () => {
   };
 
   const downloadPDF = async (htmlContent: string, filename: string) => {
-    // Create a temporary container for the HTML
-    const container = document.createElement('div');
-    container.innerHTML = htmlContent;
-    container.style.position = 'absolute';
-    container.style.left = '-9999px';
-    container.style.top = '0';
-    document.body.appendChild(container);
+    // Create an iframe to render the HTML properly
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.left = '-9999px';
+    iframe.style.top = '0';
+    iframe.style.width = '210mm';
+    iframe.style.height = '297mm';
+    document.body.appendChild(iframe);
+
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) {
+      document.body.removeChild(iframe);
+      return;
+    }
+
+    iframeDoc.open();
+    iframeDoc.write(htmlContent);
+    iframeDoc.close();
+
+    // Wait for content to render
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     const options = {
       margin: 10,
       filename: filename,
       image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
+      html2canvas: { scale: 2, useCORS: true, windowWidth: 800 },
       jsPDF: { unit: 'mm' as const, format: 'a4', orientation: 'portrait' as const }
     };
 
     try {
-      await html2pdf().set(options).from(container).save();
+      await html2pdf().set(options).from(iframeDoc.body).save();
     } finally {
-      document.body.removeChild(container);
+      document.body.removeChild(iframe);
     }
   };
 
