@@ -614,8 +614,8 @@ const Suggestions: React.FC = () => {
               <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
                 <h4 className="text-sm font-medium text-green-800 mb-2">When Approved:</h4>
                 <p className="text-sm text-green-700">
-                  A new template will be created with the flow name, idea notes, and departments from this suggestion.
-                  It will appear as a "New" template in the Dashboard, ready to be assigned.
+                  A new template will be created and automatically assigned to <strong>{showReviewModal.suggested_by_name}</strong>.
+                  They can unassign themselves if they don't want to work on it.
                 </p>
               </div>
 

@@ -320,7 +320,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Approve suggestion (admin only) - creates an idea from the suggestion (same as admin creating an idea)
+// Approve suggestion (admin only) - creates an idea from the suggestion and assigns it to the suggester
 router.post('/:id/approve', authenticateToken, authorizeRoles('admin'), async (req, res) => {
   try {
     const suggestionId = req.params.id;
@@ -345,19 +345,21 @@ router.post('/:id/approve', authenticateToken, authorizeRoles('admin'), async (r
     const departments = await getSuggestedIdeaDepartments(suggestionId);
     const departmentIds = departments.map(d => d.id);
 
-    // Create a new idea from the suggestion - exactly like admin creates from Dashboard
+    // Create a new idea from the suggestion - automatically assigned to the suggester
     const ideaResult = await db.prepare(`
       INSERT INTO ideas (
         flow_name,
         idea_notes,
         status,
-        created_by
+        created_by,
+        assigned_to
       )
-      VALUES (?, ?, 'new', ?)
+      VALUES (?, ?, 'assigned', ?, ?)
     `).run(
       suggestion.flow_name,
       suggestion.idea_notes || '',
-      req.user.id
+      req.user.id,
+      suggestion.suggested_by  // Assign to the person who suggested it
     );
 
     const newIdeaId = ideaResult.lastInsertRowid;
@@ -378,12 +380,12 @@ router.post('/:id/approve', authenticateToken, authorizeRoles('admin'), async (r
       WHERE id = ?
     `).run(req.user.id, review_note || '', newIdeaId, suggestionId);
 
-    // Notify the suggester
+    // Notify the suggester that their suggestion was approved and assigned to them
     createNotification(
       suggestion.suggested_by,
       'suggestion',
-      '✅ Suggestion Approved!',
-      `Your suggestion "${suggestion.flow_name}" has been approved and added to the template library!`,
+      '✅ Suggestion Approved & Assigned!',
+      `Your suggestion "${suggestion.flow_name}" has been approved and assigned to you!`,
       newIdeaId,
       req.user.id
     );
