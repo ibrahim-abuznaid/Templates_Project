@@ -1287,7 +1287,10 @@ router.delete('/:id', authenticateToken, authorizeRoles('admin'), async (req, re
     // 7. Delete idea departments
     await db.prepare('DELETE FROM idea_departments WHERE idea_id = ?').run(ideaId);
     
-    // 8. Finally, delete the idea itself
+    // 8. Clear reference from suggested_ideas (if this idea was created from a suggestion)
+    await db.prepare('UPDATE suggested_ideas SET converted_idea_id = NULL WHERE converted_idea_id = ?').run(ideaId);
+    
+    // 9. Finally, delete the idea itself
     const result = await db.prepare('DELETE FROM ideas WHERE id = ?').run(ideaId);
 
     if (result.changes === 0) {
