@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import type { Idea, Notification } from '../types';
+import type { Idea, Notification, SuggestedIdea } from '../types';
 
 // Socket event types
 export interface SocketEvents {
@@ -20,6 +20,13 @@ export interface SocketEvents {
   // Blocker events
   'blocker:created': (data: any) => void;
   'blocker:updated': (data: any) => void;
+  
+  // Suggestion events
+  'suggestion:created': (suggestion: SuggestedIdea) => void;
+  'suggestion:updated': (suggestion: SuggestedIdea) => void;
+  'suggestion:approved': (suggestion: SuggestedIdea) => void;
+  'suggestion:denied': (suggestion: SuggestedIdea) => void;
+  'suggestion:deleted': (data: { id: number }) => void;
   
   // Connection events
   'connect': () => void;

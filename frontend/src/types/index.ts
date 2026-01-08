@@ -292,3 +292,24 @@ export interface BlockerDiscussion {
   created_at: string;
 }
 
+// Suggested Idea types
+export type SuggestionStatus = 'pending' | 'approved' | 'denied';
+
+export interface SuggestedIdea {
+  id: number;
+  flow_name: string;
+  idea_notes: string | null;
+  status: SuggestionStatus;
+  suggested_by: number;
+  suggested_by_name?: string;
+  suggested_by_handle?: string;
+  reviewed_by: number | null;
+  reviewed_by_name?: string;
+  reviewed_by_handle?: string;
+  review_note: string | null;
+  converted_idea_id: number | null;
+  departments?: Department[];
+  created_at: string;
+  reviewed_at: string | null;
+}
+

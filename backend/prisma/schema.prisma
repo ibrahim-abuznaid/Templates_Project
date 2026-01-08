@@ -8,21 +8,23 @@ datasource db {
 }
 
 model User {
-  id            Int            @id @default(autoincrement())
-  username      String         @unique @db.VarChar(255)
-  password      String         @db.VarChar(255)
-  role          String         @db.VarChar(50)
-  email         String?        @db.VarChar(255)
-  isActive      Boolean        @default(true) @map("is_active")
-  createdAt     DateTime?      @default(now()) @map("created_at") @db.Timestamp(6)
-  activities    ActivityLog[]
-  blockers      Blocker[]
-  comments      Comment[]
-  assignedIdeas Idea[]         @relation("IdeaAssignee")
-  createdIdeas  Idea[]         @relation("IdeaCreator")
-  invoices      Invoice[]
-  notifications Notification[]
-  views         views[]
+  id                   Int             @id @default(autoincrement())
+  username             String          @unique @db.VarChar(255)
+  password             String          @db.VarChar(255)
+  role                 String          @db.VarChar(50)
+  email                String?         @db.VarChar(255)
+  isActive             Boolean         @default(true) @map("is_active")
+  createdAt            DateTime?       @default(now()) @map("created_at") @db.Timestamp(6)
+  activities           ActivityLog[]
+  blockers             Blocker[]
+  comments             Comment[]
+  assignedIdeas        Idea[]          @relation("IdeaAssignee")
+  createdIdeas         Idea[]          @relation("IdeaCreator")
+  invoices             Invoice[]
+  notifications        Notification[]
+  views                views[]
+  suggestedIdeas       SuggestedIdea[] @relation("SuggestedByUser")
+  reviewedSuggestions  SuggestedIdea[] @relation("ReviewedByUser")
 
   @@map("users")
 }
@@ -60,6 +62,7 @@ model Idea {
   creator          User?             @relation("IdeaCreator", fields: [createdBy], references: [id], onUpdate: NoAction)
   invoices         Invoice[]
   views            views[]
+  fromSuggestion   SuggestedIdea[]   // Ideas created from approved suggestions
 
   @@index([assignedTo], map: "idx_ideas_assigned_to")
   @@index([createdBy], map: "idx_ideas_created_by")
@@ -152,12 +155,13 @@ model views {
 }
 
 model Department {
-  id          Int              @id @default(autoincrement())
-  name        String           @unique @db.VarChar(100)
-  description String?
-  displayOrder Int             @default(999) @map("display_order")
-  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamp(6)
-  ideas       IdeaDepartment[]
+  id               Int                       @id @default(autoincrement())
+  name             String                    @unique @db.VarChar(100)
+  description      String?
+  displayOrder     Int                       @default(999) @map("display_order")
+  createdAt        DateTime                  @default(now()) @map("created_at") @db.Timestamp(6)
+  ideas            IdeaDepartment[]
+  suggestedIdeas   SuggestedIdeaDepartment[]
 
   @@map("departments")
 }
@@ -174,4 +178,39 @@ model IdeaDepartment {
   @@index([ideaId], map: "idx_idea_departments_idea_id")
   @@index([departmentId], map: "idx_idea_departments_department_id")
   @@map("idea_departments")
+}
+
+model SuggestedIdea {
+  id              Int                       @id @default(autoincrement())
+  flowName        String                    @map("flow_name") @db.VarChar(255) // Same as ideas.flow_name
+  ideaNotes       String?                   @map("idea_notes") @db.Text // Same as ideas.idea_notes
+  status          String                    @default("pending") @db.VarChar(50) // pending, approved, denied
+  suggestedBy     Int                       @map("suggested_by")
+  reviewedBy      Int?                      @map("reviewed_by")
+  reviewNote      String?                   @map("review_note") @db.Text // Admin's note when approving/denying
+  convertedIdeaId Int?                      @map("converted_idea_id") // The idea ID if approved and converted
+  createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamp(6)
+  reviewedAt      DateTime?                 @map("reviewed_at") @db.Timestamp(6)
+  suggestor       User                      @relation("SuggestedByUser", fields: [suggestedBy], references: [id], onUpdate: NoAction)
+  reviewer        User?                     @relation("ReviewedByUser", fields: [reviewedBy], references: [id], onUpdate: NoAction)
+  convertedIdea   Idea?                     @relation(fields: [convertedIdeaId], references: [id], onUpdate: NoAction)
+  departments     SuggestedIdeaDepartment[]
+
+  @@index([suggestedBy], map: "idx_suggested_ideas_suggested_by")
+  @@index([status], map: "idx_suggested_ideas_status")
+  @@map("suggested_ideas")
+}
+
+model SuggestedIdeaDepartment {
+  id              Int           @id @default(autoincrement())
+  suggestedIdeaId Int           @map("suggested_idea_id")
+  departmentId    Int           @map("department_id")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamp(6)
+  suggestedIdea   SuggestedIdea @relation(fields: [suggestedIdeaId], references: [id], onDelete: Cascade)
+  department      Department    @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([suggestedIdeaId, departmentId])
+  @@index([suggestedIdeaId], map: "idx_suggested_idea_departments_suggested_idea_id")
+  @@index([departmentId], map: "idx_suggested_idea_departments_department_id")
+  @@map("suggested_idea_departments")
 }

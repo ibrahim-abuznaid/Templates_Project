@@ -1,4 +1,4 @@
-import type { AuthResponse, User, Idea, IdeaDetail, Department, DepartmentSummary, DepartmentTemplate, Notification, Invitation, UserBasic, Invoice, InvoiceItem, PendingInvoiceSummary, Blocker, BlockerType, BlockerStatus, BlockerPriority, BlockerDiscussion } from '../types';
+import type { AuthResponse, User, Idea, IdeaDetail, Department, DepartmentSummary, DepartmentTemplate, Notification, Invitation, UserBasic, Invoice, InvoiceItem, PendingInvoiceSummary, Blocker, BlockerType, BlockerStatus, BlockerPriority, BlockerDiscussion, SuggestedIdea, SuggestionStatus } from '../types';
 import axios from 'axios';
 
 // Use environment variable in production, proxy in development
@@ -591,6 +591,55 @@ export const analyticsApi = {
     api.post<{ success: boolean; message: string; results: { sent: number; failed: number } }>('/analytics/send-bulk-reminders', {
       reminders,
     }),
+};
+
+// Suggestions endpoints (for template builders to suggest new ideas)
+export const suggestionsApi = {
+  getAll: (status?: SuggestionStatus) =>
+    api.get<SuggestedIdea[]>('/suggestions', { params: { status } }),
+  
+  getById: (id: number) =>
+    api.get<SuggestedIdea>(`/suggestions/${id}`),
+  
+  create: (data: {
+    flow_name: string;
+    idea_notes?: string;
+    department_ids: number[];
+  }) =>
+    api.post<SuggestedIdea>('/suggestions', data),
+  
+  update: (id: number, data: {
+    flow_name?: string;
+    idea_notes?: string;
+    department_ids?: number[];
+  }) =>
+    api.put<SuggestedIdea>(`/suggestions/${id}`, data),
+  
+  delete: (id: number) =>
+    api.delete(`/suggestions/${id}`),
+  
+  // Admin actions
+  approve: (id: number, data?: { review_note?: string }) =>
+    api.post<{ suggestion: SuggestedIdea; idea: Idea }>(`/suggestions/${id}/approve`, data || {}),
+  
+  deny: (id: number, data?: { review_note?: string }) =>
+    api.post<SuggestedIdea>(`/suggestions/${id}/deny`, data || {}),
+  
+  getStats: () =>
+    api.get<{
+      stats: {
+        total: number;
+        pending: number;
+        approved: number;
+        denied: number;
+      };
+      topSuggesters: Array<{
+        id: number;
+        username: string;
+        suggestion_count: number;
+        approved_count: number;
+      }>;
+    }>('/suggestions/stats/summary'),
 };
 
 export default api;

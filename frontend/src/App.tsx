@@ -14,6 +14,7 @@ import BlockersOverview from './pages/BlockersOverview';
 import QuickPublish from './pages/QuickPublish';
 import Analytics from './pages/Analytics';
 import Maintenance from './pages/Maintenance';
+import Suggestions from './pages/Suggestions';
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -128,6 +129,16 @@ const AppRoutes: React.FC = () => {
           <PrivateRoute>
             <Layout>
               <Maintenance />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/suggestions"
+        element={
+          <PrivateRoute>
+            <Layout>
+              <Suggestions />
             </Layout>
           </PrivateRoute>
         }

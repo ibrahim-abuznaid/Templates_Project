@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle, Zap, ChevronDown, BarChart3, Wrench } from 'lucide-react';
+import { LogOut, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle, Zap, ChevronDown, BarChart3, Wrench, Lightbulb } from 'lucide-react';
 import NotificationsInbox from './NotificationsInbox';
 import InviteUserModal from './InviteUserModal';
 
@@ -63,6 +63,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     >
                       <AlertTriangle className="w-4 h-4" />
                       <span>Blockers</span>
+                    </Link>
+
+                    <Link
+                      to="/suggestions"
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+                        isActive('/suggestions')
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'text-amber-600 hover:bg-amber-50'
+                      }`}
+                    >
+                      <Lightbulb className="w-4 h-4" />
+                      <span>Suggestions</span>
                     </Link>
 
                     {isAdmin && (
