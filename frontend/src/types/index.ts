@@ -313,3 +313,17 @@ export interface SuggestedIdea {
   reviewed_at: string | null;
 }
 
+// Guidebook types
+export interface GuidebookSection {
+  id: number;
+  slug: string;
+  title: string;
+  icon: string | null;
+  content: string;
+  checklist_items: string[] | null;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+

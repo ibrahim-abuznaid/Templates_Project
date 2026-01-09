@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle, Zap, ChevronDown, BarChart3, Wrench, Lightbulb } from 'lucide-react';
+import { LogOut, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle, Zap, ChevronDown, BarChart3, Wrench, Lightbulb, BookOpen } from 'lucide-react';
 import NotificationsInbox from './NotificationsInbox';
 import InviteUserModal from './InviteUserModal';
 
@@ -75,6 +75,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     >
                       <Lightbulb className="w-4 h-4" />
                       <span>Suggestions</span>
+                    </Link>
+
+                    <Link
+                      to="/guidebook"
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+                        isActive('/guidebook')
+                          ? 'bg-violet-100 text-violet-700'
+                          : 'text-violet-600 hover:bg-violet-50'
+                      }`}
+                    >
+                      <BookOpen className="w-4 h-4" />
+                      <span>Guidebook</span>
                     </Link>
 
                     {isAdmin && (

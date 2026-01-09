@@ -1,4 +1,4 @@
-import type { AuthResponse, User, Idea, IdeaDetail, Department, DepartmentSummary, DepartmentTemplate, Notification, Invitation, UserBasic, Invoice, InvoiceItem, PendingInvoiceSummary, Blocker, BlockerType, BlockerStatus, BlockerPriority, BlockerDiscussion, SuggestedIdea, SuggestionStatus } from '../types';
+import type { AuthResponse, User, Idea, IdeaDetail, Department, DepartmentSummary, DepartmentTemplate, Notification, Invitation, UserBasic, Invoice, InvoiceItem, PendingInvoiceSummary, Blocker, BlockerType, BlockerStatus, BlockerPriority, BlockerDiscussion, SuggestedIdea, SuggestionStatus, GuidebookSection } from '../types';
 import axios from 'axios';
 
 // Use environment variable in production, proxy in development
@@ -640,6 +640,46 @@ export const suggestionsApi = {
         approved_count: number;
       }>;
     }>('/suggestions/stats/summary'),
+};
+
+// Guidebook endpoints (for template builder guidebook)
+export const guidebookApi = {
+  getAll: (includeInactive = false) =>
+    api.get<GuidebookSection[]>('/guidebook', { params: { includeInactive } }),
+  
+  getBySlug: (slug: string) =>
+    api.get<GuidebookSection>(`/guidebook/${slug}`),
+  
+  create: (data: {
+    slug: string;
+    title: string;
+    icon?: string;
+    content: string;
+    checklist_items?: string[];
+    display_order?: number;
+    is_active?: boolean;
+  }) =>
+    api.post<GuidebookSection>('/guidebook', data),
+  
+  update: (id: number, data: Partial<{
+    slug: string;
+    title: string;
+    icon: string;
+    content: string;
+    checklist_items: string[] | null;
+    display_order: number;
+    is_active: boolean;
+  }>) =>
+    api.put<GuidebookSection>(`/guidebook/${id}`, data),
+  
+  delete: (id: number) =>
+    api.delete<{ message: string; section: GuidebookSection }>(`/guidebook/${id}`),
+  
+  reorder: (order: Array<{ id: number; display_order: number }>) =>
+    api.put<GuidebookSection[]>('/guidebook/reorder/sections', { order }),
+  
+  resetToDefaults: () =>
+    api.post<{ message: string; sections: GuidebookSection[] }>('/guidebook/reset/defaults'),
 };
 
 export default api;

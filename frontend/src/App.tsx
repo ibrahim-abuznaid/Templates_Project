@@ -15,6 +15,7 @@ import QuickPublish from './pages/QuickPublish';
 import Analytics from './pages/Analytics';
 import Maintenance from './pages/Maintenance';
 import Suggestions from './pages/Suggestions';
+import Guidebook from './pages/Guidebook';
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -139,6 +140,16 @@ const AppRoutes: React.FC = () => {
           <PrivateRoute>
             <Layout>
               <Suggestions />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/guidebook"
+        element={
+          <PrivateRoute>
+            <Layout>
+              <Guidebook />
             </Layout>
           </PrivateRoute>
         }
