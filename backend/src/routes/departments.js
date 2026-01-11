@@ -6,7 +6,7 @@ const router = express.Router();
 
 // Public Library API configuration
 const PUBLIC_LIBRARY_API_URL = 'https://cloud.activepieces.com/api/v1/admin/templates/categories';
-const TEMPLATES_API_KEY = process.env.TEMPLATES_API_KEY;
+const PUBLIC_LIBRARY_API_KEY = process.env.PUBLIC_LIBRARY_API_KEY || '';
 
 // Valid template categories from Activepieces API (used when publishing templates)
 const VALID_TEMPLATE_CATEGORIES = [
@@ -226,7 +226,7 @@ router.get('/public-library/preview', authenticateToken, requireAdmin, async (re
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'templates-api-key': TEMPLATES_API_KEY ? '***configured***' : '⚠️ NOT CONFIGURED'
+          'templates-api-key': PUBLIC_LIBRARY_API_KEY ? '***configured***' : '⚠️ NOT CONFIGURED'
         },
         body: {
           value: categoryNames
@@ -237,7 +237,7 @@ router.get('/public-library/preview', authenticateToken, requireAdmin, async (re
         name: d.name,
         display_order: d.display_order
       })),
-      warnings: !TEMPLATES_API_KEY ? ['TEMPLATES_API_KEY is not configured in environment variables'] : []
+      warnings: !PUBLIC_LIBRARY_API_KEY ? ['PUBLIC_LIBRARY_API_KEY is not configured in environment variables'] : []
     });
   } catch (error) {
     console.error('Error generating preview:', error);
@@ -249,10 +249,10 @@ router.get('/public-library/preview', authenticateToken, requireAdmin, async (re
 router.post('/public-library/sync', authenticateToken, requireAdmin, async (req, res) => {
   try {
     // Check API key configuration
-    if (!TEMPLATES_API_KEY) {
+    if (!PUBLIC_LIBRARY_API_KEY) {
       return res.status(400).json({ 
         error: 'Public Library API key is not configured',
-        details: 'Please set TEMPLATES_API_KEY in your environment variables'
+        details: 'Please set PUBLIC_LIBRARY_API_KEY in your environment variables'
       });
     }
 
@@ -273,7 +273,7 @@ router.post('/public-library/sync', authenticateToken, requireAdmin, async (req,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'templates-api-key': TEMPLATES_API_KEY
+        'templates-api-key': PUBLIC_LIBRARY_API_KEY
       },
       body: JSON.stringify({
         value: categoryNames
