@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { departmentsApi } from '../services/api';
 import ConfirmModal from '../components/ConfirmModal';
+import { TEMPLATE_CATEGORY_LABELS } from '../types';
 import {
   Tags,
   Plus,
@@ -21,7 +22,12 @@ import {
   ExternalLink,
   Save,
   ArrowRight,
+  Link,
+  Unlink,
 } from 'lucide-react';
+
+// Public Library category names (exact match required)
+const PUBLIC_LIBRARY_CATEGORIES = Object.values(TEMPLATE_CATEGORY_LABELS);
 
 interface CategoryStat {
   id: number;
@@ -442,6 +448,32 @@ const CategoryManagement: React.FC = () => {
     );
   };
 
+  // Check if category name matches a Public Library category
+  const getPublicLibraryMatch = useCallback((categoryName: string): string | null => {
+    // Exact match first
+    if (PUBLIC_LIBRARY_CATEGORIES.includes(categoryName)) {
+      return categoryName;
+    }
+    // Case-insensitive match
+    const lowerName = categoryName.toLowerCase();
+    const match = PUBLIC_LIBRARY_CATEGORIES.find(
+      plc => plc.toLowerCase() === lowerName
+    );
+    return match || null;
+  }, []);
+
+  // Calculate mapping statistics
+  const mappingStats = useMemo(() => {
+    const mapped = categories.filter(c => getPublicLibraryMatch(c.name) !== null);
+    const unmapped = categories.filter(c => getPublicLibraryMatch(c.name) === null);
+    return {
+      total: categories.length,
+      mapped: mapped.length,
+      unmapped: unmapped.length,
+      unmappedCategories: unmapped.map(c => c.name)
+    };
+  }, [categories, getPublicLibraryMatch]);
+
   // Status badge component
   const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
     const colors: Record<string, string> = {
@@ -457,6 +489,31 @@ const CategoryManagement: React.FC = () => {
     return (
       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] || 'bg-gray-100 text-gray-700'}`}>
         {status.replace('_', ' ')}
+      </span>
+    );
+  };
+
+  // Public Library mapping badge
+  const MappingBadge: React.FC<{ categoryName: string }> = ({ categoryName }) => {
+    const match = getPublicLibraryMatch(categoryName);
+    if (match) {
+      return (
+        <span 
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-200"
+          title={`Mapped to Public Library: "${match}"`}
+        >
+          <Link className="w-3 h-3" />
+          <span className="hidden xl:inline">Public Library</span>
+        </span>
+      );
+    }
+    return (
+      <span 
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200"
+        title="Not mapped to any Public Library category"
+      >
+        <Unlink className="w-3 h-3" />
+        <span className="hidden xl:inline">Not Mapped</span>
       </span>
     );
   };
@@ -602,6 +659,92 @@ const CategoryManagement: React.FC = () => {
         )}
       </div>
 
+      {/* Public Library Mapping Summary */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <Link className="w-5 h-5 text-emerald-600" />
+            Public Library Mapping
+          </h2>
+          <div className="flex items-center gap-4 text-sm">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+              <span className="text-gray-600">{mappingStats.mapped} mapped</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-orange-500"></span>
+              <span className="text-gray-600">{mappingStats.unmapped} unmapped</span>
+            </span>
+          </div>
+        </div>
+
+        {/* Valid Public Library Categories Reference */}
+        <div className="bg-gray-50 rounded-xl p-4 mb-4">
+          <p className="text-sm font-medium text-gray-700 mb-2">
+            Valid Public Library Categories (must match exactly):
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {PUBLIC_LIBRARY_CATEGORIES.map(cat => {
+              const isUsed = categories.some(c => getPublicLibraryMatch(c.name) === cat);
+              return (
+                <span
+                  key={cat}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border ${
+                    isUsed
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-white text-gray-500 border-gray-200'
+                  }`}
+                >
+                  {cat}
+                  {isUsed && <CheckCircle className="w-3 h-3 inline ml-1" />}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Unmapped Categories Warning */}
+        {mappingStats.unmapped > 0 && (
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-orange-600 mt-0.5" />
+              <div>
+                <p className="font-medium text-orange-800">
+                  {mappingStats.unmapped} categor{mappingStats.unmapped === 1 ? 'y' : 'ies'} not mapped to Public Library
+                </p>
+                <p className="text-sm text-orange-700 mt-1">
+                  The following categories will be synced but may not display correctly in the Public Library:
+                </p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {mappingStats.unmappedCategories.map(name => (
+                    <span
+                      key={name}
+                      className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-300"
+                    >
+                      {name}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-xs text-orange-600 mt-2">
+                  💡 Tip: Rename these categories to match one of the valid Public Library categories above.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {mappingStats.unmapped === 0 && categories.length > 0 && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+            <div className="flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-emerald-600" />
+              <p className="text-emerald-800">
+                All categories are properly mapped to Public Library categories.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Categories List */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
@@ -651,6 +794,7 @@ const CategoryManagement: React.FC = () => {
                     <h3 className="font-semibold text-gray-900 truncate">
                       {category.name}
                     </h3>
+                    <MappingBadge categoryName={category.name} />
                     {category.description && (
                       <span className="text-sm text-gray-500 truncate hidden lg:inline">
                         — {category.description}
