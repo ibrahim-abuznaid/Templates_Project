@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { departmentsApi } from '../services/api';
+import { departmentsApi, ideasApi } from '../services/api';
 import ConfirmModal from '../components/ConfirmModal';
 import {
   Tags,
@@ -58,20 +58,13 @@ interface CategoryMapping {
   department_name: string;
   maps_to_category: string;
   maps_to_label: string;
-  match_type: 'direct' | 'mapped' | 'default';
-  is_default_fallback: boolean;
-}
-
-interface ValidCategory {
-  category: string;
-  label: string;
+  match_type: 'direct';
 }
 
 const CategoryManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<CategoryStat[]>([]);
   const [categoryMappings, setCategoryMappings] = useState<CategoryMapping[]>([]);
-  const [validCategories, setValidCategories] = useState<ValidCategory[]>([]);
   const [hasOrderChanges, setHasOrderChanges] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
 
@@ -104,6 +97,10 @@ const CategoryManagement: React.FC = () => {
   const [syncWarnings, setSyncWarnings] = useState<string[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null);
+  
+  // Template resync state
+  const [resyncingTemplates, setResyncingTemplates] = useState(false);
+  const [resyncResult, setResyncResult] = useState<{ success: boolean; message: string; stats?: any } | null>(null);
 
   // Confirm modal
   const [modal, setModal] = useState<{
@@ -140,7 +137,6 @@ const CategoryManagement: React.FC = () => {
       ]);
       setCategories(statsResponse.data.departments);
       setCategoryMappings(mappingResponse.data.mappings);
-      setValidCategories(mappingResponse.data.valid_categories);
       setHasOrderChanges(false);
     } catch (error) {
       console.error('Failed to load categories:', error);
@@ -453,6 +449,35 @@ const CategoryManagement: React.FC = () => {
     });
   };
 
+  // Resync all published templates to update their categories
+  const handleResyncAllTemplates = async () => {
+    showConfirmModal({
+      type: 'warning',
+      title: 'Resync All Published Templates',
+      message: 'This will update ALL published templates in the Public Library with their current category names.\n\n⚠️ This may take a while if you have many templates.\n\nMake sure you have synced categories first!\n\nProceed?',
+      confirmText: 'Resync Templates',
+      onConfirm: async () => {
+        setResyncingTemplates(true);
+        setResyncResult(null);
+        try {
+          const response = await ideasApi.syncAllToPublicLibrary();
+          setResyncResult({
+            success: true,
+            message: `Synced ${response.data.stats.synced} templates. ${response.data.stats.skippedValidation} skipped, ${response.data.stats.errors} errors.`,
+            stats: response.data.stats
+          });
+        } catch (error: any) {
+          setResyncResult({
+            success: false,
+            message: error.response?.data?.error || 'Failed to resync templates'
+          });
+        } finally {
+          setResyncingTemplates(false);
+        }
+      }
+    });
+  };
+
   // Select all/none templates for migration
   const toggleSelectAllTemplates = () => {
     if (selectedTemplateIds.length === categoryTemplates.length) {
@@ -489,33 +514,18 @@ const CategoryManagement: React.FC = () => {
     );
   };
 
-  // Public Library mapping badge - shows what the category maps to when publishing
+  // Public Library mapping badge - shows the API format for the category
   const MappingBadge: React.FC<{ categoryName: string }> = ({ categoryName }) => {
     const mapping = getMappingForCategory(categoryName);
     if (!mapping) return null;
 
-    const matchTypeColors = {
-      direct: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-      mapped: 'bg-blue-100 text-blue-700 border-blue-200',
-      default: 'bg-orange-100 text-orange-700 border-orange-200'
-    };
-
-    const matchTypeLabels = {
-      direct: 'Direct Match',
-      mapped: 'Mapped',
-      default: 'Fallback'
-    };
-
     return (
       <span 
-        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${matchTypeColors[mapping.match_type]}`}
-        title={`Published as "${mapping.maps_to_label}" (${matchTypeLabels[mapping.match_type]})`}
+        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border bg-gray-100 text-gray-700 border-gray-200"
+        title={`Published as: ${mapping.maps_to_category}`}
       >
         <ArrowRightFromLine className="w-3 h-3" />
-        <span>{mapping.maps_to_label}</span>
-        {mapping.match_type === 'default' && (
-          <AlertTriangle className="w-3 h-3" />
-        )}
+        <code className="text-xs">{mapping.maps_to_category}</code>
       </span>
     );
   };
@@ -661,31 +671,70 @@ const CategoryManagement: React.FC = () => {
         )}
       </div>
 
-      {/* Public Library Mapping Summary */}
+      {/* Step 2: Resync Templates Section */}
+      <div className="card bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-purple-100 rounded-xl">
+              <RefreshCw className="w-8 h-8 text-purple-600" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-purple-900">Step 2: Resync All Templates</h2>
+              <p className="text-purple-700">Update all published templates with their correct category names</p>
+              <p className="text-xs text-purple-600 mt-1">
+                ⚠️ Run this AFTER syncing categories to update existing templates in the Public Library
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleResyncAllTemplates}
+            disabled={resyncingTemplates}
+            className="btn-primary flex items-center gap-2 bg-purple-600 hover:bg-purple-700"
+          >
+            {resyncingTemplates ? (
+              <Loader className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            {resyncingTemplates ? 'Resyncing...' : 'Resync All Templates'}
+          </button>
+        </div>
+
+        {resyncResult && (
+          <div className={`mt-4 p-4 rounded-xl ${resyncResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+            <div className="flex items-center gap-3">
+              {resyncResult.success ? (
+                <CheckCircle className="w-5 h-5 text-green-600" />
+              ) : (
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              )}
+              <span className={resyncResult.success ? 'text-green-800' : 'text-red-800'}>
+                {resyncResult.message}
+              </span>
+            </div>
+            {resyncResult.stats && (
+              <div className="mt-2 flex gap-4 text-sm">
+                <span className="text-gray-600">Total: {resyncResult.stats.total}</span>
+                <span className="text-green-600">Synced: {resyncResult.stats.synced}</span>
+                <span className="text-orange-600">Skipped: {resyncResult.stats.skippedValidation}</span>
+                <span className="text-red-600">Errors: {resyncResult.stats.errors}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Category Mapping Info */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
             <Link className="w-5 h-5 text-blue-600" />
-            Category → Public Library Mapping
+            Category Mapping
           </h2>
-          <div className="flex items-center gap-4 text-sm">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-              <span className="text-gray-600">Direct match</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
-              <span className="text-gray-600">Mapped</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-orange-500"></span>
-              <span className="text-gray-600">Fallback</span>
-            </span>
-          </div>
         </div>
 
         <p className="text-sm text-gray-600 mb-4">
-          When you publish a template, its category is mapped to a Public Library category. Here's how each of your categories will be published:
+          Your category names are sent <strong>directly</strong> to the Public Library. Make sure to sync categories first so they are recognized.
         </p>
 
         {/* Mapping Table */}
@@ -696,8 +745,7 @@ const CategoryManagement: React.FC = () => {
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Your Category</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">→</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Published As</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Match Type</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sent to Public Library</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -710,31 +758,9 @@ const CategoryManagement: React.FC = () => {
                       <ArrowRight className="w-4 h-4 text-gray-400 mx-auto" />
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`font-medium ${
-                        mapping.match_type === 'default' ? 'text-orange-700' : 'text-gray-900'
-                      }`}>
-                        {mapping.maps_to_label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {mapping.match_type === 'direct' && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
-                          <CheckCircle className="w-3 h-3" />
-                          Direct
-                        </span>
-                      )}
-                      {mapping.match_type === 'mapped' && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                          <Link className="w-3 h-3" />
-                          Mapped
-                        </span>
-                      )}
-                      {mapping.match_type === 'default' && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
-                          <AlertTriangle className="w-3 h-3" />
-                          Fallback
-                        </span>
-                      )}
+                      <code className="px-2 py-1 bg-gray-100 rounded text-sm font-mono text-gray-800">
+                        {mapping.maps_to_category}
+                      </code>
                     </td>
                   </tr>
                 ))}
@@ -743,47 +769,20 @@ const CategoryManagement: React.FC = () => {
           </div>
         )}
 
-        {/* Fallback Warning */}
-        {categoryMappings.some(m => m.match_type === 'default') && (
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-orange-600 mt-0.5" />
-              <div>
-                <p className="font-medium text-orange-800">
-                  Some categories use fallback mapping
-                </p>
-                <p className="text-sm text-orange-700 mt-1">
-                  Categories marked as "Fallback" don't have a direct or mapped match, so they default to <strong>Productivity</strong>. 
-                  Consider renaming them to a standard category name for better organization in the Public Library.
-                </p>
-              </div>
+        {/* Info Box */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <Info className="w-5 h-5 text-blue-600 mt-0.5" />
+            <div className="text-sm text-blue-800">
+              <p className="font-medium mb-1">How it works:</p>
+              <ol className="list-decimal list-inside space-y-1">
+                <li><strong>Step 1:</strong> Sync your categories to the Public Library (creates/updates category list)</li>
+                <li><strong>Step 2:</strong> Resync all templates (updates existing templates with correct categories)</li>
+              </ol>
+              <p className="mt-2 text-blue-700">
+                Templates will be published under the exact category name you have here.
+              </p>
             </div>
-          </div>
-        )}
-
-        {/* Valid Categories Reference */}
-        <div className="mt-4 p-4 bg-gray-50 rounded-xl">
-          <p className="text-sm font-medium text-gray-700 mb-2">Valid Public Library Categories:</p>
-          <div className="flex flex-wrap gap-2">
-            {validCategories.map(cat => {
-              const usedBy = categoryMappings.filter(m => m.maps_to_category === cat.category);
-              return (
-                <span
-                  key={cat.category}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border ${
-                    usedBy.length > 0
-                      ? 'bg-blue-50 text-blue-700 border-blue-200'
-                      : 'bg-white text-gray-500 border-gray-200'
-                  }`}
-                  title={usedBy.length > 0 ? `Used by: ${usedBy.map(m => m.department_name).join(', ')}` : 'Not used'}
-                >
-                  {cat.label}
-                  {usedBy.length > 0 && (
-                    <span className="ml-1 text-blue-500">({usedBy.length})</span>
-                  )}
-                </span>
-              );
-            })}
           </div>
         </div>
       </div>

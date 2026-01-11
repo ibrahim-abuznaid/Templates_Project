@@ -8,101 +8,20 @@ const router = express.Router();
 const PUBLIC_LIBRARY_API_URL = 'https://cloud.activepieces.com/api/v1/admin/templates/categories';
 const PUBLIC_LIBRARY_API_KEY = process.env.PUBLIC_LIBRARY_API_KEY || '';
 
-// Valid template categories from Activepieces API (used when publishing templates)
-const VALID_TEMPLATE_CATEGORIES = [
-  'ANALYTICS',
-  'COMMUNICATION',
-  'CONTENT',
-  'CUSTOMER_SUPPORT',
-  'DEVELOPMENT',
-  'E_COMMERCE',
-  'FINANCE',
-  'HR',
-  'IT_OPERATIONS',
-  'MARKETING',
-  'PRODUCTIVITY',
-  'SALES'
-];
-
-// Human-readable labels for categories
-const CATEGORY_LABELS = {
-  'ANALYTICS': 'Analytics',
-  'COMMUNICATION': 'Communication',
-  'CONTENT': 'Content',
-  'CUSTOMER_SUPPORT': 'Customer Support',
-  'DEVELOPMENT': 'Development',
-  'E_COMMERCE': 'E-Commerce',
-  'FINANCE': 'Finance',
-  'HR': 'HR',
-  'IT_OPERATIONS': 'IT Operations',
-  'MARKETING': 'Marketing',
-  'PRODUCTIVITY': 'Productivity',
-  'SALES': 'Sales'
-};
-
-// Map department names to valid API categories (same logic used when publishing templates)
+// Convert department name to API category format
+// Now that we can sync custom categories to Public Library, we send department names directly
+// Format: Convert to UPPERCASE_WITH_UNDERSCORES (e.g., "Customer Support" -> "CUSTOMER_SUPPORT", "Legal" -> "LEGAL")
 const mapDepartmentToCategory = (departmentName) => {
-  if (!departmentName) return { category: 'PRODUCTIVITY', label: 'Productivity', isDefault: true };
+  if (!departmentName) return { category: null, label: null };
   
-  const normalized = departmentName.toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
+  // Convert to API format: uppercase with underscores
+  const category = departmentName.toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
   
-  // Direct match
-  if (VALID_TEMPLATE_CATEGORIES.includes(normalized)) {
-    return { category: normalized, label: CATEGORY_LABELS[normalized], isDefault: false, matchType: 'direct' };
-  }
-  
-  // Common mappings
-  const mappings = {
-    'CUSTOMER_SERVICE': 'CUSTOMER_SUPPORT',
-    'SUPPORT': 'CUSTOMER_SUPPORT',
-    'HUMAN_RESOURCES': 'HR',
-    'DEV': 'DEVELOPMENT',
-    'ENGINEERING': 'DEVELOPMENT',
-    'ECOMMERCE': 'E_COMMERCE',
-    'E-COMMERCE': 'E_COMMERCE',
-    'SHOP': 'E_COMMERCE',
-    'STORE': 'E_COMMERCE',
-    'IT': 'IT_OPERATIONS',
-    'OPERATIONS': 'IT_OPERATIONS',
-    'OPS': 'IT_OPERATIONS',
-    'DEVOPS': 'IT_OPERATIONS',
-    'ADVERTISING': 'MARKETING',
-    'ADS': 'MARKETING',
-    'CRM': 'SALES',
-    'QA': 'DEVELOPMENT',
-    'TESTING': 'DEVELOPMENT',
-    'SECURITY': 'IT_OPERATIONS',
-    'DATA': 'ANALYTICS',
-    'REPORTING': 'ANALYTICS',
-    'DOCS': 'CONTENT',
-    'DOCUMENTATION': 'CONTENT',
-    'WRITING': 'CONTENT',
-    'EMAIL': 'COMMUNICATION',
-    'MESSAGING': 'COMMUNICATION',
-    'CHAT': 'COMMUNICATION',
-    'AUTOMATION': 'PRODUCTIVITY',
-    'WORKFLOW': 'PRODUCTIVITY',
-    'GENERAL': 'PRODUCTIVITY',
-    'OTHER': 'PRODUCTIVITY',
-    'EVERYONE___EVERYDAY': 'PRODUCTIVITY',
-    'EVERYONE_EVERYDAY': 'PRODUCTIVITY',
-    'LEGAL': 'PRODUCTIVITY',
-    'COMPLIANCE': 'PRODUCTIVITY',
-    'PRODUCT': 'PRODUCTIVITY'
+  return { 
+    category, 
+    label: departmentName, // Human readable is the department name itself
+    matchType: 'direct' // All mappings are now direct (no conversion)
   };
-  
-  const mappedCategory = mappings[normalized];
-  if (mappedCategory) {
-    return { 
-      category: mappedCategory, 
-      label: CATEGORY_LABELS[mappedCategory], 
-      isDefault: false, 
-      matchType: 'mapped' 
-    };
-  }
-  
-  // Default to PRODUCTIVITY
-  return { category: 'PRODUCTIVITY', label: 'Productivity', isDefault: true, matchType: 'default' };
 };
 
 // Get all departments (basic list)
@@ -168,36 +87,14 @@ router.get('/mapping', authenticateToken, requireAdmin, async (req, res) => {
         department_name: dept.name,
         maps_to_category: mapping.category,
         maps_to_label: mapping.label,
-        match_type: mapping.matchType || (mapping.isDefault ? 'default' : 'direct'),
-        is_default_fallback: mapping.isDefault || false
+        match_type: 'direct' // All mappings are now direct (department name = category)
       };
-    });
-
-    // Group by target category
-    const byCategory = {};
-    mappings.forEach(m => {
-      if (!byCategory[m.maps_to_category]) {
-        byCategory[m.maps_to_category] = {
-          category: m.maps_to_category,
-          label: m.maps_to_label,
-          departments: []
-        };
-      }
-      byCategory[m.maps_to_category].departments.push({
-        id: m.id,
-        name: m.department_name,
-        match_type: m.match_type
-      });
     });
 
     res.json({
       mappings,
-      by_category: Object.values(byCategory),
-      valid_categories: VALID_TEMPLATE_CATEGORIES.map(c => ({
-        category: c,
-        label: CATEGORY_LABELS[c]
-      })),
       total_departments: departments.length,
+      note: 'Categories are now sent directly as department names (no conversion). Make sure to sync categories to Public Library first.',
       generated_at: new Date().toISOString()
     });
   } catch (error) {

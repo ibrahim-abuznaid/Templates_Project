@@ -398,16 +398,10 @@ export const departmentsApi = {
         department_name: string;
         maps_to_category: string;
         maps_to_label: string;
-        match_type: 'direct' | 'mapped' | 'default';
-        is_default_fallback: boolean;
+        match_type: 'direct';
       }>;
-      by_category: Array<{
-        category: string;
-        label: string;
-        departments: Array<{ id: number; name: string; match_type: string }>;
-      }>;
-      valid_categories: Array<{ category: string; label: string }>;
       total_departments: number;
+      note: string;
       generated_at: string;
     }>('/departments/mapping'),
 };

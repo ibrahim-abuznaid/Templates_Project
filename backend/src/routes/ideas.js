@@ -188,52 +188,17 @@ const VALID_TEMPLATE_CATEGORIES = [
   'SALES'
 ];
 
-// Map department names to valid API categories
+// Convert department name to API category format
+// Now that we can sync custom categories to Public Library, we send department names directly
+// Format: Convert to UPPERCASE_WITH_UNDERSCORES (e.g., "Customer Support" -> "CUSTOMER_SUPPORT", "Legal" -> "LEGAL")
 const mapDepartmentToCategory = (departmentName) => {
   if (!departmentName) return null;
   
-  const normalized = departmentName.toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
-  
-  // Direct match
-  if (VALID_TEMPLATE_CATEGORIES.includes(normalized)) {
-    return normalized;
-  }
-  
-  // Common mappings
-  const mappings = {
-    'CUSTOMER_SERVICE': 'CUSTOMER_SUPPORT',
-    'SUPPORT': 'CUSTOMER_SUPPORT',
-    'HUMAN_RESOURCES': 'HR',
-    'DEV': 'DEVELOPMENT',
-    'ENGINEERING': 'DEVELOPMENT',
-    'ECOMMERCE': 'E_COMMERCE',
-    'E-COMMERCE': 'E_COMMERCE',
-    'SHOP': 'E_COMMERCE',
-    'STORE': 'E_COMMERCE',
-    'IT': 'IT_OPERATIONS',
-    'OPERATIONS': 'IT_OPERATIONS',
-    'OPS': 'IT_OPERATIONS',
-    'DEVOPS': 'IT_OPERATIONS',
-    'ADVERTISING': 'MARKETING',
-    'ADS': 'MARKETING',
-    'CRM': 'SALES',
-    'QA': 'DEVELOPMENT',
-    'TESTING': 'DEVELOPMENT',
-    'SECURITY': 'IT_OPERATIONS',
-    'DATA': 'ANALYTICS',
-    'REPORTING': 'ANALYTICS',
-    'DOCS': 'CONTENT',
-    'DOCUMENTATION': 'CONTENT',
-    'WRITING': 'CONTENT',
-    'EMAIL': 'COMMUNICATION',
-    'MESSAGING': 'COMMUNICATION',
-    'CHAT': 'COMMUNICATION',
-    'AUTOMATION': 'PRODUCTIVITY',
-    'WORKFLOW': 'PRODUCTIVITY',
-    'GENERAL': 'PRODUCTIVITY'
-  };
-  
-  return mappings[normalized] || 'PRODUCTIVITY'; // Default to PRODUCTIVITY
+  // Convert to API format: uppercase with underscores
+  // "Customer Support" -> "CUSTOMER_SUPPORT"
+  // "Legal" -> "LEGAL"
+  // "E-Commerce" -> "E_COMMERCE"
+  return departmentName.toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
 };
 
 // Extract flows array from uploaded flow JSON
