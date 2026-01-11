@@ -310,7 +310,31 @@ export async function initDatabase() {
       id SERIAL PRIMARY KEY,
       name VARCHAR(255) UNIQUE NOT NULL,
       description TEXT,
+      display_order INTEGER DEFAULT 999,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- Suggested ideas table
+    CREATE TABLE IF NOT EXISTS suggested_ideas (
+      id SERIAL PRIMARY KEY,
+      flow_name VARCHAR(255) NOT NULL,
+      idea_notes TEXT,
+      status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'denied')),
+      suggested_by INTEGER REFERENCES users(id),
+      reviewed_by INTEGER REFERENCES users(id),
+      review_note TEXT,
+      converted_idea_id INTEGER REFERENCES ideas(id),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      reviewed_at TIMESTAMP
+    );
+    
+    -- Suggested idea departments join table
+    CREATE TABLE IF NOT EXISTS suggested_idea_departments (
+      id SERIAL PRIMARY KEY,
+      suggested_idea_id INTEGER REFERENCES suggested_ideas(id) ON DELETE CASCADE,
+      department_id INTEGER REFERENCES departments(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(suggested_idea_id, department_id)
     );
 
     -- Idea-Departments join table (many-to-many)
@@ -434,6 +458,13 @@ async function migrateNewColumns() {
 
 async function seedDefaultDepartments() {
   try {
+    // First, ensure display_order column exists (for existing databases)
+    await pool.query(`
+      ALTER TABLE departments ADD COLUMN IF NOT EXISTS display_order INTEGER DEFAULT 999
+    `).catch(() => {
+      // Ignore if column already exists
+    });
+
     const result = await pool.query('SELECT COUNT(*) as count FROM departments');
     const deptCount = parseInt(result.rows[0].count);
 
@@ -441,30 +472,46 @@ async function seedDefaultDepartments() {
       console.log('📝 Seeding default departments...');
 
       const defaultDepartments = [
-        { name: 'HR', description: 'Human Resources' },
+        { name: 'Analytics', description: 'Analytics and Business Intelligence' },
+        { name: 'Communication', description: 'Communication and Messaging' },
+        { name: 'Content', description: 'Content Creation and Management' },
+        { name: 'Customer Support', description: 'Customer Support and Success' },
+        { name: 'Development', description: 'Software Development' },
+        { name: 'E-Commerce', description: 'E-Commerce and Online Sales' },
         { name: 'Finance', description: 'Finance and Accounting' },
-        { name: 'Marketing', description: 'Marketing and Communications' },
-        { name: 'Sales', description: 'Sales and Business Development' },
-        { name: 'IT', description: 'Information Technology' },
-        { name: 'Operations', description: 'Operations and Logistics' },
-        { name: 'Customer Service', description: 'Customer Support and Success' },
-        { name: 'Legal', description: 'Legal and Compliance' },
-        { name: 'Product', description: 'Product Management' },
-        { name: 'Engineering', description: 'Software Engineering' },
-        { name: 'Everyone - Everyday', description: 'Universal templates for daily use' },
-        { name: 'Other', description: 'Other Departments' }
+        { name: 'Human Resources', description: 'Human Resources and Recruitment' },
+        { name: 'IT Operations', description: 'IT Operations and Infrastructure' },
+        { name: 'Marketing', description: 'Marketing and Advertising' },
+        { name: 'Productivity', description: 'Productivity and Automation' },
+        { name: 'Sales', description: 'Sales and Business Development' }
       ];
 
-      for (const dept of defaultDepartments) {
+      for (let i = 0; i < defaultDepartments.length; i++) {
+        const dept = defaultDepartments[i];
         await pool.query(
-          'INSERT INTO departments (name, description) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING',
-          [dept.name, dept.description]
+          'INSERT INTO departments (name, description, display_order) VALUES ($1, $2, $3) ON CONFLICT (name) DO NOTHING',
+          [dept.name, dept.description, i + 1]
         );
       }
 
       console.log(`✅ Created ${defaultDepartments.length} default departments`);
     } else {
       console.log(`ℹ️  Database already has ${deptCount} department(s)`);
+      
+      // Update existing departments to have proper display_order if not set
+      await pool.query(`
+        WITH numbered AS (
+          SELECT id, ROW_NUMBER() OVER (ORDER BY name) as rn
+          FROM departments
+          WHERE display_order = 999 OR display_order IS NULL
+        )
+        UPDATE departments d
+        SET display_order = n.rn
+        FROM numbered n
+        WHERE d.id = n.id
+      `).catch(() => {
+        // Ignore errors
+      });
     }
   } catch (err) {
     console.error('⚠️  Error seeding departments:', err.message);

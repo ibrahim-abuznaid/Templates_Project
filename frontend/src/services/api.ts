@@ -289,6 +289,106 @@ export const ideasApi = {
 export const departmentsApi = {
   getAll: () =>
     api.get<Department[]>('/departments'),
+  
+  // Admin endpoints for category management
+  getStats: () =>
+    api.get<{
+      departments: Array<{
+        id: number;
+        name: string;
+        description: string | null;
+        display_order: number;
+        created_at: string;
+        template_count: number;
+        published_count: number;
+        in_progress_count: number;
+      }>;
+      total: number;
+      generated_at: string;
+    }>('/departments/stats'),
+  
+  create: (data: { name: string; description?: string }) =>
+    api.post<{
+      success: boolean;
+      message: string;
+      department: Department;
+    }>('/departments', data),
+  
+  update: (id: number, data: { name: string; description?: string }) =>
+    api.put<{
+      success: boolean;
+      message: string;
+      department: Department;
+      old_name: string;
+    }>(`/departments/${id}`, data),
+  
+  delete: (id: number, migrateToId?: number) =>
+    api.delete<{
+      success: boolean;
+      message: string;
+      deleted_department: Department;
+      templates_migrated: number;
+    }>(`/departments/${id}`, { params: { migrate_to_id: migrateToId } }),
+  
+  reorder: (order: Array<{ id: number; display_order: number }>) =>
+    api.put<{
+      success: boolean;
+      message: string;
+      departments: Department[];
+    }>('/departments/reorder/all', { order }),
+  
+  migrate: (data: {
+    source_id: number;
+    target_id: number;
+    template_ids?: number[];
+    remove_from_source?: boolean;
+  }) =>
+    api.post<{
+      success: boolean;
+      message: string;
+      stats: { total: number; added_to_target: number; removed_from_source: number };
+      migrated_templates: Array<{ id: number; flow_name: string }>;
+      source_department: string;
+      target_department: string;
+    }>('/departments/migrate', data),
+  
+  getTemplates: (id: number) =>
+    api.get<{
+      department: Department;
+      templates: Array<{
+        id: number;
+        flow_name: string;
+        status: string;
+        public_library_id: string | null;
+        created_at: string;
+        updated_at: string;
+        assigned_to_name: string | null;
+      }>;
+      total: number;
+    }>(`/departments/${id}/templates`),
+  
+  // Public Library sync
+  getPublicLibraryPreview: () =>
+    api.get<{
+      success: boolean;
+      preview: {
+        endpoint: string;
+        method: string;
+        headers: Record<string, string>;
+        body: { value: string[] };
+      };
+      departments: Array<{ id: number; name: string; display_order: number }>;
+      warnings: string[];
+    }>('/departments/public-library/preview'),
+  
+  syncToPublicLibrary: () =>
+    api.post<{
+      success: boolean;
+      message: string;
+      synced_categories: string[];
+      api_response: any;
+      synced_at: string;
+    }>('/departments/public-library/sync'),
 };
 
 // Department Views endpoints

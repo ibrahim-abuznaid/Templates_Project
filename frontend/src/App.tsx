@@ -16,6 +16,7 @@ import Analytics from './pages/Analytics';
 import Maintenance from './pages/Maintenance';
 import Suggestions from './pages/Suggestions';
 import Guidebook from './pages/Guidebook';
+import CategoryManagement from './pages/CategoryManagement';
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -130,6 +131,16 @@ const AppRoutes: React.FC = () => {
           <PrivateRoute>
             <Layout>
               <Maintenance />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/categories"
+        element={
+          <PrivateRoute>
+            <Layout>
+              <CategoryManagement />
             </Layout>
           </PrivateRoute>
         }

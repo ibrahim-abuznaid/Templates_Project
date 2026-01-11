@@ -121,6 +121,9 @@ Go to **Settings** → **App-Level Environment Variables** for each component:
 | `DATABASE_URL` | `${db.DATABASE_URL}` | Reference |
 | `JWT_SECRET` | Generate a secure random string (32+ chars) | Secret |
 | `FRONTEND_URL` | `${APP_URL}` | Reference |
+| `TEMPLATES_API_KEY` | Your Activepieces Public Library API key (optional) | Secret |
+
+> **Note**: The `TEMPLATES_API_KEY` is required for syncing categories to the Activepieces Public Library. You can get this key from your Activepieces admin settings. Without this key, the Category Management page will still work for local category management, but sync to Public Library will be disabled.
 
 **To generate a JWT_SECRET**, run in your terminal:
 ```bash
