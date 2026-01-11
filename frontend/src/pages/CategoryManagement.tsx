@@ -1,7 +1,6 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { departmentsApi } from '../services/api';
 import ConfirmModal from '../components/ConfirmModal';
-import { TEMPLATE_CATEGORY_LABELS } from '../types';
 import {
   Tags,
   Plus,
@@ -23,11 +22,8 @@ import {
   Save,
   ArrowRight,
   Link,
-  Unlink,
+  ArrowRightFromLine,
 } from 'lucide-react';
-
-// Public Library category names (exact match required)
-const PUBLIC_LIBRARY_CATEGORIES = Object.values(TEMPLATE_CATEGORY_LABELS);
 
 interface CategoryStat {
   id: number;
@@ -57,9 +53,25 @@ interface SyncPreview {
   body: { value: string[] };
 }
 
+interface CategoryMapping {
+  id: number;
+  department_name: string;
+  maps_to_category: string;
+  maps_to_label: string;
+  match_type: 'direct' | 'mapped' | 'default';
+  is_default_fallback: boolean;
+}
+
+interface ValidCategory {
+  category: string;
+  label: string;
+}
+
 const CategoryManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<CategoryStat[]>([]);
+  const [categoryMappings, setCategoryMappings] = useState<CategoryMapping[]>([]);
+  const [validCategories, setValidCategories] = useState<ValidCategory[]>([]);
   const [hasOrderChanges, setHasOrderChanges] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
 
@@ -118,12 +130,17 @@ const CategoryManagement: React.FC = () => {
     setModal({ ...modal, isOpen: false });
   };
 
-  // Load categories
+  // Load categories and mapping
   const loadCategories = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await departmentsApi.getStats();
-      setCategories(response.data.departments);
+      const [statsResponse, mappingResponse] = await Promise.all([
+        departmentsApi.getStats(),
+        departmentsApi.getMapping()
+      ]);
+      setCategories(statsResponse.data.departments);
+      setCategoryMappings(mappingResponse.data.mappings);
+      setValidCategories(mappingResponse.data.valid_categories);
       setHasOrderChanges(false);
     } catch (error) {
       console.error('Failed to load categories:', error);
@@ -135,6 +152,11 @@ const CategoryManagement: React.FC = () => {
   useEffect(() => {
     loadCategories();
   }, [loadCategories]);
+
+  // Get mapping for a specific category
+  const getMappingForCategory = useCallback((categoryName: string): CategoryMapping | null => {
+    return categoryMappings.find(m => m.department_name === categoryName) || null;
+  }, [categoryMappings]);
 
   // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -448,32 +470,6 @@ const CategoryManagement: React.FC = () => {
     );
   };
 
-  // Check if category name matches a Public Library category
-  const getPublicLibraryMatch = useCallback((categoryName: string): string | null => {
-    // Exact match first
-    if (PUBLIC_LIBRARY_CATEGORIES.includes(categoryName)) {
-      return categoryName;
-    }
-    // Case-insensitive match
-    const lowerName = categoryName.toLowerCase();
-    const match = PUBLIC_LIBRARY_CATEGORIES.find(
-      plc => plc.toLowerCase() === lowerName
-    );
-    return match || null;
-  }, []);
-
-  // Calculate mapping statistics
-  const mappingStats = useMemo(() => {
-    const mapped = categories.filter(c => getPublicLibraryMatch(c.name) !== null);
-    const unmapped = categories.filter(c => getPublicLibraryMatch(c.name) === null);
-    return {
-      total: categories.length,
-      mapped: mapped.length,
-      unmapped: unmapped.length,
-      unmappedCategories: unmapped.map(c => c.name)
-    };
-  }, [categories, getPublicLibraryMatch]);
-
   // Status badge component
   const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
     const colors: Record<string, string> = {
@@ -493,27 +489,33 @@ const CategoryManagement: React.FC = () => {
     );
   };
 
-  // Public Library mapping badge
+  // Public Library mapping badge - shows what the category maps to when publishing
   const MappingBadge: React.FC<{ categoryName: string }> = ({ categoryName }) => {
-    const match = getPublicLibraryMatch(categoryName);
-    if (match) {
-      return (
-        <span 
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-200"
-          title={`Mapped to Public Library: "${match}"`}
-        >
-          <Link className="w-3 h-3" />
-          <span className="hidden xl:inline">Public Library</span>
-        </span>
-      );
-    }
+    const mapping = getMappingForCategory(categoryName);
+    if (!mapping) return null;
+
+    const matchTypeColors = {
+      direct: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+      mapped: 'bg-blue-100 text-blue-700 border-blue-200',
+      default: 'bg-orange-100 text-orange-700 border-orange-200'
+    };
+
+    const matchTypeLabels = {
+      direct: 'Direct Match',
+      mapped: 'Mapped',
+      default: 'Fallback'
+    };
+
     return (
       <span 
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200"
-        title="Not mapped to any Public Library category"
+        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${matchTypeColors[mapping.match_type]}`}
+        title={`Published as "${mapping.maps_to_label}" (${matchTypeLabels[mapping.match_type]})`}
       >
-        <Unlink className="w-3 h-3" />
-        <span className="hidden xl:inline">Not Mapped</span>
+        <ArrowRightFromLine className="w-3 h-3" />
+        <span>{mapping.maps_to_label}</span>
+        {mapping.match_type === 'default' && (
+          <AlertTriangle className="w-3 h-3" />
+        )}
       </span>
     );
   };
@@ -663,86 +665,127 @@ const CategoryManagement: React.FC = () => {
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <Link className="w-5 h-5 text-emerald-600" />
-            Public Library Mapping
+            <Link className="w-5 h-5 text-blue-600" />
+            Category → Public Library Mapping
           </h2>
           <div className="flex items-center gap-4 text-sm">
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-              <span className="text-gray-600">{mappingStats.mapped} mapped</span>
+              <span className="text-gray-600">Direct match</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+              <span className="text-gray-600">Mapped</span>
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-orange-500"></span>
-              <span className="text-gray-600">{mappingStats.unmapped} unmapped</span>
+              <span className="text-gray-600">Fallback</span>
             </span>
           </div>
         </div>
 
-        {/* Valid Public Library Categories Reference */}
-        <div className="bg-gray-50 rounded-xl p-4 mb-4">
-          <p className="text-sm font-medium text-gray-700 mb-2">
-            Valid Public Library Categories (must match exactly):
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {PUBLIC_LIBRARY_CATEGORIES.map(cat => {
-              const isUsed = categories.some(c => getPublicLibraryMatch(c.name) === cat);
-              return (
-                <span
-                  key={cat}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border ${
-                    isUsed
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-white text-gray-500 border-gray-200'
-                  }`}
-                >
-                  {cat}
-                  {isUsed && <CheckCircle className="w-3 h-3 inline ml-1" />}
-                </span>
-              );
-            })}
-          </div>
-        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          When you publish a template, its category is mapped to a Public Library category. Here's how each of your categories will be published:
+        </p>
 
-        {/* Unmapped Categories Warning */}
-        {mappingStats.unmapped > 0 && (
+        {/* Mapping Table */}
+        {categoryMappings.length > 0 && (
+          <div className="border border-gray-200 rounded-xl overflow-hidden mb-4">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Your Category</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">→</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Published As</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Match Type</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {categoryMappings.map(mapping => (
+                  <tr key={mapping.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <span className="font-medium text-gray-900">{mapping.department_name}</span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <ArrowRight className="w-4 h-4 text-gray-400 mx-auto" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`font-medium ${
+                        mapping.match_type === 'default' ? 'text-orange-700' : 'text-gray-900'
+                      }`}>
+                        {mapping.maps_to_label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {mapping.match_type === 'direct' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+                          <CheckCircle className="w-3 h-3" />
+                          Direct
+                        </span>
+                      )}
+                      {mapping.match_type === 'mapped' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                          <Link className="w-3 h-3" />
+                          Mapped
+                        </span>
+                      )}
+                      {mapping.match_type === 'default' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                          <AlertTriangle className="w-3 h-3" />
+                          Fallback
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Fallback Warning */}
+        {categoryMappings.some(m => m.match_type === 'default') && (
           <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-orange-600 mt-0.5" />
               <div>
                 <p className="font-medium text-orange-800">
-                  {mappingStats.unmapped} categor{mappingStats.unmapped === 1 ? 'y' : 'ies'} not mapped to Public Library
+                  Some categories use fallback mapping
                 </p>
                 <p className="text-sm text-orange-700 mt-1">
-                  The following categories will be synced but may not display correctly in the Public Library:
-                </p>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {mappingStats.unmappedCategories.map(name => (
-                    <span
-                      key={name}
-                      className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-300"
-                    >
-                      {name}
-                    </span>
-                  ))}
-                </div>
-                <p className="text-xs text-orange-600 mt-2">
-                  💡 Tip: Rename these categories to match one of the valid Public Library categories above.
+                  Categories marked as "Fallback" don't have a direct or mapped match, so they default to <strong>Productivity</strong>. 
+                  Consider renaming them to a standard category name for better organization in the Public Library.
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        {mappingStats.unmapped === 0 && categories.length > 0 && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-            <div className="flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-emerald-600" />
-              <p className="text-emerald-800">
-                All categories are properly mapped to Public Library categories.
-              </p>
-            </div>
+        {/* Valid Categories Reference */}
+        <div className="mt-4 p-4 bg-gray-50 rounded-xl">
+          <p className="text-sm font-medium text-gray-700 mb-2">Valid Public Library Categories:</p>
+          <div className="flex flex-wrap gap-2">
+            {validCategories.map(cat => {
+              const usedBy = categoryMappings.filter(m => m.maps_to_category === cat.category);
+              return (
+                <span
+                  key={cat.category}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border ${
+                    usedBy.length > 0
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : 'bg-white text-gray-500 border-gray-200'
+                  }`}
+                  title={usedBy.length > 0 ? `Used by: ${usedBy.map(m => m.department_name).join(', ')}` : 'Not used'}
+                >
+                  {cat.label}
+                  {usedBy.length > 0 && (
+                    <span className="ml-1 text-blue-500">({usedBy.length})</span>
+                  )}
+                </span>
+              );
+            })}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Categories List */}

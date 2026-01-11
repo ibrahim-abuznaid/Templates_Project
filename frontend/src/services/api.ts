@@ -389,6 +389,27 @@ export const departmentsApi = {
       api_response: any;
       synced_at: string;
     }>('/departments/public-library/sync'),
+  
+  // Get category mapping (shows what each department maps to when publishing)
+  getMapping: () =>
+    api.get<{
+      mappings: Array<{
+        id: number;
+        department_name: string;
+        maps_to_category: string;
+        maps_to_label: string;
+        match_type: 'direct' | 'mapped' | 'default';
+        is_default_fallback: boolean;
+      }>;
+      by_category: Array<{
+        category: string;
+        label: string;
+        departments: Array<{ id: number; name: string; match_type: string }>;
+      }>;
+      valid_categories: Array<{ category: string; label: string }>;
+      total_departments: number;
+      generated_at: string;
+    }>('/departments/mapping'),
 };
 
 // Department Views endpoints

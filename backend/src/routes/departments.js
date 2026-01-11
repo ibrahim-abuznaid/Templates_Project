@@ -8,6 +8,103 @@ const router = express.Router();
 const PUBLIC_LIBRARY_API_URL = 'https://cloud.activepieces.com/api/v1/admin/templates/categories';
 const TEMPLATES_API_KEY = process.env.TEMPLATES_API_KEY;
 
+// Valid template categories from Activepieces API (used when publishing templates)
+const VALID_TEMPLATE_CATEGORIES = [
+  'ANALYTICS',
+  'COMMUNICATION',
+  'CONTENT',
+  'CUSTOMER_SUPPORT',
+  'DEVELOPMENT',
+  'E_COMMERCE',
+  'FINANCE',
+  'HR',
+  'IT_OPERATIONS',
+  'MARKETING',
+  'PRODUCTIVITY',
+  'SALES'
+];
+
+// Human-readable labels for categories
+const CATEGORY_LABELS = {
+  'ANALYTICS': 'Analytics',
+  'COMMUNICATION': 'Communication',
+  'CONTENT': 'Content',
+  'CUSTOMER_SUPPORT': 'Customer Support',
+  'DEVELOPMENT': 'Development',
+  'E_COMMERCE': 'E-Commerce',
+  'FINANCE': 'Finance',
+  'HR': 'HR',
+  'IT_OPERATIONS': 'IT Operations',
+  'MARKETING': 'Marketing',
+  'PRODUCTIVITY': 'Productivity',
+  'SALES': 'Sales'
+};
+
+// Map department names to valid API categories (same logic used when publishing templates)
+const mapDepartmentToCategory = (departmentName) => {
+  if (!departmentName) return { category: 'PRODUCTIVITY', label: 'Productivity', isDefault: true };
+  
+  const normalized = departmentName.toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
+  
+  // Direct match
+  if (VALID_TEMPLATE_CATEGORIES.includes(normalized)) {
+    return { category: normalized, label: CATEGORY_LABELS[normalized], isDefault: false, matchType: 'direct' };
+  }
+  
+  // Common mappings
+  const mappings = {
+    'CUSTOMER_SERVICE': 'CUSTOMER_SUPPORT',
+    'SUPPORT': 'CUSTOMER_SUPPORT',
+    'HUMAN_RESOURCES': 'HR',
+    'DEV': 'DEVELOPMENT',
+    'ENGINEERING': 'DEVELOPMENT',
+    'ECOMMERCE': 'E_COMMERCE',
+    'E-COMMERCE': 'E_COMMERCE',
+    'SHOP': 'E_COMMERCE',
+    'STORE': 'E_COMMERCE',
+    'IT': 'IT_OPERATIONS',
+    'OPERATIONS': 'IT_OPERATIONS',
+    'OPS': 'IT_OPERATIONS',
+    'DEVOPS': 'IT_OPERATIONS',
+    'ADVERTISING': 'MARKETING',
+    'ADS': 'MARKETING',
+    'CRM': 'SALES',
+    'QA': 'DEVELOPMENT',
+    'TESTING': 'DEVELOPMENT',
+    'SECURITY': 'IT_OPERATIONS',
+    'DATA': 'ANALYTICS',
+    'REPORTING': 'ANALYTICS',
+    'DOCS': 'CONTENT',
+    'DOCUMENTATION': 'CONTENT',
+    'WRITING': 'CONTENT',
+    'EMAIL': 'COMMUNICATION',
+    'MESSAGING': 'COMMUNICATION',
+    'CHAT': 'COMMUNICATION',
+    'AUTOMATION': 'PRODUCTIVITY',
+    'WORKFLOW': 'PRODUCTIVITY',
+    'GENERAL': 'PRODUCTIVITY',
+    'OTHER': 'PRODUCTIVITY',
+    'EVERYONE___EVERYDAY': 'PRODUCTIVITY',
+    'EVERYONE_EVERYDAY': 'PRODUCTIVITY',
+    'LEGAL': 'PRODUCTIVITY',
+    'COMPLIANCE': 'PRODUCTIVITY',
+    'PRODUCT': 'PRODUCTIVITY'
+  };
+  
+  const mappedCategory = mappings[normalized];
+  if (mappedCategory) {
+    return { 
+      category: mappedCategory, 
+      label: CATEGORY_LABELS[mappedCategory], 
+      isDefault: false, 
+      matchType: 'mapped' 
+    };
+  }
+  
+  // Default to PRODUCTIVITY
+  return { category: 'PRODUCTIVITY', label: 'Productivity', isDefault: true, matchType: 'default' };
+};
+
 // Get all departments (basic list)
 router.get('/', authenticateToken, async (req, res) => {
   try {
@@ -52,6 +149,60 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error fetching department stats:', error);
     res.status(500).json({ error: 'Failed to fetch department statistics' });
+  }
+});
+
+// Get category mapping for all departments (shows what each department maps to in Public Library)
+router.get('/mapping', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const departments = await db.prepare(`
+      SELECT id, name, description, display_order
+      FROM departments
+      ORDER BY display_order, name
+    `).all();
+
+    const mappings = departments.map(dept => {
+      const mapping = mapDepartmentToCategory(dept.name);
+      return {
+        id: dept.id,
+        department_name: dept.name,
+        maps_to_category: mapping.category,
+        maps_to_label: mapping.label,
+        match_type: mapping.matchType || (mapping.isDefault ? 'default' : 'direct'),
+        is_default_fallback: mapping.isDefault || false
+      };
+    });
+
+    // Group by target category
+    const byCategory = {};
+    mappings.forEach(m => {
+      if (!byCategory[m.maps_to_category]) {
+        byCategory[m.maps_to_category] = {
+          category: m.maps_to_category,
+          label: m.maps_to_label,
+          departments: []
+        };
+      }
+      byCategory[m.maps_to_category].departments.push({
+        id: m.id,
+        name: m.department_name,
+        match_type: m.match_type
+      });
+    });
+
+    res.json({
+      mappings,
+      by_category: Object.values(byCategory),
+      valid_categories: VALID_TEMPLATE_CATEGORIES.map(c => ({
+        category: c,
+        label: CATEGORY_LABELS[c]
+      })),
+      total_departments: departments.length,
+      generated_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error fetching department mappings:', error);
+    res.status(500).json({ error: 'Failed to fetch department mappings' });
   }
 });
 
