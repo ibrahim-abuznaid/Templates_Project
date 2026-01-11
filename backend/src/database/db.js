@@ -50,13 +50,23 @@ function createPool() {
   pool = new Pool({
     connectionString,
     ssl: sslConfig,
-    max: 20,     // Maximum connections in pool
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,  // Increased timeout for external DBs
+    max: 20,                        // Maximum connections in pool
+    min: 2,                         // Keep minimum 2 connections always open
+    idleTimeoutMillis: 300000,      // 5 minutes (was 30 seconds) - keep connections alive longer
+    connectionTimeoutMillis: 10000, // 10 seconds timeout for new connections
+    keepAlive: true,                // Enable TCP keepalive
+    keepAliveInitialDelayMillis: 10000, // Start keepalive after 10 seconds
   });
 
   pool.on('error', (err) => {
     console.error('❌ PostgreSQL pool error:', err);
+  });
+
+  // Warm up the pool - create initial connections
+  pool.query('SELECT 1').then(() => {
+    console.log('🔥 Database pool warmed up');
+  }).catch(err => {
+    console.error('❌ Pool warmup failed:', err.message);
   });
 
   return pool;
