@@ -96,11 +96,12 @@ const CategoryManagement: React.FC = () => {
   const [syncPreview, setSyncPreview] = useState<SyncPreview | null>(null);
   const [syncWarnings, setSyncWarnings] = useState<string[]>([]);
   const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string; categories?: string[] } | null>(null);
   
   // Template resync state
   const [resyncingTemplates, setResyncingTemplates] = useState(false);
-  const [resyncResult, setResyncResult] = useState<{ success: boolean; message: string; stats?: any } | null>(null);
+  const [resyncResult, setResyncResult] = useState<{ success: boolean; message: string; stats?: any; details?: any[] } | null>(null);
+  const [showResyncDetails, setShowResyncDetails] = useState(false);
 
   // Confirm modal
   const [modal, setModal] = useState<{
@@ -435,7 +436,8 @@ const CategoryManagement: React.FC = () => {
           const response = await departmentsApi.syncToPublicLibrary();
           setSyncResult({
             success: true,
-            message: response.data.message
+            message: response.data.message,
+            categories: response.data.synced_categories
           });
         } catch (error: any) {
           setSyncResult({
@@ -459,12 +461,14 @@ const CategoryManagement: React.FC = () => {
       onConfirm: async () => {
         setResyncingTemplates(true);
         setResyncResult(null);
+        setShowResyncDetails(false);
         try {
           const response = await ideasApi.syncAllToPublicLibrary();
           setResyncResult({
             success: true,
             message: `Synced ${response.data.stats.synced} templates. ${response.data.stats.skippedValidation} skipped, ${response.data.stats.errors} errors.`,
-            stats: response.data.stats
+            stats: response.data.stats,
+            details: response.data.details
           });
         } catch (error: any) {
           setResyncResult({
@@ -667,6 +671,21 @@ const CategoryManagement: React.FC = () => {
                 {syncResult.message}
               </span>
             </div>
+            {syncResult.categories && syncResult.categories.length > 0 && (
+              <div className="mt-3">
+                <p className="text-sm font-medium text-green-700 mb-2">Categories synced to Public Library:</p>
+                <div className="flex flex-wrap gap-2">
+                  {syncResult.categories.map((cat, index) => (
+                    <span
+                      key={index}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-green-100 text-green-800 border border-green-200"
+                    >
+                      {index + 1}. {cat}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -702,15 +721,25 @@ const CategoryManagement: React.FC = () => {
 
         {resyncResult && (
           <div className={`mt-4 p-4 rounded-xl ${resyncResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-            <div className="flex items-center gap-3">
-              {resyncResult.success ? (
-                <CheckCircle className="w-5 h-5 text-green-600" />
-              ) : (
-                <AlertTriangle className="w-5 h-5 text-red-600" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {resyncResult.success ? (
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                ) : (
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                )}
+                <span className={resyncResult.success ? 'text-green-800' : 'text-red-800'}>
+                  {resyncResult.message}
+                </span>
+              </div>
+              {resyncResult.details && resyncResult.details.length > 0 && (
+                <button
+                  onClick={() => setShowResyncDetails(!showResyncDetails)}
+                  className="text-sm text-purple-600 hover:text-purple-800 font-medium"
+                >
+                  {showResyncDetails ? 'Hide Details' : 'Show Details'}
+                </button>
               )}
-              <span className={resyncResult.success ? 'text-green-800' : 'text-red-800'}>
-                {resyncResult.message}
-              </span>
             </div>
             {resyncResult.stats && (
               <div className="mt-2 flex gap-4 text-sm">
@@ -718,6 +747,53 @@ const CategoryManagement: React.FC = () => {
                 <span className="text-green-600">Synced: {resyncResult.stats.synced}</span>
                 <span className="text-orange-600">Skipped: {resyncResult.stats.skippedValidation}</span>
                 <span className="text-red-600">Errors: {resyncResult.stats.errors}</span>
+              </div>
+            )}
+            
+            {/* Sync Details */}
+            {showResyncDetails && resyncResult.details && (
+              <div className="mt-4 max-h-64 overflow-y-auto border border-gray-200 rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-100 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Template</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Status</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {resyncResult.details.map((detail: any, index: number) => (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-3 py-2 font-medium text-gray-900 max-w-xs truncate" title={detail.flow_name}>
+                          {detail.flow_name}
+                        </td>
+                        <td className="px-3 py-2">
+                          {detail.action === 'updated' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                              <CheckCircle className="w-3 h-3" />
+                              Updated
+                            </span>
+                          )}
+                          {detail.action === 'skipped' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                              <AlertTriangle className="w-3 h-3" />
+                              Skipped
+                            </span>
+                          )}
+                          {detail.action === 'error' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                              <X className="w-3 h-3" />
+                              Error
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 text-xs max-w-xs truncate" title={detail.reason || detail.error || detail.public_library_id}>
+                          {detail.reason || detail.error || detail.public_library_id || '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

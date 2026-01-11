@@ -8,19 +8,16 @@ const router = express.Router();
 const PUBLIC_LIBRARY_API_URL = 'https://cloud.activepieces.com/api/v1/admin/templates/categories';
 const PUBLIC_LIBRARY_API_KEY = process.env.PUBLIC_LIBRARY_API_KEY || '';
 
-// Convert department name to API category format
-// Now that we can sync custom categories to Public Library, we send department names directly
-// Format: Convert to UPPERCASE_WITH_UNDERSCORES (e.g., "Customer Support" -> "CUSTOMER_SUPPORT", "Legal" -> "LEGAL")
+// Send department name directly to Public Library (no conversion)
+// The category name must match exactly what was synced via the categories endpoint
 const mapDepartmentToCategory = (departmentName) => {
   if (!departmentName) return { category: null, label: null };
   
-  // Convert to API format: uppercase with underscores
-  const category = departmentName.toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
-  
+  // Return department name as-is (must match what was synced to categories)
   return { 
-    category, 
-    label: departmentName, // Human readable is the department name itself
-    matchType: 'direct' // All mappings are now direct (no conversion)
+    category: departmentName, 
+    label: departmentName,
+    matchType: 'direct'
   };
 };
 

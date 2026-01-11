@@ -188,17 +188,15 @@ const VALID_TEMPLATE_CATEGORIES = [
   'SALES'
 ];
 
-// Convert department name to API category format
-// Now that we can sync custom categories to Public Library, we send department names directly
-// Format: Convert to UPPERCASE_WITH_UNDERSCORES (e.g., "Customer Support" -> "CUSTOMER_SUPPORT", "Legal" -> "LEGAL")
+// Send department name directly to Public Library (no conversion)
+// The category name must match exactly what was synced via the categories endpoint
 const mapDepartmentToCategory = (departmentName) => {
   if (!departmentName) return null;
   
-  // Convert to API format: uppercase with underscores
-  // "Customer Support" -> "CUSTOMER_SUPPORT"
-  // "Legal" -> "LEGAL"
-  // "E-Commerce" -> "E_COMMERCE"
-  return departmentName.toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
+  // Return department name as-is (must match what was synced to categories)
+  // "Legal" -> "Legal"
+  // "Customer Service" -> "Customer Service"
+  return departmentName;
 };
 
 // Extract flows array from uploaded flow JSON
