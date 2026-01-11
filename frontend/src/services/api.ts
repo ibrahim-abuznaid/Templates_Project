@@ -21,6 +21,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 60000, // Default 60 second timeout
 });
 
 // Add auth token to requests
@@ -263,6 +264,7 @@ export const ideasApi = {
     }>('/ideas/admin/sync-formats'),
 
   // Admin: Sync published templates (already in Public Library) - UPDATE ONLY, no new creations
+  // Note: Long timeout (10 minutes) because this can take a while with many templates
   syncAllToPublicLibrary: () =>
     api.post<{
       success: boolean;
@@ -282,7 +284,7 @@ export const ideasApi = {
         reason?: string;
         error?: string;
       }>;
-    }>('/ideas/admin/sync-all-public-library'),
+    }>('/ideas/admin/sync-all-public-library', {}, { timeout: 600000 }), // 10 minute timeout
 };
 
 // Departments endpoints
