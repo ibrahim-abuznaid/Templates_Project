@@ -577,7 +577,7 @@ export const blockersApi = {
 
 // Analytics endpoints
 export const analyticsApi = {
-  getFreelancerReport: (period: 'weekly' | 'monthly' | 'all' = 'monthly', freelancerId?: number) =>
+  getFreelancerReport: (period: 'weekly' | 'past_week' | 'monthly' | 'all' = 'monthly', freelancerId?: number) =>
     api.get<{
       period: string;
       reports: Array<{

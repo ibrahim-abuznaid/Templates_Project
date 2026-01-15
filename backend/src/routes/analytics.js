@@ -139,7 +139,8 @@ router.post('/send-bulk-reminders', authenticateToken, authorizeRoles('admin'), 
 });
 
 // Helper function to get week boundaries for Thursday 2 PM Jordan time
-const getWeekBoundaries = () => {
+// weeksAgo: 0 = current week, 1 = past week, 2 = two weeks ago, etc.
+const getWeekBoundaries = (weeksAgo = 0) => {
   // Jordan time is UTC+2 (or UTC+3 during DST, but Asia/Amman handles this)
   const now = new Date();
   
@@ -158,6 +159,11 @@ const getWeekBoundaries = () => {
   if (daysToThursday === 0 && hour < 14) daysToThursday = 7; // If Thursday but before 2 PM, use last Thursday
   
   weekStart.setDate(weekStart.getDate() - daysToThursday);
+  
+  // Subtract additional weeks if looking at past weeks
+  if (weeksAgo > 0) {
+    weekStart.setDate(weekStart.getDate() - (weeksAgo * 7));
+  }
   
   // Week end is 7 days after week start
   let weekEnd = new Date(weekStart);
@@ -178,7 +184,12 @@ router.get('/freelancer-report', authenticateToken, authorizeRoles('admin'), asy
     if (period === 'weekly') {
       // Weekly: Thursday 2:00 PM Jordan time to next Thursday 2:00 PM Jordan time
       // Count templates that were SUBMITTED within this period
-      const { weekStart, weekEnd } = getWeekBoundaries();
+      const { weekStart, weekEnd } = getWeekBoundaries(0);
+      dateFilter = "st.submitted_at >= $PARAM1 AND st.submitted_at < $PARAM2";
+      dateParams = [weekStart.toISOString(), weekEnd.toISOString()];
+    } else if (period === 'past_week') {
+      // Past Week: Previous Thursday 2:00 PM to the Thursday before that
+      const { weekStart, weekEnd } = getWeekBoundaries(1);
       dateFilter = "st.submitted_at >= $PARAM1 AND st.submitted_at < $PARAM2";
       dateParams = [weekStart.toISOString(), weekEnd.toISOString()];
     } else if (period === 'monthly') {

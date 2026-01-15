@@ -88,7 +88,7 @@ const Analytics: React.FC = () => {
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [freelancerReports, setFreelancerReports] = useState<FreelancerReport[]>([]);
   const [creationData, setCreationData] = useState<CreationData | null>(null);
-  const [reportPeriod, setReportPeriod] = useState<'weekly' | 'monthly' | 'all'>('monthly');
+  const [reportPeriod, setReportPeriod] = useState<'weekly' | 'past_week' | 'monthly' | 'all'>('monthly');
   const [maintenanceIssues, setMaintenanceIssues] = useState(0);
 
   useEffect(() => {
@@ -430,9 +430,10 @@ const Analytics: React.FC = () => {
             <select
               value={reportPeriod}
               onChange={(e) => setReportPeriod(e.target.value as any)}
-              className="input-field w-40"
+              className="input-field w-44"
             >
-              <option value="weekly">Weekly</option>
+              <option value="weekly">This Week</option>
+              <option value="past_week">Past Week</option>
               <option value="monthly">Monthly</option>
               <option value="all">All Time</option>
             </select>
