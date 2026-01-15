@@ -143,16 +143,50 @@ router.get('/freelancer-report', authenticateToken, authorizeRoles('admin'), asy
   try {
     const { period = 'monthly', freelancerId } = req.query;
     
+    // Calculate weekly period: Thursday 2:00 PM Jordan time to next Thursday 2:00 PM Jordan time
     // Calculate date range based on period (PostgreSQL compatible)
+    let weekStartCalc = '';
+    let weekEndCalc = '';
     let dateFilter;
+    
     if (period === 'weekly') {
-      dateFilter = "i.created_at >= NOW() - INTERVAL '7 days'";
+      // Calculate this week's Thursday 2:00 PM Jordan time
+      // PostgreSQL: DATE_TRUNC('week', ...) gives Monday, add 3 days for Thursday, add 14 hours for 2 PM
+      weekStartCalc = `
+        , week_period AS (
+          SELECT 
+            -- Get the most recent Thursday 2 PM Jordan time
+            CASE 
+              WHEN EXTRACT(DOW FROM NOW() AT TIME ZONE 'Asia/Amman') < 4 OR 
+                   (EXTRACT(DOW FROM NOW() AT TIME ZONE 'Asia/Amman') = 4 AND 
+                    EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Asia/Amman') < 14)
+              THEN 
+                -- Before this week's Thursday 2 PM, so use last week's Thursday
+                (DATE_TRUNC('week', NOW() AT TIME ZONE 'Asia/Amman') - INTERVAL '4 days' + INTERVAL '14 hours') AT TIME ZONE 'Asia/Amman' AT TIME ZONE 'UTC'
+              ELSE 
+                -- After this week's Thursday 2 PM, so use this week's Thursday
+                (DATE_TRUNC('week', NOW() AT TIME ZONE 'Asia/Amman') + INTERVAL '3 days' + INTERVAL '14 hours') AT TIME ZONE 'Asia/Amman' AT TIME ZONE 'UTC'
+            END as week_start,
+            CASE 
+              WHEN EXTRACT(DOW FROM NOW() AT TIME ZONE 'Asia/Amman') < 4 OR 
+                   (EXTRACT(DOW FROM NOW() AT TIME ZONE 'Asia/Amman') = 4 AND 
+                    EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Asia/Amman') < 14)
+              THEN 
+                -- Before this week's Thursday 2 PM, so end is this Thursday
+                (DATE_TRUNC('week', NOW() AT TIME ZONE 'Asia/Amman') + INTERVAL '3 days' + INTERVAL '14 hours') AT TIME ZONE 'Asia/Amman' AT TIME ZONE 'UTC'
+              ELSE 
+                -- After this week's Thursday 2 PM, so end is next Thursday
+                (DATE_TRUNC('week', NOW() AT TIME ZONE 'Asia/Amman') + INTERVAL '10 days' + INTERVAL '14 hours') AT TIME ZONE 'Asia/Amman' AT TIME ZONE 'UTC'
+            END as week_end
+        )
+      `;
+      dateFilter = "submission_time.created_at >= week_period.week_start AND submission_time.created_at < week_period.week_end";
     } else if (period === 'monthly') {
-      dateFilter = "i.created_at >= NOW() - INTERVAL '30 days'";
+      dateFilter = "submission_time.created_at >= NOW() - INTERVAL '30 days'";
     } else if (period === 'all') {
       dateFilter = "1=1";
     } else {
-      dateFilter = "i.created_at >= NOW() - INTERVAL '30 days'";
+      dateFilter = "submission_time.created_at >= NOW() - INTERVAL '30 days'";
     }
 
     let query;
@@ -160,44 +194,70 @@ router.get('/freelancer-report', authenticateToken, authorizeRoles('admin'), asy
 
     if (freelancerId) {
       // Report for specific freelancer
+      // Count templates based on submission time from activity_log
       query = `
+        WITH submission_time AS (
+          SELECT 
+            a.idea_id,
+            MIN(a.created_at) as created_at
+          FROM activity_log a
+          WHERE a.action = 'updated' 
+            AND a.details LIKE '%"status"%"submitted"%'
+          GROUP BY a.idea_id
+        )
+        ${weekStartCalc}
         SELECT 
           u.id as freelancer_id,
           u.username,
           u.email,
-          COUNT(i.id) as total_templates,
-          SUM(CASE WHEN i.status = 'published' THEN 1 ELSE 0 END) as published,
-          SUM(CASE WHEN i.status = 'reviewed' THEN 1 ELSE 0 END) as reviewed,
-          SUM(CASE WHEN i.status = 'submitted' THEN 1 ELSE 0 END) as submitted,
-          SUM(CASE WHEN i.status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
-          SUM(CASE WHEN i.status = 'needs_fixes' THEN 1 ELSE 0 END) as needs_fixes,
-          SUM(CASE WHEN i.status = 'assigned' THEN 1 ELSE 0 END) as assigned,
-          COALESCE(SUM(i.price), 0) as total_earnings,
-          COALESCE(SUM(CASE WHEN i.status = 'published' OR i.status = 'reviewed' THEN i.price ELSE 0 END), 0) as completed_earnings
+          COUNT(DISTINCT CASE WHEN ${dateFilter} THEN i.id END) as total_templates,
+          SUM(CASE WHEN i.status = 'published' AND ${dateFilter} THEN 1 ELSE 0 END) as published,
+          SUM(CASE WHEN i.status = 'reviewed' AND ${dateFilter} THEN 1 ELSE 0 END) as reviewed,
+          SUM(CASE WHEN i.status IN ('submitted', 'reviewed', 'published', 'needs_fixes') AND ${dateFilter} THEN 1 ELSE 0 END) as submitted,
+          SUM(CASE WHEN i.status = 'in_progress' AND ${dateFilter} THEN 1 ELSE 0 END) as in_progress,
+          SUM(CASE WHEN i.status = 'needs_fixes' AND ${dateFilter} THEN 1 ELSE 0 END) as needs_fixes,
+          SUM(CASE WHEN i.status = 'assigned' AND ${dateFilter} THEN 1 ELSE 0 END) as assigned,
+          COALESCE(SUM(CASE WHEN ${dateFilter} THEN i.price ELSE 0 END), 0) as total_earnings,
+          COALESCE(SUM(CASE WHEN (i.status = 'published' OR i.status = 'reviewed') AND ${dateFilter} THEN i.price ELSE 0 END), 0) as completed_earnings
         FROM users u
-        LEFT JOIN ideas i ON u.id = i.assigned_to AND ${dateFilter}
+        ${period === 'weekly' ? ', week_period' : ''}
+        LEFT JOIN ideas i ON u.id = i.assigned_to
+        LEFT JOIN submission_time ON submission_time.idea_id = i.id
         WHERE u.id = $1 AND u.role = 'freelancer'
         GROUP BY u.id, u.username, u.email
       `;
       params = [freelancerId];
     } else {
       // Report for all freelancers
+      // Count templates based on submission time from activity_log
       query = `
+        WITH submission_time AS (
+          SELECT 
+            a.idea_id,
+            MIN(a.created_at) as created_at
+          FROM activity_log a
+          WHERE a.action = 'updated' 
+            AND a.details LIKE '%"status"%"submitted"%'
+          GROUP BY a.idea_id
+        )
+        ${weekStartCalc}
         SELECT 
           u.id as freelancer_id,
           u.username,
           u.email,
-          COUNT(i.id) as total_templates,
-          SUM(CASE WHEN i.status = 'published' THEN 1 ELSE 0 END) as published,
-          SUM(CASE WHEN i.status = 'reviewed' THEN 1 ELSE 0 END) as reviewed,
-          SUM(CASE WHEN i.status = 'submitted' THEN 1 ELSE 0 END) as submitted,
-          SUM(CASE WHEN i.status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
-          SUM(CASE WHEN i.status = 'needs_fixes' THEN 1 ELSE 0 END) as needs_fixes,
-          SUM(CASE WHEN i.status = 'assigned' THEN 1 ELSE 0 END) as assigned,
-          COALESCE(SUM(i.price), 0) as total_earnings,
-          COALESCE(SUM(CASE WHEN i.status = 'published' OR i.status = 'reviewed' THEN i.price ELSE 0 END), 0) as completed_earnings
+          COUNT(DISTINCT CASE WHEN ${dateFilter} THEN i.id END) as total_templates,
+          SUM(CASE WHEN i.status = 'published' AND ${dateFilter} THEN 1 ELSE 0 END) as published,
+          SUM(CASE WHEN i.status = 'reviewed' AND ${dateFilter} THEN 1 ELSE 0 END) as reviewed,
+          SUM(CASE WHEN i.status IN ('submitted', 'reviewed', 'published', 'needs_fixes') AND ${dateFilter} THEN 1 ELSE 0 END) as submitted,
+          SUM(CASE WHEN i.status = 'in_progress' AND ${dateFilter} THEN 1 ELSE 0 END) as in_progress,
+          SUM(CASE WHEN i.status = 'needs_fixes' AND ${dateFilter} THEN 1 ELSE 0 END) as needs_fixes,
+          SUM(CASE WHEN i.status = 'assigned' AND ${dateFilter} THEN 1 ELSE 0 END) as assigned,
+          COALESCE(SUM(CASE WHEN ${dateFilter} THEN i.price ELSE 0 END), 0) as total_earnings,
+          COALESCE(SUM(CASE WHEN (i.status = 'published' OR i.status = 'reviewed') AND ${dateFilter} THEN i.price ELSE 0 END), 0) as completed_earnings
         FROM users u
-        LEFT JOIN ideas i ON u.id = i.assigned_to AND ${dateFilter}
+        ${period === 'weekly' ? ', week_period' : ''}
+        LEFT JOIN ideas i ON u.id = i.assigned_to
+        LEFT JOIN submission_time ON submission_time.idea_id = i.id
         WHERE u.role = 'freelancer'
         GROUP BY u.id, u.username, u.email
         ORDER BY total_templates DESC
@@ -225,12 +285,35 @@ router.get('/creation-rate', authenticateToken, authorizeRoles('admin'), async (
     let dateFilter;
     let dateFormat;
     let groupFormat;
+    let useSubmissionTime = false;
     
     // PostgreSQL date formatting
     if (period === 'weekly') {
-      dateFilter = "created_at >= NOW() - INTERVAL '7 days'";
+      // For weekly, use submission time and Thursday 2 PM Jordan time as week boundary
+      useSubmissionTime = true;
       dateFormat = 'YYYY-MM-DD'; // Group by day
-      groupFormat = "TO_CHAR(created_at, 'YYYY-MM-DD')";
+      groupFormat = "TO_CHAR(submission_time.created_at, 'YYYY-MM-DD')";
+      dateFilter = `submission_time.created_at >= (
+        CASE 
+          WHEN EXTRACT(DOW FROM NOW() AT TIME ZONE 'Asia/Amman') < 4 OR 
+               (EXTRACT(DOW FROM NOW() AT TIME ZONE 'Asia/Amman') = 4 AND 
+                EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Asia/Amman') < 14)
+          THEN 
+            (DATE_TRUNC('week', NOW() AT TIME ZONE 'Asia/Amman') - INTERVAL '4 days' + INTERVAL '14 hours') AT TIME ZONE 'Asia/Amman' AT TIME ZONE 'UTC'
+          ELSE 
+            (DATE_TRUNC('week', NOW() AT TIME ZONE 'Asia/Amman') + INTERVAL '3 days' + INTERVAL '14 hours') AT TIME ZONE 'Asia/Amman' AT TIME ZONE 'UTC'
+        END
+      ) AND submission_time.created_at < (
+        CASE 
+          WHEN EXTRACT(DOW FROM NOW() AT TIME ZONE 'Asia/Amman') < 4 OR 
+               (EXTRACT(DOW FROM NOW() AT TIME ZONE 'Asia/Amman') = 4 AND 
+                EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Asia/Amman') < 14)
+          THEN 
+            (DATE_TRUNC('week', NOW() AT TIME ZONE 'Asia/Amman') + INTERVAL '3 days' + INTERVAL '14 hours') AT TIME ZONE 'Asia/Amman' AT TIME ZONE 'UTC'
+          ELSE 
+            (DATE_TRUNC('week', NOW() AT TIME ZONE 'Asia/Amman') + INTERVAL '10 days' + INTERVAL '14 hours') AT TIME ZONE 'Asia/Amman' AT TIME ZONE 'UTC'
+        END
+      )`;
     } else if (period === 'monthly') {
       dateFilter = "created_at >= NOW() - INTERVAL '30 days'";
       dateFormat = 'YYYY-MM-DD'; // Group by day
@@ -249,42 +332,117 @@ router.get('/creation-rate', authenticateToken, authorizeRoles('admin'), async (
       groupFormat = "TO_CHAR(created_at, 'YYYY-MM-DD')";
     }
 
-    // Templates created over time
-    const creationData = await db.prepare(`
-      SELECT 
-        ${groupFormat} as date,
-        COUNT(*) as created,
-        SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as published
-      FROM ideas
-      WHERE ${dateFilter}
-      GROUP BY ${groupFormat}
-      ORDER BY date ASC
-    `).all();
+    // Templates created/submitted over time
+    let creationData;
+    if (useSubmissionTime) {
+      // For weekly, count by submission time
+      creationData = await db.prepare(`
+        WITH submission_time AS (
+          SELECT 
+            a.idea_id,
+            MIN(a.created_at) as created_at
+          FROM activity_log a
+          WHERE a.action = 'updated' 
+            AND a.details LIKE '%"status"%"submitted"%'
+          GROUP BY a.idea_id
+        )
+        SELECT 
+          ${groupFormat} as date,
+          COUNT(DISTINCT i.id) as created,
+          SUM(CASE WHEN i.status = 'published' THEN 1 ELSE 0 END) as published
+        FROM ideas i
+        INNER JOIN submission_time ON submission_time.idea_id = i.id
+        WHERE ${dateFilter}
+        GROUP BY ${groupFormat}
+        ORDER BY date ASC
+      `).all();
+    } else {
+      // For other periods, use creation time as before
+      creationData = await db.prepare(`
+        SELECT 
+          ${groupFormat} as date,
+          COUNT(*) as created,
+          SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as published
+        FROM ideas
+        WHERE ${dateFilter}
+        GROUP BY ${groupFormat}
+        ORDER BY date ASC
+      `).all();
+    }
 
     // Status distribution
-    const statusDistribution = await db.prepare(`
-      SELECT 
-        status,
-        COUNT(*) as count
-      FROM ideas
-      WHERE ${dateFilter}
-      GROUP BY status
-      ORDER BY count DESC
-    `).all();
+    let statusDistribution;
+    if (useSubmissionTime) {
+      statusDistribution = await db.prepare(`
+        WITH submission_time AS (
+          SELECT 
+            a.idea_id,
+            MIN(a.created_at) as created_at
+          FROM activity_log a
+          WHERE a.action = 'updated' 
+            AND a.details LIKE '%"status"%"submitted"%'
+          GROUP BY a.idea_id
+        )
+        SELECT 
+          i.status,
+          COUNT(DISTINCT i.id) as count
+        FROM ideas i
+        INNER JOIN submission_time ON submission_time.idea_id = i.id
+        WHERE ${dateFilter}
+        GROUP BY i.status
+        ORDER BY count DESC
+      `).all();
+    } else {
+      statusDistribution = await db.prepare(`
+        SELECT 
+          status,
+          COUNT(*) as count
+        FROM ideas
+        WHERE ${dateFilter}
+        GROUP BY status
+        ORDER BY count DESC
+      `).all();
+    }
 
     // Top performing freelancers
-    const topFreelancers = await db.prepare(`
-      SELECT 
-        u.username,
-        COUNT(i.id) as templates_count,
-        SUM(CASE WHEN i.status = 'published' THEN 1 ELSE 0 END) as published_count
-      FROM users u
-      INNER JOIN ideas i ON u.id = i.assigned_to
-      WHERE u.role = 'freelancer' AND i.created_at >= NOW() - INTERVAL '${period === 'weekly' ? '7' : period === 'quarterly' ? '90' : period === 'yearly' ? '365' : '30'} days'
-      GROUP BY u.id, u.username
-      ORDER BY templates_count DESC
-      LIMIT 10
-    `).all();
+    let topFreelancers;
+    if (useSubmissionTime) {
+      topFreelancers = await db.prepare(`
+        WITH submission_time AS (
+          SELECT 
+            a.idea_id,
+            MIN(a.created_at) as created_at
+          FROM activity_log a
+          WHERE a.action = 'updated' 
+            AND a.details LIKE '%"status"%"submitted"%'
+          GROUP BY a.idea_id
+        )
+        SELECT 
+          u.username,
+          COUNT(DISTINCT i.id) as templates_count,
+          SUM(CASE WHEN i.status = 'published' THEN 1 ELSE 0 END) as published_count
+        FROM users u
+        INNER JOIN ideas i ON u.id = i.assigned_to
+        INNER JOIN submission_time ON submission_time.idea_id = i.id
+        WHERE u.role = 'freelancer' AND ${dateFilter}
+        GROUP BY u.id, u.username
+        ORDER BY templates_count DESC
+        LIMIT 10
+      `).all();
+    } else {
+      topFreelancers = await db.prepare(`
+        SELECT 
+          u.username,
+          COUNT(i.id) as templates_count,
+          SUM(CASE WHEN i.status = 'published' THEN 1 ELSE 0 END) as published_count
+        FROM users u
+        INNER JOIN ideas i ON u.id = i.assigned_to
+        WHERE u.role = 'freelancer' AND i.created_at >= NOW() - INTERVAL '${period === 'quarterly' ? '90' : period === 'yearly' ? '365' : '30'} days'
+        GROUP BY u.id, u.username
+        ORDER BY templates_count DESC
+        LIMIT 10
+      `).all();
+    }
 
     res.json({
       period,
