@@ -138,130 +138,137 @@ router.post('/send-bulk-reminders', authenticateToken, authorizeRoles('admin'), 
   }
 });
 
+// Helper function to get week boundaries for Thursday 2 PM Jordan time
+const getWeekBoundaries = () => {
+  // Jordan time is UTC+2 (or UTC+3 during DST, but Asia/Amman handles this)
+  const now = new Date();
+  
+  // Convert to Jordan time to check day/hour
+  const jordanTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Amman' }));
+  const dayOfWeek = jordanTime.getDay(); // 0=Sunday, 4=Thursday
+  const hour = jordanTime.getHours();
+  
+  // Find the most recent Thursday 2 PM Jordan time
+  let weekStart = new Date(jordanTime);
+  weekStart.setHours(14, 0, 0, 0); // Set to 2 PM
+  
+  // Calculate days to subtract to get to Thursday
+  let daysToThursday = dayOfWeek - 4; // Days since Thursday
+  if (daysToThursday < 0) daysToThursday += 7; // If before Thursday, go back to last Thursday
+  if (daysToThursday === 0 && hour < 14) daysToThursday = 7; // If Thursday but before 2 PM, use last Thursday
+  
+  weekStart.setDate(weekStart.getDate() - daysToThursday);
+  
+  // Week end is 7 days after week start
+  let weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 7);
+  
+  return { weekStart, weekEnd };
+};
+
 // Get freelancer performance report (weekly/monthly)
 router.get('/freelancer-report', authenticateToken, authorizeRoles('admin'), async (req, res) => {
   try {
     const { period = 'monthly', freelancerId } = req.query;
     
-    // Calculate weekly period: Thursday 2:00 PM Jordan time to next Thursday 2:00 PM Jordan time
-    // Calculate date range based on period (PostgreSQL compatible)
-    let weekStartCalc = '';
-    let weekEndCalc = '';
+    // Calculate date range based on period
     let dateFilter;
+    let dateParams = [];
     
     if (period === 'weekly') {
-      // Calculate this week's Thursday 2:00 PM Jordan time
-      // PostgreSQL: DATE_TRUNC('week', ...) gives Monday, add 3 days for Thursday, add 14 hours for 2 PM
-      weekStartCalc = `
-        , week_period AS (
-          SELECT 
-            -- Get the most recent Thursday 2 PM Jordan time
-            CASE 
-              WHEN EXTRACT(DOW FROM NOW() AT TIME ZONE 'Asia/Amman') < 4 OR 
-                   (EXTRACT(DOW FROM NOW() AT TIME ZONE 'Asia/Amman') = 4 AND 
-                    EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Asia/Amman') < 14)
-              THEN 
-                -- Before this week's Thursday 2 PM, so use last week's Thursday
-                (DATE_TRUNC('week', NOW() AT TIME ZONE 'Asia/Amman') - INTERVAL '4 days' + INTERVAL '14 hours') AT TIME ZONE 'Asia/Amman' AT TIME ZONE 'UTC'
-              ELSE 
-                -- After this week's Thursday 2 PM, so use this week's Thursday
-                (DATE_TRUNC('week', NOW() AT TIME ZONE 'Asia/Amman') + INTERVAL '3 days' + INTERVAL '14 hours') AT TIME ZONE 'Asia/Amman' AT TIME ZONE 'UTC'
-            END as week_start,
-            CASE 
-              WHEN EXTRACT(DOW FROM NOW() AT TIME ZONE 'Asia/Amman') < 4 OR 
-                   (EXTRACT(DOW FROM NOW() AT TIME ZONE 'Asia/Amman') = 4 AND 
-                    EXTRACT(HOUR FROM NOW() AT TIME ZONE 'Asia/Amman') < 14)
-              THEN 
-                -- Before this week's Thursday 2 PM, so end is this Thursday
-                (DATE_TRUNC('week', NOW() AT TIME ZONE 'Asia/Amman') + INTERVAL '3 days' + INTERVAL '14 hours') AT TIME ZONE 'Asia/Amman' AT TIME ZONE 'UTC'
-              ELSE 
-                -- After this week's Thursday 2 PM, so end is next Thursday
-                (DATE_TRUNC('week', NOW() AT TIME ZONE 'Asia/Amman') + INTERVAL '10 days' + INTERVAL '14 hours') AT TIME ZONE 'Asia/Amman' AT TIME ZONE 'UTC'
-            END as week_end
-        )
-      `;
-      dateFilter = "submission_time.created_at >= week_period.week_start AND submission_time.created_at < week_period.week_end";
+      // Weekly: Thursday 2:00 PM Jordan time to next Thursday 2:00 PM Jordan time
+      // Count templates that were SUBMITTED within this period
+      const { weekStart, weekEnd } = getWeekBoundaries();
+      dateFilter = "st.submitted_at >= $PARAM1 AND st.submitted_at < $PARAM2";
+      dateParams = [weekStart.toISOString(), weekEnd.toISOString()];
     } else if (period === 'monthly') {
-      dateFilter = "submission_time.created_at >= NOW() - INTERVAL '30 days'";
+      dateFilter = "st.submitted_at >= NOW() - INTERVAL '30 days'";
     } else if (period === 'all') {
       dateFilter = "1=1";
     } else {
-      dateFilter = "submission_time.created_at >= NOW() - INTERVAL '30 days'";
+      dateFilter = "st.submitted_at >= NOW() - INTERVAL '30 days'";
     }
 
     let query;
     let params = [];
 
+    // Build query with submission tracking
+    // We look for the first time a template reached 'submitted' status in activity_log
+    // Fall back to updated_at if no activity log entry exists
+    const baseQuery = `
+      WITH submission_tracking AS (
+        SELECT 
+          i.id as idea_id,
+          i.status,
+          i.price,
+          i.assigned_to,
+          -- Get first submission time from activity log, or fall back to updated_at for submitted+ statuses
+          COALESCE(
+            (SELECT MIN(a.created_at) 
+             FROM activity_log a 
+             WHERE a.idea_id = i.id 
+               AND a.action = 'updated' 
+               AND (a.details LIKE '%"status":"submitted"%' OR a.details LIKE '%"status": "submitted"%')
+            ),
+            CASE 
+              WHEN i.status IN ('submitted', 'reviewed', 'published', 'needs_fixes') 
+              THEN i.updated_at 
+              ELSE NULL 
+            END
+          ) as submitted_at
+        FROM ideas i
+        WHERE i.assigned_to IS NOT NULL
+      )
+    `;
+
     if (freelancerId) {
       // Report for specific freelancer
-      // Count templates based on submission time from activity_log
+      const paramOffset = dateParams.length;
       query = `
-        WITH submission_time AS (
-          SELECT 
-            a.idea_id,
-            MIN(a.created_at) as created_at
-          FROM activity_log a
-          WHERE a.action = 'updated' 
-            AND a.details LIKE '%"status"%"submitted"%'
-          GROUP BY a.idea_id
-        )
-        ${weekStartCalc}
+        ${baseQuery}
         SELECT 
           u.id as freelancer_id,
           u.username,
           u.email,
-          COUNT(DISTINCT CASE WHEN ${dateFilter} THEN i.id END) as total_templates,
-          SUM(CASE WHEN i.status = 'published' AND ${dateFilter} THEN 1 ELSE 0 END) as published,
-          SUM(CASE WHEN i.status = 'reviewed' AND ${dateFilter} THEN 1 ELSE 0 END) as reviewed,
-          SUM(CASE WHEN i.status IN ('submitted', 'reviewed', 'published', 'needs_fixes') AND ${dateFilter} THEN 1 ELSE 0 END) as submitted,
-          SUM(CASE WHEN i.status = 'in_progress' AND ${dateFilter} THEN 1 ELSE 0 END) as in_progress,
-          SUM(CASE WHEN i.status = 'needs_fixes' AND ${dateFilter} THEN 1 ELSE 0 END) as needs_fixes,
-          SUM(CASE WHEN i.status = 'assigned' AND ${dateFilter} THEN 1 ELSE 0 END) as assigned,
-          COALESCE(SUM(CASE WHEN ${dateFilter} THEN i.price ELSE 0 END), 0) as total_earnings,
-          COALESCE(SUM(CASE WHEN (i.status = 'published' OR i.status = 'reviewed') AND ${dateFilter} THEN i.price ELSE 0 END), 0) as completed_earnings
+          COUNT(DISTINCT CASE WHEN ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN st.idea_id END) as total_templates,
+          SUM(CASE WHEN st.status = 'published' AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN 1 ELSE 0 END) as published,
+          SUM(CASE WHEN st.status = 'reviewed' AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN 1 ELSE 0 END) as reviewed,
+          SUM(CASE WHEN st.status IN ('submitted', 'reviewed', 'published', 'needs_fixes') AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN 1 ELSE 0 END) as submitted,
+          SUM(CASE WHEN st.status = 'in_progress' AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN 1 ELSE 0 END) as in_progress,
+          SUM(CASE WHEN st.status = 'needs_fixes' AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN 1 ELSE 0 END) as needs_fixes,
+          SUM(CASE WHEN st.status = 'assigned' AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN 1 ELSE 0 END) as assigned,
+          COALESCE(SUM(CASE WHEN ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN st.price ELSE 0 END), 0) as total_earnings,
+          COALESCE(SUM(CASE WHEN (st.status = 'published' OR st.status = 'reviewed') AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN st.price ELSE 0 END), 0) as completed_earnings
         FROM users u
-        ${period === 'weekly' ? ', week_period' : ''}
-        LEFT JOIN ideas i ON u.id = i.assigned_to
-        LEFT JOIN submission_time ON submission_time.idea_id = i.id
-        WHERE u.id = $1 AND u.role = 'freelancer'
+        LEFT JOIN submission_tracking st ON u.id = st.assigned_to
+        WHERE u.id = $${dateParams.length + 1} AND u.role = 'freelancer'
         GROUP BY u.id, u.username, u.email
       `;
-      params = [freelancerId];
+      params = [...dateParams, freelancerId];
     } else {
       // Report for all freelancers
-      // Count templates based on submission time from activity_log
       query = `
-        WITH submission_time AS (
-          SELECT 
-            a.idea_id,
-            MIN(a.created_at) as created_at
-          FROM activity_log a
-          WHERE a.action = 'updated' 
-            AND a.details LIKE '%"status"%"submitted"%'
-          GROUP BY a.idea_id
-        )
-        ${weekStartCalc}
+        ${baseQuery}
         SELECT 
           u.id as freelancer_id,
           u.username,
           u.email,
-          COUNT(DISTINCT CASE WHEN ${dateFilter} THEN i.id END) as total_templates,
-          SUM(CASE WHEN i.status = 'published' AND ${dateFilter} THEN 1 ELSE 0 END) as published,
-          SUM(CASE WHEN i.status = 'reviewed' AND ${dateFilter} THEN 1 ELSE 0 END) as reviewed,
-          SUM(CASE WHEN i.status IN ('submitted', 'reviewed', 'published', 'needs_fixes') AND ${dateFilter} THEN 1 ELSE 0 END) as submitted,
-          SUM(CASE WHEN i.status = 'in_progress' AND ${dateFilter} THEN 1 ELSE 0 END) as in_progress,
-          SUM(CASE WHEN i.status = 'needs_fixes' AND ${dateFilter} THEN 1 ELSE 0 END) as needs_fixes,
-          SUM(CASE WHEN i.status = 'assigned' AND ${dateFilter} THEN 1 ELSE 0 END) as assigned,
-          COALESCE(SUM(CASE WHEN ${dateFilter} THEN i.price ELSE 0 END), 0) as total_earnings,
-          COALESCE(SUM(CASE WHEN (i.status = 'published' OR i.status = 'reviewed') AND ${dateFilter} THEN i.price ELSE 0 END), 0) as completed_earnings
+          COUNT(DISTINCT CASE WHEN ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN st.idea_id END) as total_templates,
+          SUM(CASE WHEN st.status = 'published' AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN 1 ELSE 0 END) as published,
+          SUM(CASE WHEN st.status = 'reviewed' AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN 1 ELSE 0 END) as reviewed,
+          SUM(CASE WHEN st.status IN ('submitted', 'reviewed', 'published', 'needs_fixes') AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN 1 ELSE 0 END) as submitted,
+          SUM(CASE WHEN st.status = 'in_progress' AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN 1 ELSE 0 END) as in_progress,
+          SUM(CASE WHEN st.status = 'needs_fixes' AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN 1 ELSE 0 END) as needs_fixes,
+          SUM(CASE WHEN st.status = 'assigned' AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN 1 ELSE 0 END) as assigned,
+          COALESCE(SUM(CASE WHEN ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN st.price ELSE 0 END), 0) as total_earnings,
+          COALESCE(SUM(CASE WHEN (st.status = 'published' OR st.status = 'reviewed') AND ${dateFilter.replace('$PARAM1', `$1`).replace('$PARAM2', `$2`)} THEN st.price ELSE 0 END), 0) as completed_earnings
         FROM users u
-        ${period === 'weekly' ? ', week_period' : ''}
-        LEFT JOIN ideas i ON u.id = i.assigned_to
-        LEFT JOIN submission_time ON submission_time.idea_id = i.id
+        LEFT JOIN submission_tracking st ON u.id = st.assigned_to
         WHERE u.role = 'freelancer'
         GROUP BY u.id, u.username, u.email
         ORDER BY total_templates DESC
       `;
+      params = [...dateParams];
     }
 
     const reports = await db.prepare(query).all(...params);
