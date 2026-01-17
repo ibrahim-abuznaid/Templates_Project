@@ -174,7 +174,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                           title="Categories"
                         >
                           <Tags className="w-4 h-4" />
-                          <span className="hidden xl:inline">Tags</span>
+                          <span className="hidden xl:inline">Categories</span>
                         </Link>
                       </div>
                     </>
