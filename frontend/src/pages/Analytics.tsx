@@ -169,8 +169,8 @@ const Analytics: React.FC = () => {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Analytics Dashboard</h1>
-          <p className="text-gray-500 mt-1">Track template creation and freelancer performance</p>
+          <h1 className="text-3xl font-bold text-gray-900">Performance Dashboard</h1>
+          <p className="text-gray-500 mt-1">Track template progress, team productivity, and creator metrics</p>
         </div>
         <div className="flex items-center gap-3">
           {maintenanceIssues > 0 && (

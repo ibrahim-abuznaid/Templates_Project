@@ -23,24 +23,27 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const isActive = (path: string) => location.pathname === path;
 
+  // Navigation group component for better organization
+  const NavDivider = () => <div className="w-px h-5 bg-gray-200/80 mx-2" />;
+
   return (
     <div className="min-h-screen bg-gray-50/50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200/80 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
-          <div className="flex justify-between h-14 items-center">
+        <div className="max-w-[1600px] mx-auto px-6 lg:px-8">
+          <div className="flex justify-between h-16 items-center">
             {/* Logo & Brand */}
             <div className="flex items-center">
-              <Link to="/" className="flex items-center gap-2 mr-6">
-                <img src="/activepieces.webp" alt="Activepieces" className="w-7 h-7" />
+              <Link to="/" className="flex items-center gap-2.5 mr-8">
+                <img src="/activepieces.webp" alt="Activepieces" className="w-8 h-8" />
                 <span className="text-base font-semibold text-gray-900 hidden lg:block">Template Manager</span>
               </Link>
               
               {/* Navigation */}
               {user && (
-                <nav className="hidden md:flex items-center">
-                  {/* Main Nav Links */}
-                  <div className="flex items-center border-l border-gray-200 pl-4">
+                <nav className="hidden lg:flex items-center">
+                  {/* Core Navigation Group */}
+                  <div className="flex items-center gap-1 border-l border-gray-200/80 pl-6">
                     <Link
                       to="/"
                       className={isActive('/') ? 'nav-link-active' : 'nav-link'}
@@ -64,7 +67,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <AlertTriangle className="w-4 h-4" />
                       <span>Blockers</span>
                     </Link>
+                  </div>
 
+                  <NavDivider />
+
+                  {/* Resources Group */}
+                  <div className="flex items-center gap-1">
                     <Link
                       to="/suggestions"
                       className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
@@ -90,35 +98,32 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     </Link>
 
                     {isAdmin && (
-                      <>
-                        {/* Divider */}
-                        <div className="w-px h-5 bg-gray-200 mx-1" />
-                        
-                        <Link
-                          to="/quick-publish"
-                          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
-                            isActive('/quick-publish')
-                              ? 'bg-amber-100 text-amber-700'
-                              : 'text-amber-600 hover:bg-amber-50'
-                          }`}
-                        >
-                          <Zap className="w-4 h-4" />
-                          <span>Quick Publish</span>
-                        </Link>
-                      </>
+                      <Link
+                        to="/quick-publish"
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+                          isActive('/quick-publish')
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'text-amber-600 hover:bg-amber-50'
+                        }`}
+                      >
+                        <Zap className="w-4 h-4" />
+                        <span>Quick Publish</span>
+                      </Link>
                     )}
+                  </div>
 
-                    {isAdmin && (
-                      <>
-                        {/* Divider */}
-                        <div className="w-px h-5 bg-gray-200 mx-1" />
-                        
+                  {isAdmin && (
+                    <>
+                      <NavDivider />
+                      
+                      {/* Admin Tools Group */}
+                      <div className="flex items-center gap-1">
                         <Link
                           to="/analytics"
                           className={isActive('/analytics') ? 'nav-link-active' : 'nav-link'}
                         >
                           <BarChart3 className="w-4 h-4" />
-                          <span>Analytics</span>
+                          <span>Performance</span>
                         </Link>
 
                         <Link
@@ -136,12 +141,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                           <Tags className="w-4 h-4" />
                           <span>Categories</span>
                         </Link>
-                      </>
-                    )}
+                      </div>
+                    </>
+                  )}
 
-                    {/* Divider */}
-                    <div className="w-px h-5 bg-gray-200 mx-1" />
+                  <NavDivider />
 
+                  {/* Finance Group */}
+                  <div className="flex items-center gap-1">
                     {isAdmin ? (
                       <Link
                         to="/invoices"
