@@ -121,15 +121,15 @@
 
   /* Navigation link */
   .nav-link {
-    @apply flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium
+    @apply flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium
            text-gray-500 hover:bg-gray-100 hover:text-gray-900
-           transition-all duration-150;
+           transition-all duration-150 whitespace-nowrap;
   }
 
   .nav-link-active {
-    @apply flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium
+    @apply flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium
            bg-primary-50 text-primary-700
-           transition-all duration-150;
+           transition-all duration-150 whitespace-nowrap;
   }
 }
 
