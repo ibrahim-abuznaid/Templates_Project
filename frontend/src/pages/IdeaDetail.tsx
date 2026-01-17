@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { ideasApi, usersApi, blockersApi, departmentsApi, uploadsApi, getUploadsBaseUrl } from '../services/api';
+import { ideasApi, usersApi, blockersApi, departmentsApi, uploadsApi, analyticsApi, getUploadsBaseUrl } from '../services/api';
 import type { IdeaDetail as IdeaDetailType, User, UserBasic, Blocker, BlockerType, BlockerPriority, IdeaStatus, Department } from '../types';
 import StatusBadge from '../components/StatusBadge';
 import StatusWorkflow from '../components/StatusWorkflow';
@@ -34,7 +34,20 @@ import {
   RefreshCw,
   UserMinus,
   Paperclip,
+  Download,
+  TrendingUp,
+  BarChart3,
 } from 'lucide-react';
+
+// Template analytics type
+interface TemplateAnalytics {
+  totalViews: number;
+  totalInstalls: number;
+  uniqueUsersInstalled: number;
+  activeFlows: number;
+  conversionRate: number;
+  updatedAt?: string;
+}
 
 // Format normalization helpers
 const normalizeCostPerYear = (value: string): string => {
@@ -122,6 +135,8 @@ const IdeaDetail: React.FC = () => {
   const flowJsonInputRef = useRef<HTMLInputElement>(null);
   const flowJsonAppendInputRef = useRef<HTMLInputElement>(null);
   const [appendingFlows, setAppendingFlows] = useState(false);
+  const [templateAnalytics, setTemplateAnalytics] = useState<TemplateAnalytics | null>(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   
   // Modal state
   const [modal, setModal] = useState<{
@@ -153,6 +168,7 @@ const IdeaDetail: React.FC = () => {
     loadUsers();
     loadBlockers();
     loadDepartments();
+    loadTemplateAnalytics();
     if (isAdmin) {
       loadFreelancers();
       loadAdmins();
@@ -286,6 +302,24 @@ const IdeaDetail: React.FC = () => {
       setAllDepartments(response.data);
     } catch (error) {
       console.error('Failed to load departments:', error);
+    }
+  };
+
+  const loadTemplateAnalytics = async () => {
+    if (!id) return;
+    setLoadingAnalytics(true);
+    try {
+      const response = await analyticsApi.getTemplateAnalyticsByIdea(Number(id));
+      if (response.data.isPublished && response.data.analytics) {
+        setTemplateAnalytics(response.data.analytics);
+      } else {
+        setTemplateAnalytics(null);
+      }
+    } catch (error) {
+      console.error('Failed to load template analytics:', error);
+      setTemplateAnalytics(null);
+    } finally {
+      setLoadingAnalytics(false);
     }
   };
 
@@ -1754,6 +1788,69 @@ const IdeaDetail: React.FC = () => {
                       </div>
                     </div>
                     
+                    {/* Template Analytics */}
+                    {templateAnalytics && (templateAnalytics.totalViews > 0 || templateAnalytics.totalInstalls > 0) && (
+                      <div className="mt-4 pt-4 border-t border-green-200">
+                        <div className="flex items-center gap-2 mb-3">
+                          <BarChart3 className="w-4 h-4 text-green-700" />
+                          <h5 className="text-sm font-semibold text-green-800">Template Analytics</h5>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <div className="bg-white/80 rounded-lg p-3 text-center border border-green-200">
+                            <div className="flex items-center justify-center gap-1 text-blue-600 mb-1">
+                              <Eye className="w-4 h-4" />
+                            </div>
+                            <div className="text-xl font-bold text-gray-800">{templateAnalytics.totalViews.toLocaleString()}</div>
+                            <div className="text-xs text-gray-500">Views</div>
+                          </div>
+                          <div className="bg-white/80 rounded-lg p-3 text-center border border-green-200">
+                            <div className="flex items-center justify-center gap-1 text-green-600 mb-1">
+                              <Download className="w-4 h-4" />
+                            </div>
+                            <div className="text-xl font-bold text-gray-800">{templateAnalytics.totalInstalls.toLocaleString()}</div>
+                            <div className="text-xs text-gray-500">Installs</div>
+                          </div>
+                          <div className="bg-white/80 rounded-lg p-3 text-center border border-green-200">
+                            <div className="flex items-center justify-center gap-1 text-purple-600 mb-1">
+                              <Activity className="w-4 h-4" />
+                            </div>
+                            <div className="text-xl font-bold text-gray-800">{templateAnalytics.activeFlows.toLocaleString()}</div>
+                            <div className="text-xs text-gray-500">Active Flows</div>
+                          </div>
+                          <div className="bg-white/80 rounded-lg p-3 text-center border border-green-200">
+                            <div className="flex items-center justify-center gap-1 text-emerald-600 mb-1">
+                              <TrendingUp className="w-4 h-4" />
+                            </div>
+                            <div className="text-xl font-bold text-gray-800">{templateAnalytics.conversionRate.toFixed(1)}%</div>
+                            <div className="text-xs text-gray-500">Conversion</div>
+                          </div>
+                        </div>
+                        {templateAnalytics.uniqueUsersInstalled > 0 && (
+                          <div className="mt-2 text-xs text-green-600 text-center">
+                            {templateAnalytics.uniqueUsersInstalled.toLocaleString()} unique users have installed this template
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Loading state for analytics */}
+                    {loadingAnalytics && (
+                      <div className="mt-4 pt-4 border-t border-green-200 flex items-center justify-center py-3">
+                        <Loader className="w-4 h-4 animate-spin text-green-600 mr-2" />
+                        <span className="text-sm text-green-600">Loading analytics...</span>
+                      </div>
+                    )}
+
+                    {/* No analytics data yet */}
+                    {!loadingAnalytics && templateAnalytics && templateAnalytics.totalViews === 0 && templateAnalytics.totalInstalls === 0 && (
+                      <div className="mt-4 pt-4 border-t border-green-200">
+                        <div className="flex items-center gap-2 text-sm text-green-600">
+                          <BarChart3 className="w-4 h-4" />
+                          <span>Analytics data will appear here once users start viewing and installing this template.</span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Actions */}
                     {isAdmin && (
                       <div className="mt-4 pt-3 border-t border-green-200">

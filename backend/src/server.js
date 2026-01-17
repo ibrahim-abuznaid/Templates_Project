@@ -15,6 +15,7 @@ import analyticsRoutes from './routes/analytics.js';
 import uploadsRoutes from './routes/uploads.js';
 import suggestionsRoutes from './routes/suggestions.js';
 import guidebookRoutes from './routes/guidebook.js';
+import publicAnalyticsRoutes from './routes/public-analytics.js';
 import { initializeSocket } from './socket.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -72,6 +73,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/suggestions', suggestionsRoutes);
 app.use('/api/guidebook', guidebookRoutes);
+app.use('/api/public/analytics', publicAnalyticsRoutes); // External API with API key auth
 
 // Health check
 app.get('/api/health', (req, res) => {

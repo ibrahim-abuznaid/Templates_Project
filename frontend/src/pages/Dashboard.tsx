@@ -2,11 +2,20 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { useSearchParams } from 'react-router-dom';
-import { ideasApi, departmentsApi } from '../services/api';
+import { ideasApi, departmentsApi, analyticsApi } from '../services/api';
 import type { Idea, Department, User } from '../types';
 import IdeaCard from '../components/IdeaCard';
 import StatusLegend from '../components/StatusLegend';
 import { Plus, Loader, Wifi, WifiOff, X, ChevronDown, Search, User as UserIcon, Users } from 'lucide-react';
+
+// Template analytics map type
+interface TemplateAnalytics {
+  totalViews: number;
+  totalInstalls: number;
+  uniqueUsersInstalled: number;
+  activeFlows: number;
+  conversionRate: number;
+}
 
 // Format normalization helpers
 const normalizeCostPerYear = (value: string): string => {
@@ -87,10 +96,12 @@ const Dashboard: React.FC = () => {
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
   const [freelancerUsers, setFreelancerUsers] = useState<User[]>([]);
   const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false);
+  const [templateAnalytics, setTemplateAnalytics] = useState<Map<number, TemplateAnalytics>>(new Map());
 
   useEffect(() => {
     loadIdeas();
     loadDepartments();
+    loadTemplateAnalytics();
     if (isAdmin) {
       loadAdmins();
       loadFreelancers();
@@ -155,6 +166,19 @@ const Dashboard: React.FC = () => {
       setFreelancerUsers(response.data);
     } catch (error) {
       console.error('Failed to load freelancers:', error);
+    }
+  };
+
+  const loadTemplateAnalytics = async () => {
+    try {
+      const response = await analyticsApi.getPublishedTemplatesAnalytics();
+      const analyticsMap = new Map<number, TemplateAnalytics>();
+      response.data.templates.forEach((t) => {
+        analyticsMap.set(t.ideaId, t.analytics);
+      });
+      setTemplateAnalytics(analyticsMap);
+    } catch (error) {
+      console.error('Failed to load template analytics:', error);
     }
   };
 
@@ -990,6 +1014,7 @@ const Dashboard: React.FC = () => {
               key={idea.id} 
               idea={idea} 
               isHighlighted={recentlyUpdated === idea.id}
+              analytics={templateAnalytics.get(idea.id)}
             />
           ))}
         </div>

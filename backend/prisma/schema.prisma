@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -229,4 +228,31 @@ model GuidebookSection {
 
   @@index([displayOrder], map: "idx_guidebook_sections_order")
   @@map("guidebook_sections")
+}
+
+// Template Analytics - tracks analytics per published template
+// templateId corresponds to the public_library_id from the ideas table
+model TemplateAnalytics {
+  id                  Int       @id @default(autoincrement())
+  templateId          String    @unique @map("template_id") @db.VarChar(255) // The public_library_id of the template
+  totalViews          Int       @default(0) @map("total_views")
+  totalInstalls       Int       @default(0) @map("total_installs")
+  activeFlowIds       String[]  @map("active_flow_ids") // Array of unique flow IDs created from this template
+  installedByUserIds  String[]  @map("installed_by_user_ids") // Array of unique user IDs who installed
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@index([templateId], map: "idx_template_analytics_template_id")
+  @@map("template_analytics")
+}
+
+// Explore Analytics - tracks analytics for the explore/discover page
+model ExploreAnalytics {
+  id              Int       @id @default(autoincrement())
+  totalViews      Int       @default(0) @map("total_views")
+  viewedByUserIds String[]  @map("viewed_by_user_ids") // Array of unique user IDs who viewed
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@map("explore_analytics")
 }

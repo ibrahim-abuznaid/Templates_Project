@@ -1,10 +1,20 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { Eye, Download, Activity } from 'lucide-react';
 import type { Idea } from '../types';
+
+interface TemplateAnalytics {
+  totalViews: number;
+  totalInstalls: number;
+  uniqueUsersInstalled: number;
+  activeFlows: number;
+  conversionRate: number;
+}
 
 interface IdeaCardProps {
   idea: Idea;
   isHighlighted?: boolean;
+  analytics?: TemplateAnalytics | null;
 }
 
 const statusConfig: Record<string, { dot: string; text: string; label: string }> = {
@@ -21,13 +31,17 @@ const statusConfig: Record<string, { dot: string; text: string; label: string }>
 // Resubmission config (when fix_count > 0 and status is submitted)
 const resubmittedConfig = { dot: 'bg-amber-500', text: 'text-amber-700', label: 'Resubmitted' };
 
-const IdeaCard: React.FC<IdeaCardProps> = ({ idea, isHighlighted = false }) => {
+const IdeaCard: React.FC<IdeaCardProps> = ({ idea, isHighlighted = false, analytics }) => {
   const description = idea.summary || idea.short_description;
   const price = Number(idea.price || 0);
   
   // Check if this is a resubmission
   const isResubmission = idea.status === 'submitted' && (idea.fix_count || 0) > 0;
   const status = isResubmission ? resubmittedConfig : (statusConfig[idea.status] || statusConfig.new);
+  
+  // Check if template is published and has analytics
+  const isPublished = idea.status === 'published' && idea.public_library_id;
+  const hasAnalytics = analytics && (analytics.totalViews > 0 || analytics.totalInstalls > 0);
 
   return (
     <Link to={`/ideas/${idea.id}`} className="block h-full group">
@@ -67,6 +81,38 @@ const IdeaCard: React.FC<IdeaCardProps> = ({ idea, isHighlighted = false }) => {
             </p>
           )}
         </div>
+
+        {/* Analytics Stats for Published Templates */}
+        {isPublished && hasAnalytics && (
+          <div className="px-4 py-2 bg-gradient-to-r from-green-50 to-emerald-50 border-t border-green-100">
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1 text-gray-600">
+                  <Eye className="w-3.5 h-3.5 text-blue-500" />
+                  <span className="font-medium">{analytics.totalViews.toLocaleString()}</span>
+                  <span className="text-gray-400">views</span>
+                </div>
+                <div className="flex items-center gap-1 text-gray-600">
+                  <Download className="w-3.5 h-3.5 text-green-500" />
+                  <span className="font-medium">{analytics.totalInstalls.toLocaleString()}</span>
+                  <span className="text-gray-400">installs</span>
+                </div>
+                {analytics.activeFlows > 0 && (
+                  <div className="flex items-center gap-1 text-gray-600">
+                    <Activity className="w-3.5 h-3.5 text-purple-500" />
+                    <span className="font-medium">{analytics.activeFlows}</span>
+                    <span className="text-gray-400">active</span>
+                  </div>
+                )}
+              </div>
+              {analytics.conversionRate > 0 && (
+                <span className="text-emerald-600 font-semibold">
+                  {analytics.conversionRate.toFixed(1)}% CR
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Footer - pushed to bottom */}
         <div className="mt-auto px-4 py-3 border-t border-gray-100 flex items-center justify-between">

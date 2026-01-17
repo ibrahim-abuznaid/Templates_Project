@@ -716,4 +716,326 @@ router.get('/maintenance', authenticateToken, authorizeRoles('admin'), async (re
   }
 });
 
+// ========================================
+// Template Analytics Endpoints (Internal)
+// These endpoints expose analytics data collected via the public API
+// ========================================
+
+// Get analytics for a specific template by its public library ID
+router.get('/template/:publicLibraryId', authenticateToken, async (req, res) => {
+  try {
+    const { publicLibraryId } = req.params;
+
+    if (!publicLibraryId) {
+      return res.status(400).json({ error: 'Public library ID is required' });
+    }
+
+    const analytics = await db.prepare(`
+      SELECT * FROM template_analytics WHERE template_id = $1
+    `).get(publicLibraryId);
+
+    if (!analytics) {
+      // Return empty analytics if not found
+      return res.json({
+        templateId: publicLibraryId,
+        totalViews: 0,
+        totalInstalls: 0,
+        uniqueUsersInstalled: 0,
+        activeFlows: 0,
+        conversionRate: 0,
+        exists: false
+      });
+    }
+
+    const conversionRate = analytics.total_views > 0 
+      ? ((analytics.total_installs / analytics.total_views) * 100).toFixed(2)
+      : 0;
+
+    res.json({
+      templateId: analytics.template_id,
+      totalViews: analytics.total_views,
+      totalInstalls: analytics.total_installs,
+      uniqueUsersInstalled: analytics.installed_by_user_ids?.length || 0,
+      activeFlows: analytics.active_flow_ids?.length || 0,
+      conversionRate: parseFloat(conversionRate),
+      exists: true,
+      updatedAt: analytics.updated_at
+    });
+  } catch (error) {
+    console.error('Get template analytics error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get analytics for a template by its internal idea ID
+router.get('/template/by-idea/:ideaId', authenticateToken, async (req, res) => {
+  try {
+    const { ideaId } = req.params;
+
+    // Get the idea to find its public library ID
+    const idea = await db.prepare(`
+      SELECT id, flow_name, public_library_id, status FROM ideas WHERE id = $1
+    `).get(ideaId);
+
+    if (!idea) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    if (!idea.public_library_id) {
+      return res.json({
+        ideaId: parseInt(ideaId),
+        flowName: idea.flow_name,
+        status: idea.status,
+        isPublished: false,
+        analytics: null,
+        message: 'Template not yet published to public library'
+      });
+    }
+
+    const analytics = await db.prepare(`
+      SELECT * FROM template_analytics WHERE template_id = $1
+    `).get(idea.public_library_id);
+
+    const analyticsData = analytics ? {
+      totalViews: analytics.total_views,
+      totalInstalls: analytics.total_installs,
+      uniqueUsersInstalled: analytics.installed_by_user_ids?.length || 0,
+      activeFlows: analytics.active_flow_ids?.length || 0,
+      conversionRate: analytics.total_views > 0 
+        ? parseFloat(((analytics.total_installs / analytics.total_views) * 100).toFixed(2))
+        : 0,
+      updatedAt: analytics.updated_at
+    } : {
+      totalViews: 0,
+      totalInstalls: 0,
+      uniqueUsersInstalled: 0,
+      activeFlows: 0,
+      conversionRate: 0
+    };
+
+    res.json({
+      ideaId: parseInt(ideaId),
+      flowName: idea.flow_name,
+      publicLibraryId: idea.public_library_id,
+      status: idea.status,
+      isPublished: true,
+      analytics: analyticsData
+    });
+  } catch (error) {
+    console.error('Get template analytics by idea error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get analytics for all published templates
+router.get('/templates/published', authenticateToken, async (req, res) => {
+  try {
+    // Get all published templates with their analytics
+    const templates = await db.prepare(`
+      SELECT 
+        i.id as idea_id,
+        i.flow_name,
+        i.public_library_id,
+        i.status,
+        i.created_at as published_at,
+        u.username as assigned_to_name,
+        COALESCE(ta.total_views, 0) as total_views,
+        COALESCE(ta.total_installs, 0) as total_installs,
+        COALESCE(array_length(ta.installed_by_user_ids, 1), 0) as unique_users_installed,
+        COALESCE(array_length(ta.active_flow_ids, 1), 0) as active_flows
+      FROM ideas i
+      LEFT JOIN users u ON i.assigned_to = u.id
+      LEFT JOIN template_analytics ta ON i.public_library_id = ta.template_id
+      WHERE i.status = 'published' AND i.public_library_id IS NOT NULL
+      ORDER BY COALESCE(ta.total_installs, 0) DESC
+    `).all();
+
+    const results = templates.map(t => ({
+      ideaId: t.idea_id,
+      flowName: t.flow_name,
+      publicLibraryId: t.public_library_id,
+      assignedTo: t.assigned_to_name,
+      publishedAt: t.published_at,
+      analytics: {
+        totalViews: t.total_views,
+        totalInstalls: t.total_installs,
+        uniqueUsersInstalled: t.unique_users_installed,
+        activeFlows: t.active_flows,
+        conversionRate: t.total_views > 0 
+          ? parseFloat(((t.total_installs / t.total_views) * 100).toFixed(2))
+          : 0
+      }
+    }));
+
+    // Calculate summary stats
+    const summary = {
+      totalTemplates: results.length,
+      totalViews: results.reduce((sum, t) => sum + t.analytics.totalViews, 0),
+      totalInstalls: results.reduce((sum, t) => sum + t.analytics.totalInstalls, 0),
+      totalActiveFlows: results.reduce((sum, t) => sum + t.analytics.activeFlows, 0),
+      templatesWithInstalls: results.filter(t => t.analytics.totalInstalls > 0).length
+    };
+
+    res.json({
+      summary,
+      templates: results,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Get published templates analytics error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get template analytics overview (for dashboard)
+router.get('/templates/overview', authenticateToken, async (req, res) => {
+  try {
+    // Overall stats
+    const overallStats = await db.prepare(`
+      SELECT 
+        COALESCE(SUM(total_views), 0) as total_views,
+        COALESCE(SUM(total_installs), 0) as total_installs,
+        COALESCE(SUM(array_length(active_flow_ids, 1)), 0) as total_active_flows,
+        COUNT(*) as tracked_templates
+      FROM template_analytics
+    `).get();
+
+    // Unique users
+    const uniqueUsers = await db.prepare(`
+      SELECT COUNT(DISTINCT user_id) as count
+      FROM (
+        SELECT unnest(installed_by_user_ids) as user_id FROM template_analytics
+      ) as users
+    `).get();
+
+    // Top 5 templates by installs
+    const topByInstalls = await db.prepare(`
+      SELECT 
+        i.id as idea_id,
+        i.flow_name,
+        i.public_library_id,
+        COALESCE(ta.total_views, 0) as total_views,
+        COALESCE(ta.total_installs, 0) as total_installs
+      FROM ideas i
+      INNER JOIN template_analytics ta ON i.public_library_id = ta.template_id
+      WHERE i.status = 'published'
+      ORDER BY ta.total_installs DESC
+      LIMIT 5
+    `).all();
+
+    // Top 5 templates by views
+    const topByViews = await db.prepare(`
+      SELECT 
+        i.id as idea_id,
+        i.flow_name,
+        i.public_library_id,
+        COALESCE(ta.total_views, 0) as total_views,
+        COALESCE(ta.total_installs, 0) as total_installs
+      FROM ideas i
+      INNER JOIN template_analytics ta ON i.public_library_id = ta.template_id
+      WHERE i.status = 'published'
+      ORDER BY ta.total_views DESC
+      LIMIT 5
+    `).all();
+
+    // Explore page analytics
+    const exploreStats = await db.prepare(`
+      SELECT 
+        COALESCE(total_views, 0) as total_views,
+        COALESCE(array_length(viewed_by_user_ids, 1), 0) as unique_users
+      FROM explore_analytics
+      LIMIT 1
+    `).get();
+
+    // Published templates count
+    const publishedCount = await db.prepare(`
+      SELECT COUNT(*) as count FROM ideas WHERE status = 'published' AND public_library_id IS NOT NULL
+    `).get();
+
+    const conversionRate = parseInt(overallStats?.total_views || 0) > 0 
+      ? ((parseInt(overallStats?.total_installs || 0) / parseInt(overallStats?.total_views || 0)) * 100).toFixed(2)
+      : 0;
+
+    res.json({
+      overview: {
+        totalViews: parseInt(overallStats?.total_views || 0),
+        totalInstalls: parseInt(overallStats?.total_installs || 0),
+        totalActiveFlows: parseInt(overallStats?.total_active_flows || 0),
+        uniqueUsersInstalled: parseInt(uniqueUsers?.count || 0),
+        conversionRate: parseFloat(conversionRate),
+        publishedTemplates: parseInt(publishedCount?.count || 0),
+        trackedTemplates: parseInt(overallStats?.tracked_templates || 0)
+      },
+      explore: {
+        totalClicks: parseInt(exploreStats?.total_views || 0),
+        uniqueUsers: parseInt(exploreStats?.unique_users || 0)
+      },
+      topByInstalls: topByInstalls.map(t => ({
+        ideaId: t.idea_id,
+        flowName: t.flow_name,
+        publicLibraryId: t.public_library_id,
+        totalViews: t.total_views,
+        totalInstalls: t.total_installs
+      })),
+      topByViews: topByViews.map(t => ({
+        ideaId: t.idea_id,
+        flowName: t.flow_name,
+        publicLibraryId: t.public_library_id,
+        totalViews: t.total_views,
+        totalInstalls: t.total_installs
+      })),
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Get templates overview error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get analytics by category/department
+router.get('/templates/by-category', authenticateToken, async (req, res) => {
+  try {
+    const categoryStats = await db.prepare(`
+      SELECT 
+        d.id as department_id,
+        d.name as category,
+        COUNT(DISTINCT i.id) as available_templates,
+        COALESCE(SUM(ta.total_views), 0) as total_views,
+        COALESCE(SUM(ta.total_installs), 0) as total_installs,
+        COUNT(DISTINCT CASE WHEN ta.total_installs > 0 THEN i.id END) as installed_at_least_once,
+        COALESCE(SUM(array_length(ta.active_flow_ids, 1)), 0) as active_flows
+      FROM departments d
+      LEFT JOIN idea_departments id ON d.id = id.department_id
+      LEFT JOIN ideas i ON id.idea_id = i.id AND i.status = 'published' AND i.public_library_id IS NOT NULL
+      LEFT JOIN template_analytics ta ON i.public_library_id = ta.template_id
+      GROUP BY d.id, d.name
+      ORDER BY total_installs DESC
+    `).all();
+
+    const results = categoryStats.map(cat => ({
+      departmentId: cat.department_id,
+      category: cat.category,
+      availableTemplates: parseInt(cat.available_templates),
+      totalViews: parseInt(cat.total_views),
+      totalInstalls: parseInt(cat.total_installs),
+      installedAtLeastOnce: parseInt(cat.installed_at_least_once),
+      activeFlows: parseInt(cat.active_flows),
+      avgInstallsPerTemplate: cat.available_templates > 0 
+        ? parseFloat((cat.total_installs / cat.available_templates).toFixed(2))
+        : 0,
+      conversionRate: cat.total_views > 0 
+        ? parseFloat(((cat.total_installs / cat.total_views) * 100).toFixed(2))
+        : 0
+    }));
+
+    res.json({
+      categories: results,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Get category analytics error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

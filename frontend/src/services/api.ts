@@ -708,6 +708,99 @@ export const analyticsApi = {
     api.post<{ success: boolean; message: string; results: { sent: number; failed: number } }>('/analytics/send-bulk-reminders', {
       reminders,
     }),
+
+  // Template Analytics (from external tracking)
+  getTemplateAnalyticsByIdea: (ideaId: number) =>
+    api.get<{
+      ideaId: number;
+      flowName: string;
+      publicLibraryId: string | null;
+      status: string;
+      isPublished: boolean;
+      analytics: {
+        totalViews: number;
+        totalInstalls: number;
+        uniqueUsersInstalled: number;
+        activeFlows: number;
+        conversionRate: number;
+        updatedAt?: string;
+      } | null;
+      message?: string;
+    }>(`/analytics/template/by-idea/${ideaId}`),
+
+  getPublishedTemplatesAnalytics: () =>
+    api.get<{
+      summary: {
+        totalTemplates: number;
+        totalViews: number;
+        totalInstalls: number;
+        totalActiveFlows: number;
+        templatesWithInstalls: number;
+      };
+      templates: Array<{
+        ideaId: number;
+        flowName: string;
+        publicLibraryId: string;
+        assignedTo: string | null;
+        publishedAt: string;
+        analytics: {
+          totalViews: number;
+          totalInstalls: number;
+          uniqueUsersInstalled: number;
+          activeFlows: number;
+          conversionRate: number;
+        };
+      }>;
+      generatedAt: string;
+    }>('/analytics/templates/published'),
+
+  getTemplatesAnalyticsOverview: () =>
+    api.get<{
+      overview: {
+        totalViews: number;
+        totalInstalls: number;
+        totalActiveFlows: number;
+        uniqueUsersInstalled: number;
+        conversionRate: number;
+        publishedTemplates: number;
+        trackedTemplates: number;
+      };
+      explore: {
+        totalClicks: number;
+        uniqueUsers: number;
+      };
+      topByInstalls: Array<{
+        ideaId: number;
+        flowName: string;
+        publicLibraryId: string;
+        totalViews: number;
+        totalInstalls: number;
+      }>;
+      topByViews: Array<{
+        ideaId: number;
+        flowName: string;
+        publicLibraryId: string;
+        totalViews: number;
+        totalInstalls: number;
+      }>;
+      generatedAt: string;
+    }>('/analytics/templates/overview'),
+
+  getCategoryAnalytics: () =>
+    api.get<{
+      categories: Array<{
+        departmentId: number;
+        category: string;
+        availableTemplates: number;
+        totalViews: number;
+        totalInstalls: number;
+        installedAtLeastOnce: number;
+        activeFlows: number;
+        avgInstallsPerTemplate: number;
+        conversionRate: number;
+      }>;
+      generatedAt: string;
+    }>('/analytics/templates/by-category'),
 };
 
 // Suggestions endpoints (for template builders to suggest new ideas)
