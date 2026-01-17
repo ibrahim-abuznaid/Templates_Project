@@ -743,6 +743,8 @@ router.get('/template/:publicLibraryId', authenticateToken, async (req, res) => 
         uniqueUsersInstalled: 0,
         activeFlows: 0,
         conversionRate: 0,
+        installedByUserIds: [],
+        activeFlowIds: [],
         exists: false
       });
     }
@@ -758,6 +760,8 @@ router.get('/template/:publicLibraryId', authenticateToken, async (req, res) => 
       uniqueUsersInstalled: analytics.installed_by_user_ids?.length || 0,
       activeFlows: analytics.active_flow_ids?.length || 0,
       conversionRate: parseFloat(conversionRate),
+      installedByUserIds: analytics.installed_by_user_ids || [],
+      activeFlowIds: analytics.active_flow_ids || [],
       exists: true,
       updatedAt: analytics.updated_at
     });
@@ -804,13 +808,17 @@ router.get('/template/by-idea/:ideaId', authenticateToken, async (req, res) => {
       conversionRate: analytics.total_views > 0 
         ? parseFloat(((analytics.total_installs / analytics.total_views) * 100).toFixed(2))
         : 0,
+      installedByUserIds: analytics.installed_by_user_ids || [],
+      activeFlowIds: analytics.active_flow_ids || [],
       updatedAt: analytics.updated_at
     } : {
       totalViews: 0,
       totalInstalls: 0,
       uniqueUsersInstalled: 0,
       activeFlows: 0,
-      conversionRate: 0
+      conversionRate: 0,
+      installedByUserIds: [],
+      activeFlowIds: []
     };
 
     res.json({

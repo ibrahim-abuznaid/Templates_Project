@@ -723,6 +723,8 @@ export const analyticsApi = {
         uniqueUsersInstalled: number;
         activeFlows: number;
         conversionRate: number;
+        installedByUserIds?: string[];
+        activeFlowIds?: string[];
         updatedAt?: string;
       } | null;
       message?: string;

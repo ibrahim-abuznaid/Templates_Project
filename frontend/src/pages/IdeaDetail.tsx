@@ -46,6 +46,8 @@ interface TemplateAnalytics {
   uniqueUsersInstalled: number;
   activeFlows: number;
   conversionRate: number;
+  installedByUserIds?: string[];
+  activeFlowIds?: string[];
   updatedAt?: string;
 }
 
@@ -1826,8 +1828,28 @@ const IdeaDetail: React.FC = () => {
                           </div>
                         </div>
                         {templateAnalytics.uniqueUsersInstalled > 0 && (
-                          <div className="mt-2 text-xs text-green-600 text-center">
-                            {templateAnalytics.uniqueUsersInstalled.toLocaleString()} unique users have installed this template
+                          <div className="mt-3 pt-3 border-t border-green-200">
+                            <div className="text-xs text-green-700 mb-2 font-medium">
+                              {templateAnalytics.uniqueUsersInstalled.toLocaleString()} unique user{templateAnalytics.uniqueUsersInstalled !== 1 ? 's' : ''} installed this template
+                            </div>
+                            {templateAnalytics.installedByUserIds && templateAnalytics.installedByUserIds.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {templateAnalytics.installedByUserIds.slice(0, 10).map((userId, idx) => (
+                                  <span 
+                                    key={idx}
+                                    className="inline-flex items-center px-2 py-0.5 bg-white/80 text-gray-600 text-xs rounded border border-green-200 font-mono"
+                                    title={userId}
+                                  >
+                                    {userId.length > 20 ? userId.substring(0, 20) + '...' : userId}
+                                  </span>
+                                ))}
+                                {templateAnalytics.installedByUserIds.length > 10 && (
+                                  <span className="inline-flex items-center px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">
+                                    +{templateAnalytics.installedByUserIds.length - 10} more
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
