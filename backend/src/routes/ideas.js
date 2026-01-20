@@ -261,6 +261,236 @@ const getFlowCount = (flowJson) => {
   }
 };
 
+// Convert piece package name to human-readable display name
+// e.g., "@activepieces/piece-google-calendar" -> "Google Calendar"
+const pieceNameToDisplayName = (pieceName) => {
+  if (!pieceName) return 'Unknown';
+  
+  // Remove the @activepieces/piece- prefix
+  let name = pieceName.replace('@activepieces/piece-', '');
+  
+  // Handle special cases
+  const specialCases = {
+    'perplexity-ai': 'Perplexity AI',
+    'google-calendar': 'Google Calendar',
+    'google-docs': 'Google Docs',
+    'google-sheets': 'Google Sheets',
+    'google-drive': 'Google Drive',
+    'google-gmail': 'Gmail',
+    'gmail': 'Gmail',
+    'date-helper': 'Date Helper',
+    'openai': 'OpenAI',
+    'slack': 'Slack',
+    'discord': 'Discord',
+    'notion': 'Notion',
+    'airtable': 'Airtable',
+    'hubspot': 'HubSpot',
+    'salesforce': 'Salesforce',
+    'stripe': 'Stripe',
+    'shopify': 'Shopify',
+    'mailchimp': 'Mailchimp',
+    'sendgrid': 'SendGrid',
+    'twilio': 'Twilio',
+    'github': 'GitHub',
+    'gitlab': 'GitLab',
+    'jira': 'Jira',
+    'trello': 'Trello',
+    'asana': 'Asana',
+    'monday': 'Monday.com',
+    'clickup': 'ClickUp',
+    'zoom': 'Zoom',
+    'microsoft-teams': 'Microsoft Teams',
+    'microsoft-outlook': 'Microsoft Outlook',
+    'microsoft-excel': 'Microsoft Excel',
+    'dropbox': 'Dropbox',
+    'box': 'Box',
+    'http': 'HTTP Request',
+    'webhook': 'Webhook',
+    'schedule': 'Schedule',
+    'code': 'Code',
+    'data-mapper': 'Data Mapper',
+    'delay': 'Delay',
+    'branch': 'Branch',
+    'loop': 'Loop',
+    'text-helper': 'Text Helper',
+    'math-helper': 'Math Helper',
+    'json': 'JSON',
+    'xml': 'XML',
+    'csv': 'CSV',
+    'pdf': 'PDF',
+    'image': 'Image',
+    'anthropic': 'Anthropic Claude',
+    'gemini': 'Google Gemini',
+    'stability-ai': 'Stability AI',
+    'eleven-labs': 'ElevenLabs',
+    'deepl': 'DeepL',
+    'aws-s3': 'AWS S3',
+    'aws-lambda': 'AWS Lambda',
+    'aws-sns': 'AWS SNS',
+    'aws-sqs': 'AWS SQS',
+    'firebase': 'Firebase',
+    'supabase': 'Supabase',
+    'postgresql': 'PostgreSQL',
+    'mysql': 'MySQL',
+    'mongodb': 'MongoDB',
+    'redis': 'Redis',
+    'elasticsearch': 'Elasticsearch',
+    'intercom': 'Intercom',
+    'zendesk': 'Zendesk',
+    'freshdesk': 'Freshdesk',
+    'linear': 'Linear',
+    'figma': 'Figma',
+    'webflow': 'Webflow',
+    'wordpress': 'WordPress',
+    'woocommerce': 'WooCommerce',
+    'pipedrive': 'Pipedrive',
+    'calendly': 'Calendly',
+    'typeform': 'Typeform',
+    'google-forms': 'Google Forms',
+    'telegram': 'Telegram',
+    'whatsapp': 'WhatsApp',
+    'facebook': 'Facebook',
+    'instagram': 'Instagram',
+    'twitter': 'Twitter/X',
+    'linkedin': 'LinkedIn',
+    'youtube': 'YouTube',
+    'tiktok': 'TikTok',
+    'spotify': 'Spotify',
+    'quickbooks': 'QuickBooks',
+    'xero': 'Xero',
+    'zapier': 'Zapier',
+    'make': 'Make',
+    'n8n': 'n8n',
+    'pabbly': 'Pabbly',
+    'activepieces': 'Activepieces'
+  };
+  
+  if (specialCases[name]) {
+    return specialCases[name];
+  }
+  
+  // Default: Convert kebab-case to Title Case
+  return name
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
+// Extract unique integrations/steps from flow JSON
+// Returns an array of step objects with displayName, pieceName, pieceDisplayName, actionName/triggerName, type
+const extractStepsFromFlows = (flowJson) => {
+  if (!flowJson) {
+    return [];
+  }
+  
+  try {
+    const parsed = JSON.parse(flowJson);
+    
+    // Get the pieces array if available (contains unique integrations at root level)
+    const piecesArray = parsed.pieces || [];
+    
+    // Extract flows
+    const result = extractFlowsFromJson(flowJson);
+    if (!result.success) {
+      // If no flows, but we have pieces array, extract from that
+      if (piecesArray.length > 0) {
+        return piecesArray.map(pieceName => ({
+          displayName: pieceNameToDisplayName(pieceName),
+          pieceName: pieceName,
+          pieceDisplayName: pieceNameToDisplayName(pieceName),
+          type: 'PIECE'
+        }));
+      }
+      return [];
+    }
+    
+    const flows = result.flows;
+    const stepsMap = new Map(); // Use map to dedupe by pieceName
+    
+    // Helper to traverse actions recursively
+    const traverseAction = (action) => {
+      if (!action) return;
+      
+      // Extract piece info if this is a piece action
+      if (action.settings?.pieceName) {
+        const pieceName = action.settings.pieceName;
+        if (!stepsMap.has(pieceName)) {
+          stepsMap.set(pieceName, {
+            displayName: action.displayName || pieceNameToDisplayName(pieceName),
+            pieceName: pieceName,
+            pieceDisplayName: pieceNameToDisplayName(pieceName),
+            actionName: action.settings.actionName || action.settings.triggerName || null,
+            triggerName: action.settings.triggerName || null,
+            type: action.type || 'PIECE'
+          });
+        }
+      }
+      
+      // Handle branch actions (have onSuccessAction and onFailureAction)
+      if (action.onSuccessAction) {
+        traverseAction(action.onSuccessAction);
+      }
+      if (action.onFailureAction) {
+        traverseAction(action.onFailureAction);
+      }
+      
+      // Handle loop actions (have firstLoopAction)
+      if (action.firstLoopAction) {
+        traverseAction(action.firstLoopAction);
+      }
+      
+      // Handle router actions (have children array or branches)
+      if (action.children && Array.isArray(action.children)) {
+        action.children.forEach(child => traverseAction(child));
+      }
+      if (action.branches && Array.isArray(action.branches)) {
+        action.branches.forEach(branch => {
+          if (branch.action) traverseAction(branch.action);
+        });
+      }
+      
+      // Continue to next action
+      if (action.nextAction) {
+        traverseAction(action.nextAction);
+      }
+    };
+    
+    // Process each flow
+    for (const flow of flows) {
+      // Extract trigger
+      if (flow.trigger) {
+        if (flow.trigger.settings?.pieceName) {
+          const pieceName = flow.trigger.settings.pieceName;
+          if (!stepsMap.has(pieceName)) {
+            stepsMap.set(pieceName, {
+              displayName: flow.trigger.displayName || pieceNameToDisplayName(pieceName),
+              pieceName: pieceName,
+              pieceDisplayName: pieceNameToDisplayName(pieceName),
+              triggerName: flow.trigger.settings.triggerName || null,
+              actionName: null,
+              type: flow.trigger.type || 'PIECE_TRIGGER'
+            });
+          }
+        }
+        
+        // Traverse actions starting from trigger's nextAction
+        if (flow.trigger.nextAction) {
+          traverseAction(flow.trigger.nextAction);
+        }
+      }
+    }
+    
+    // Convert map to array
+    const steps = Array.from(stepsMap.values());
+    
+    console.log(`📚 [STEP EXTRACTOR] Extracted ${steps.length} unique integrations from flows`);
+    return steps;
+  } catch (error) {
+    console.error('📚 [STEP EXTRACTOR] Failed to extract steps:', error.message);
+    return [];
+  }
+};
+
 // Build the publish request body based on the template data
 const buildPublishRequestBody = async (idea) => {
   // Parse flow JSON if available - extract only the flows array
@@ -524,9 +754,17 @@ router.get('/', authenticateToken, async (req, res) => {
       `).all();
     }
 
-    // Fetch departments for each idea
+    // Fetch departments for each idea and parse flow_steps
     for (const idea of ideas) {
       idea.departments = await getIdeaDepartments(idea.id);
+      // Parse flow_steps JSON if present
+      if (idea.flow_steps) {
+        try {
+          idea.flow_steps = JSON.parse(idea.flow_steps);
+        } catch (e) {
+          idea.flow_steps = null;
+        }
+      }
     }
 
     res.json(ideas);
@@ -563,6 +801,15 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
     // Fetch departments for this idea
     idea.departments = await getIdeaDepartments(idea.id);
+    
+    // Parse flow_steps JSON if present
+    if (idea.flow_steps) {
+      try {
+        idea.flow_steps = JSON.parse(idea.flow_steps);
+      } catch (e) {
+        idea.flow_steps = null;
+      }
+    }
 
     const comments = await db.prepare(`
       SELECT c.*, u.username, u.handle
@@ -1413,13 +1660,17 @@ router.post('/:id/flow-json', authenticateToken, async (req, res) => {
       flows: allFlows
     }) : null;
 
+    // Extract steps/integrations from the flow data
+    const flowSteps = extractStepsFromFlows(storageData);
+    const flowStepsJson = flowSteps.length > 0 ? JSON.stringify(flowSteps) : null;
+
     await db.prepare(`
-      UPDATE ideas SET flow_json = ?, updated_at = CURRENT_TIMESTAMP
+      UPDATE ideas SET flow_json = ?, flow_steps = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(storageData, ideaId);
+    `).run(storageData, flowStepsJson, ideaId);
 
     const flowCount = allFlows.length;
-    await logActivity(ideaId, userId, 'updated', `Flow JSON uploaded (${flowCount} flow${flowCount !== 1 ? 's' : ''})`);
+    await logActivity(ideaId, userId, 'updated', `Flow JSON uploaded (${flowCount} flow${flowCount !== 1 ? 's' : ''}, ${flowSteps.length} integration${flowSteps.length !== 1 ? 's' : ''})`);
 
     const updatedIdea = await db.prepare(`
       SELECT i.*, 
@@ -1434,6 +1685,15 @@ router.post('/:id/flow-json', authenticateToken, async (req, res) => {
     `).get(ideaId);
 
     updatedIdea.departments = await getIdeaDepartments(ideaId);
+    
+    // Parse flow_steps JSON for the response
+    if (updatedIdea.flow_steps) {
+      try {
+        updatedIdea.flow_steps = JSON.parse(updatedIdea.flow_steps);
+      } catch (e) {
+        updatedIdea.flow_steps = null;
+      }
+    }
 
     emitToAll('idea:updated', updatedIdea);
     emitToIdea(ideaId, 'idea:updated', updatedIdea);
@@ -1776,6 +2036,10 @@ router.post('/quick-publish', authenticateToken, authorizeRoles('admin'), async 
       flows: result.flows
     });
 
+    // Extract steps/integrations from the flow data
+    const flowSteps = extractStepsFromFlows(storageData);
+    const flowStepsJson = flowSteps.length > 0 ? JSON.stringify(flowSteps) : null;
+
     // Normalize cost and time formats
     const normalizedTimeSave = normalizeTimeSavePerWeek(time_save_per_week);
     const normalizedCost = normalizeCostPerYear(cost_per_year);
@@ -1796,9 +2060,10 @@ router.post('/quick-publish', authenticateToken, authorizeRoles('admin'), async 
         created_by, 
         assigned_to,
         flow_json,
+        flow_steps,
         status
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published')
     `).run(
       flow_name,
       summary || '',
@@ -1812,7 +2077,8 @@ router.post('/quick-publish', authenticateToken, authorizeRoles('admin'), async 
       price || 0, 
       req.user.id,
       assigned_to || null,
-      storageData
+      storageData,
+      flowStepsJson
     );
 
     const ideaId = insertResult.lastInsertRowid;

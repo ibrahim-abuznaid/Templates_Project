@@ -76,6 +76,16 @@ export interface Department {
   display_order: number;
 }
 
+// Flow step/integration extracted from template flow JSON
+export interface FlowStep {
+  displayName: string;
+  pieceName: string;
+  pieceDisplayName: string;
+  actionName?: string | null;
+  triggerName?: string | null;
+  type: 'PIECE_TRIGGER' | 'PIECE' | 'BRANCH' | 'LOOP' | string;
+}
+
 export interface Idea {
   id: number;
   flow_name: string | null;
@@ -89,6 +99,7 @@ export interface Idea {
   author: string | null; // Template author for public library
   idea_notes: string | null; // Internal notes about the template idea
   flow_json: string | null; // JSON string for flow data
+  flow_steps?: FlowStep[] | null; // Extracted integrations/steps from flow JSON
   reviewer_name: string | null; // Internal only
   price: number; // Internal only
   status: IdeaStatus;

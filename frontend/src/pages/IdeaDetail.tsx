@@ -452,6 +452,7 @@ const IdeaDetail: React.FC = () => {
       setIdea(prev => prev ? { 
         ...prev, 
         flow_json: response.data.flow_json,
+        flow_steps: response.data.flow_steps,
         _flowCount: response.data._flowCount 
       } : null);
       
@@ -1703,6 +1704,67 @@ const IdeaDetail: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Integrations Used Section - Shows extracted steps from flow */}
+              {idea.flow_steps && idea.flow_steps.length > 0 && (
+                <div className="group">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-1 h-5 bg-purple-500 rounded-full"></div>
+                    <label className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                      Integrations Used
+                    </label>
+                    <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full font-medium">
+                      {idea.flow_steps.length}
+                    </span>
+                  </div>
+                  <div className="bg-gradient-to-br from-purple-50/50 to-indigo-50/50 rounded-xl border border-purple-100 p-4">
+                    <div className="flex flex-wrap gap-2">
+                      {idea.flow_steps.map((step, index) => (
+                        <div
+                          key={`${step.pieceName}-${index}`}
+                          className="group/step inline-flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-purple-100 shadow-sm hover:shadow-md hover:border-purple-200 transition-all duration-200"
+                          title={`${step.pieceName}${step.actionName ? ` - ${step.actionName}` : ''}${step.triggerName ? ` (trigger: ${step.triggerName})` : ''}`}
+                        >
+                          {/* Integration Icon - Using first letter as placeholder */}
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white ${
+                            step.type === 'PIECE_TRIGGER' 
+                              ? 'bg-gradient-to-br from-amber-400 to-orange-500' 
+                              : 'bg-gradient-to-br from-purple-500 to-indigo-600'
+                          }`}>
+                            {step.pieceDisplayName.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-gray-800 leading-tight">
+                              {step.pieceDisplayName}
+                            </span>
+                            {step.type === 'PIECE_TRIGGER' && (
+                              <span className="text-[10px] text-amber-600 font-medium uppercase tracking-wide">
+                                Trigger
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Integration summary */}
+                    <div className="mt-3 pt-3 border-t border-purple-100/50">
+                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                        <span>
+                          <span className="font-medium text-amber-600">
+                            {idea.flow_steps.filter(s => s.type === 'PIECE_TRIGGER').length}
+                          </span> trigger{idea.flow_steps.filter(s => s.type === 'PIECE_TRIGGER').length !== 1 ? 's' : ''}
+                        </span>
+                        <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
+                        <span>
+                          <span className="font-medium text-purple-600">
+                            {idea.flow_steps.filter(s => s.type !== 'PIECE_TRIGGER').length}
+                          </span> action{idea.flow_steps.filter(s => s.type !== 'PIECE_TRIGGER').length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Internal Fields Section - Admin Only */}
               {isAdmin && (

@@ -41,6 +41,7 @@ model Idea {
   author           String?           @db.VarChar(255) // Template author for public library
   ideaNotes        String?           @map("idea_notes") @db.Text // Internal notes about the template idea
   flowJson         String?           @map("flow_json") @db.Text // JSON string for flow data uploaded by freelancer
+  flowSteps        String?           @map("flow_steps") @db.Text // JSON array of extracted integration/step info from flow
   reviewerName     String?           @map("reviewer_name") @db.VarChar(255) // Internal only, not sent to API
   price            Decimal?          @db.Decimal(10, 2) // Internal only, not sent to API
   status           String?           @default("new") @db.VarChar(50)
