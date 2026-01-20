@@ -27,6 +27,8 @@ import {
   RefreshCw,
   Puzzle,
   Zap,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -122,6 +124,8 @@ const TemplateAnalytics: React.FC = () => {
   const [sortBy, setSortBy] = useState<'installs' | 'views' | 'activeFlows' | 'conversion'>('installs');
   const [showUserIds, setShowUserIds] = useState<number | null>(null);
   const [integrationAnalytics, setIntegrationAnalytics] = useState<IntegrationAnalytics | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     loadData();
@@ -178,6 +182,18 @@ const TemplateAnalytics: React.FC = () => {
         default: return 0;
       }
     });
+
+  // Pagination
+  const totalPages = Math.ceil(filteredTemplates.length / itemsPerPage);
+  const paginatedTemplates = filteredTemplates.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCategory, sortBy]);
 
   const categories = [...new Set(allTemplates.map(t => t.category))].filter(Boolean);
 
@@ -468,14 +484,14 @@ const TemplateAnalytics: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredTemplates.length === 0 ? (
+              {paginatedTemplates.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="text-center py-8 text-gray-500">
                     No templates with analytics data
                   </td>
                 </tr>
               ) : (
-                filteredTemplates.map((template) => (
+                paginatedTemplates.map((template) => (
                   <React.Fragment key={template.ideaId}>
                     <tr className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-4">
@@ -551,6 +567,58 @@ const TemplateAnalytics: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between pt-4 border-t">
+            <div className="text-sm text-gray-500">
+              Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredTemplates.length)} of {filteredTemplates.length} templates
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum: number;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
+                        currentPage === pageNum
+                          ? 'bg-primary-600 text-white'
+                          : 'hover:bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Integration Analytics Section */}
