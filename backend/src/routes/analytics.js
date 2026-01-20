@@ -974,6 +974,7 @@ router.get('/template/by-idea/:ideaId', authenticateToken, async (req, res) => {
 router.get('/templates/published', authenticateToken, async (req, res) => {
   try {
     // Get all published templates with their analytics
+    // Join through idea_departments to get category (first department)
     const templates = await db.prepare(`
       SELECT 
         i.id as idea_id,
@@ -982,7 +983,7 @@ router.get('/templates/published', authenticateToken, async (req, res) => {
         i.status,
         i.created_at as published_at,
         u.username as assigned_to_name,
-        d.name as category,
+        COALESCE(d.name, i.department) as category,
         COALESCE(ta.total_views, 0) as total_views,
         COALESCE(ta.total_installs, 0) as total_installs,
         COALESCE(array_length(ta.installed_by_user_ids, 1), 0) as unique_users_installed,
@@ -991,9 +992,12 @@ router.get('/templates/published', authenticateToken, async (req, res) => {
         ta.active_flow_ids
       FROM ideas i
       LEFT JOIN users u ON i.assigned_to = u.id
-      LEFT JOIN departments d ON i.department_id = d.id
+      LEFT JOIN idea_departments id ON id.idea_id = i.id
+      LEFT JOIN departments d ON d.id = id.department_id
       LEFT JOIN template_analytics ta ON i.public_library_id = ta.template_id
       WHERE i.status = 'published' AND i.public_library_id IS NOT NULL
+      GROUP BY i.id, i.flow_name, i.public_library_id, i.status, i.created_at, u.username, d.name, i.department,
+               ta.total_views, ta.total_installs, ta.installed_by_user_ids, ta.active_flow_ids
       ORDER BY COALESCE(ta.total_installs, 0) DESC
     `).all();
 
