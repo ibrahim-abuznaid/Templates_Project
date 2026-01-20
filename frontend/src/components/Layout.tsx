@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle, Zap, ChevronDown, BarChart3, Wrench, Lightbulb, BookOpen, Tags, Menu, X, Globe } from 'lucide-react';
+import { LogOut, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle, Zap, ChevronDown, BarChart3, Wrench, Lightbulb, BookOpen, Tags, Menu, X, Globe, MoreHorizontal } from 'lucide-react';
 import NotificationsInbox from './NotificationsInbox';
 import InviteUserModal from './InviteUserModal';
 
@@ -16,6 +16,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -27,10 +28,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Close mobile menu when navigating
   const handleNavClick = () => {
     setShowMobileMenu(false);
+    setShowMoreMenu(false);
   };
 
-  // Navigation group component for better organization
-  const NavDivider = () => <div className="w-px h-5 bg-gray-200/80 mx-1.5 xl:mx-2" />;
+  // Check if any "More" menu item is active
+  const isMoreMenuActive = () => {
+    if (!isAdmin) return false;
+    return isActive('/analytics') || isActive('/template-analytics') || 
+           isActive('/maintenance') || isActive('/categories') || isActive('/invoices');
+  };
 
   // Mobile nav link component
   const MobileNavLink = ({ to, icon: Icon, label, color }: { to: string; icon: React.ElementType; label: string; color?: 'amber' | 'violet' }) => (
@@ -52,6 +58,22 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     </Link>
   );
 
+  // Dropdown menu link component
+  const DropdownNavLink = ({ to, icon: Icon, label }: { to: string; icon: React.ElementType; label: string }) => (
+    <Link
+      to={to}
+      onClick={handleNavClick}
+      className={`flex items-center gap-2.5 px-3 py-2 text-sm font-medium transition-all ${
+        isActive(to)
+          ? 'bg-primary-50 text-primary-700'
+          : 'text-gray-600 hover:bg-gray-50'
+      }`}
+    >
+      <Icon className="w-4 h-4" />
+      <span>{label}</span>
+    </Link>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50/50">
       {/* Header */}
@@ -60,157 +82,137 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <div className="flex justify-between h-14 items-center gap-2">
             {/* Logo & Brand */}
             <div className="flex items-center min-w-0 flex-shrink-0">
-              <Link to="/" className="flex items-center gap-2 mr-3 lg:mr-4 flex-shrink-0">
+              <Link to="/" className="flex items-center gap-2 mr-4 flex-shrink-0">
                 <img src="/activepieces.webp" alt="Activepieces" className="w-7 h-7" />
-                <span className="text-sm font-semibold text-gray-900 hidden lg:block whitespace-nowrap">Template Manager</span>
+                <span className="text-sm font-semibold text-gray-900 hidden md:block whitespace-nowrap">Template Manager</span>
               </Link>
               
               {/* Desktop Navigation */}
               {user && (
-                <nav className="hidden lg:flex items-center flex-shrink min-w-0">
-                  {/* Core Navigation Group */}
-                  <div className="flex items-center border-l border-gray-200/80 pl-3">
+                <nav className="hidden lg:flex items-center">
+                  {/* Primary Navigation - Always visible */}
+                  <div className="flex items-center border-l border-gray-200/80 pl-4">
                     <Link
                       to="/"
                       className={isActive('/') ? 'nav-link-active' : 'nav-link'}
-                      title="Dashboard"
                     >
                       <LayoutDashboard className="w-4 h-4" />
-                      <span className="hidden xl:inline">Dashboard</span>
+                      <span>Dashboard</span>
                     </Link>
                     
                     <Link
                       to="/departments"
                       className={isActive('/departments') ? 'nav-link-active' : 'nav-link'}
-                      title="Departments"
                     >
                       <Building2 className="w-4 h-4" />
-                      <span className="hidden xl:inline">Depts</span>
+                      <span>Departments</span>
                     </Link>
                     
                     <Link
                       to="/blockers"
                       className={isActive('/blockers') ? 'nav-link-active' : 'nav-link'}
-                      title="Blockers"
                     >
                       <AlertTriangle className="w-4 h-4" />
-                      <span className="hidden xl:inline">Blockers</span>
+                      <span>Blockers</span>
                     </Link>
-                  </div>
 
-                  <NavDivider />
+                    <div className="w-px h-5 bg-gray-200/80 mx-2" />
 
-                  {/* Resources Group */}
-                  <div className="flex items-center">
                     <Link
                       to="/suggestions"
-                      className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
                         isActive('/suggestions')
                           ? 'bg-amber-100 text-amber-700'
                           : 'text-amber-600 hover:bg-amber-50'
                       }`}
-                      title="Suggestions"
                     >
                       <Lightbulb className="w-4 h-4" />
-                      <span className="hidden xl:inline">Suggestions</span>
+                      <span>Suggestions</span>
                     </Link>
 
                     <Link
                       to="/guidebook"
-                      className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
                         isActive('/guidebook')
                           ? 'bg-violet-100 text-violet-700'
                           : 'text-violet-600 hover:bg-violet-50'
                       }`}
-                      title="Guidebook"
                     >
                       <BookOpen className="w-4 h-4" />
-                      <span className="hidden xl:inline">Guide</span>
+                      <span>Guidebook</span>
                     </Link>
 
                     {isAdmin && (
                       <Link
                         to="/quick-publish"
-                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
                           isActive('/quick-publish')
                             ? 'bg-amber-100 text-amber-700'
                             : 'text-amber-600 hover:bg-amber-50'
                         }`}
-                        title="Quick Publish"
                       >
                         <Zap className="w-4 h-4" />
-                        <span className="hidden xl:inline">Publish</span>
+                        <span>Quick Publish</span>
                       </Link>
                     )}
-                  </div>
 
-                  {isAdmin && (
-                    <>
-                      <NavDivider />
-                      
-                      {/* Admin Tools Group */}
-                      <div className="flex items-center">
+                    {/* Non-admin Finance link */}
+                    {!isAdmin && (
+                      <>
+                        <div className="w-px h-5 bg-gray-200/80 mx-2" />
                         <Link
-                          to="/analytics"
-                          className={isActive('/analytics') ? 'nav-link-active' : 'nav-link'}
-                          title="Performance"
+                          to="/earnings"
+                          className={isActive('/earnings') ? 'nav-link-active' : 'nav-link'}
                         >
-                          <BarChart3 className="w-4 h-4" />
-                          <span className="hidden xl:inline">Performance</span>
+                          <DollarSign className="w-4 h-4" />
+                          <span>Earnings</span>
                         </Link>
+                      </>
+                    )}
 
-                        <Link
-                          to="/template-analytics"
-                          className={isActive('/template-analytics') ? 'nav-link-active' : 'nav-link'}
-                          title="Analytics"
-                        >
-                          <Globe className="w-4 h-4" />
-                          <span className="hidden xl:inline">Templates</span>
-                        </Link>
+                    {/* Admin "More" dropdown */}
+                    {isAdmin && (
+                      <>
+                        <div className="w-px h-5 bg-gray-200/80 mx-2" />
+                        
+                        <div className="relative">
+                          <button
+                            onClick={() => setShowMoreMenu(!showMoreMenu)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+                              isMoreMenuActive()
+                                ? 'bg-primary-50 text-primary-700'
+                                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
+                            }`}
+                          >
+                            <MoreHorizontal className="w-4 h-4" />
+                            <span>More</span>
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showMoreMenu ? 'rotate-180' : ''}`} />
+                          </button>
 
-                        <Link
-                          to="/maintenance"
-                          className={isActive('/maintenance') ? 'nav-link-active' : 'nav-link'}
-                          title="Maintenance"
-                        >
-                          <Wrench className="w-4 h-4" />
-                          <span className="hidden xl:inline">Maint.</span>
-                        </Link>
-
-                        <Link
-                          to="/categories"
-                          className={isActive('/categories') ? 'nav-link-active' : 'nav-link'}
-                          title="Categories"
-                        >
-                          <Tags className="w-4 h-4" />
-                          <span className="hidden xl:inline">Categories</span>
-                        </Link>
-                      </div>
-                    </>
-                  )}
-
-                  <NavDivider />
-
-                  {/* Finance Group */}
-                  <div className="flex items-center">
-                    {isAdmin ? (
-                      <Link
-                        to="/invoices"
-                        className={isActive('/invoices') ? 'nav-link-active' : 'nav-link'}
-                        title="Invoices"
-                      >
-                        <Receipt className="w-4 h-4" />
-                        <span className="hidden xl:inline">Invoices</span>
-                      </Link>
-                    ) : (
-                      <Link
-                        to="/earnings"
-                        className={isActive('/earnings') ? 'nav-link-active' : 'nav-link'}
-                        title="Earnings"
-                      >
-                        <DollarSign className="w-4 h-4" />
-                        <span className="hidden xl:inline">Earnings</span>
-                      </Link>
+                          {/* More Dropdown */}
+                          {showMoreMenu && (
+                            <>
+                              <div 
+                                className="fixed inset-0 z-10" 
+                                onClick={() => setShowMoreMenu(false)}
+                              />
+                              <div className="absolute left-0 mt-2 w-52 bg-white rounded-xl shadow-lg border border-gray-200/80 py-1 z-20 animate-fade-in overflow-hidden">
+                                <div className="py-1">
+                                  <p className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Admin Tools</p>
+                                  <DropdownNavLink to="/analytics" icon={BarChart3} label="Performance" />
+                                  <DropdownNavLink to="/template-analytics" icon={Globe} label="Template Analytics" />
+                                  <DropdownNavLink to="/maintenance" icon={Wrench} label="Maintenance" />
+                                  <DropdownNavLink to="/categories" icon={Tags} label="Categories" />
+                                </div>
+                                <div className="border-t border-gray-100 py-1">
+                                  <p className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Finance</p>
+                                  <DropdownNavLink to="/invoices" icon={Receipt} label="Invoices" />
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </>
                     )}
                   </div>
                 </nav>
