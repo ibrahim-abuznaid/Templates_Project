@@ -561,10 +561,10 @@ const CategoryManagement: React.FC = () => {
         <div>
           <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
             <Tags className="w-8 h-8 text-primary-600" />
-            Category Management
+            Department Management
           </h1>
           <p className="text-gray-500 mt-1">
-            Manage categories for templates and sync with the Public Library
+            Manage departments for templates and sync with the Public Library
           </p>
         </div>
         <div className="flex items-center gap-3">

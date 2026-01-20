@@ -34,8 +34,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Check if any "More" menu item is active
   const isMoreMenuActive = () => {
     if (!isAdmin) return false;
-    return isActive('/analytics') || isActive('/template-analytics') || 
-           isActive('/maintenance') || isActive('/categories') || isActive('/invoices');
+    return isActive('/guidebook') || isActive('/quick-publish') || 
+           isActive('/maintenance') || isActive('/categories');
   };
 
   // Mobile nav link component
@@ -92,6 +92,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <nav className="hidden lg:flex items-center">
                   {/* Primary Navigation - Always visible */}
                   <div className="flex items-center border-l border-gray-200/80 pl-4">
+                    {/* 1. Dashboard */}
                     <Link
                       to="/"
                       className={isActive('/') ? 'nav-link-active' : 'nav-link'}
@@ -100,14 +101,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <span>Dashboard</span>
                     </Link>
                     
-                    <Link
-                      to="/departments"
-                      className={isActive('/departments') ? 'nav-link-active' : 'nav-link'}
-                    >
-                      <Building2 className="w-4 h-4" />
-                      <span>Departments</span>
-                    </Link>
-                    
+                    {/* 2. Blockers */}
                     <Link
                       to="/blockers"
                       className={isActive('/blockers') ? 'nav-link-active' : 'nav-link'}
@@ -116,8 +110,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <span>Blockers</span>
                     </Link>
 
-                    <div className="w-px h-5 bg-gray-200/80 mx-2" />
-
+                    {/* 3. Suggestions */}
                     <Link
                       to="/suggestions"
                       className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
@@ -130,36 +123,73 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <span>Suggestions</span>
                     </Link>
 
-                    <Link
-                      to="/guidebook"
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
-                        isActive('/guidebook')
-                          ? 'bg-violet-100 text-violet-700'
-                          : 'text-violet-600 hover:bg-violet-50'
-                      }`}
-                    >
-                      <BookOpen className="w-4 h-4" />
-                      <span>Guidebook</span>
-                    </Link>
-
                     {isAdmin && (
-                      <Link
-                        to="/quick-publish"
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
-                          isActive('/quick-publish')
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'text-amber-600 hover:bg-amber-50'
-                        }`}
-                      >
-                        <Zap className="w-4 h-4" />
-                        <span>Quick Publish</span>
-                      </Link>
-                    )}
-
-                    {/* Non-admin Finance link */}
-                    {!isAdmin && (
                       <>
                         <div className="w-px h-5 bg-gray-200/80 mx-2" />
+
+                        {/* 4. Performance */}
+                        <Link
+                          to="/analytics"
+                          className={isActive('/analytics') ? 'nav-link-active' : 'nav-link'}
+                        >
+                          <BarChart3 className="w-4 h-4" />
+                          <span>Performance</span>
+                        </Link>
+
+                        {/* 5. Analytics (Template Analytics) */}
+                        <Link
+                          to="/template-analytics"
+                          className={isActive('/template-analytics') ? 'nav-link-active' : 'nav-link'}
+                        >
+                          <Globe className="w-4 h-4" />
+                          <span>Analytics</span>
+                        </Link>
+
+                        {/* 6. Invoices */}
+                        <Link
+                          to="/invoices"
+                          className={isActive('/invoices') ? 'nav-link-active' : 'nav-link'}
+                        >
+                          <Receipt className="w-4 h-4" />
+                          <span>Invoices</span>
+                        </Link>
+
+                        {/* 7. Departments */}
+                        <Link
+                          to="/departments"
+                          className={isActive('/departments') ? 'nav-link-active' : 'nav-link'}
+                        >
+                          <Building2 className="w-4 h-4" />
+                          <span>Departments</span>
+                        </Link>
+                      </>
+                    )}
+
+                    {/* Non-admin: show Departments and Earnings */}
+                    {!isAdmin && (
+                      <>
+                        <Link
+                          to="/departments"
+                          className={isActive('/departments') ? 'nav-link-active' : 'nav-link'}
+                        >
+                          <Building2 className="w-4 h-4" />
+                          <span>Departments</span>
+                        </Link>
+
+                        <Link
+                          to="/guidebook"
+                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+                            isActive('/guidebook')
+                              ? 'bg-violet-100 text-violet-700'
+                              : 'text-violet-600 hover:bg-violet-50'
+                          }`}
+                        >
+                          <BookOpen className="w-4 h-4" />
+                          <span>Guidebook</span>
+                        </Link>
+
+                        <div className="w-px h-5 bg-gray-200/80 mx-2" />
+                        
                         <Link
                           to="/earnings"
                           className={isActive('/earnings') ? 'nav-link-active' : 'nav-link'}
@@ -170,7 +200,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       </>
                     )}
 
-                    {/* Admin "More" dropdown */}
+                    {/* Admin "More" dropdown - for less used pages */}
                     {isAdmin && (
                       <>
                         <div className="w-px h-5 bg-gray-200/80 mx-2" />
@@ -196,17 +226,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                                 className="fixed inset-0 z-10" 
                                 onClick={() => setShowMoreMenu(false)}
                               />
-                              <div className="absolute left-0 mt-2 w-52 bg-white rounded-xl shadow-lg border border-gray-200/80 py-1 z-20 animate-fade-in overflow-hidden">
+                              <div className="absolute left-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-200/80 py-1 z-20 animate-fade-in overflow-hidden">
                                 <div className="py-1">
-                                  <p className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Admin Tools</p>
-                                  <DropdownNavLink to="/analytics" icon={BarChart3} label="Performance" />
-                                  <DropdownNavLink to="/template-analytics" icon={Globe} label="Template Analytics" />
+                                  <DropdownNavLink to="/guidebook" icon={BookOpen} label="Guidebook" />
+                                  <DropdownNavLink to="/quick-publish" icon={Zap} label="Quick Publish" />
                                   <DropdownNavLink to="/maintenance" icon={Wrench} label="Maintenance" />
-                                  <DropdownNavLink to="/categories" icon={Tags} label="Categories" />
-                                </div>
-                                <div className="border-t border-gray-100 py-1">
-                                  <p className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Finance</p>
-                                  <DropdownNavLink to="/invoices" icon={Receipt} label="Invoices" />
+                                  <DropdownNavLink to="/categories" icon={Tags} label="Department Management" />
                                 </div>
                               </div>
                             </>
@@ -344,41 +369,37 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
                 {/* Navigation Groups */}
                 <div className="space-y-4">
-                  {/* Core Navigation */}
+                  {/* Main Navigation */}
                   <div className="space-y-1">
-                    <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Navigation</p>
+                    <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Main</p>
                     <MobileNavLink to="/" icon={LayoutDashboard} label="Dashboard" />
-                    <MobileNavLink to="/departments" icon={Building2} label="Departments" />
                     <MobileNavLink to="/blockers" icon={AlertTriangle} label="Blockers" />
-                  </div>
-
-                  {/* Resources */}
-                  <div className="space-y-1">
-                    <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Resources</p>
                     <MobileNavLink to="/suggestions" icon={Lightbulb} label="Suggestions" color="amber" />
-                    <MobileNavLink to="/guidebook" icon={BookOpen} label="Guidebook" color="violet" />
-                    {isAdmin && (
-                      <MobileNavLink to="/quick-publish" icon={Zap} label="Quick Publish" color="amber" />
-                    )}
+                    <MobileNavLink to="/departments" icon={Building2} label="Departments" />
                   </div>
 
                   {/* Admin Tools */}
                   {isAdmin && (
                     <div className="space-y-1">
-                      <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Admin Tools</p>
+                      <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Admin</p>
                       <MobileNavLink to="/analytics" icon={BarChart3} label="Performance" />
                       <MobileNavLink to="/template-analytics" icon={Globe} label="Analytics" />
-                      <MobileNavLink to="/maintenance" icon={Wrench} label="Maintenance" />
-                      <MobileNavLink to="/categories" icon={Tags} label="Categories" />
+                      <MobileNavLink to="/invoices" icon={Receipt} label="Invoices" />
                     </div>
                   )}
 
-                  {/* Finance */}
+                  {/* More */}
                   <div className="space-y-1">
-                    <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Finance</p>
-                    {isAdmin ? (
-                      <MobileNavLink to="/invoices" icon={Receipt} label="Invoices" />
-                    ) : (
+                    <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">More</p>
+                    <MobileNavLink to="/guidebook" icon={BookOpen} label="Guidebook" color="violet" />
+                    {isAdmin && (
+                      <>
+                        <MobileNavLink to="/quick-publish" icon={Zap} label="Quick Publish" color="amber" />
+                        <MobileNavLink to="/maintenance" icon={Wrench} label="Maintenance" />
+                        <MobileNavLink to="/categories" icon={Tags} label="Department Management" />
+                      </>
+                    )}
+                    {!isAdmin && (
                       <MobileNavLink to="/earnings" icon={DollarSign} label="Earnings" />
                     )}
                   </div>
