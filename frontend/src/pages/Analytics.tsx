@@ -29,7 +29,6 @@ import {
   Download,
   Wrench,
   AlertTriangle,
-  Globe,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -419,27 +418,6 @@ const Analytics: React.FC = () => {
           </ResponsiveContainer>
         </div>
       )}
-
-      {/* Template Analytics Link */}
-      <div className="card bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-green-100 rounded-xl">
-              <Globe className="w-6 h-6 text-green-600" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Public Template Analytics</h2>
-              <p className="text-sm text-gray-600">Track views, installs, and usage of your published templates</p>
-            </div>
-          </div>
-          <Link
-            to="/template-analytics"
-            className="btn-primary flex items-center gap-2"
-          >
-            View Analytics
-          </Link>
-        </div>
-      </div>
 
       {/* Freelancer Reports Table */}
       <div className="card">
