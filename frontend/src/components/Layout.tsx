@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle, Zap, ChevronDown, BarChart3, Wrench, Lightbulb, BookOpen, Tags, Menu, X } from 'lucide-react';
+import { LogOut, LayoutDashboard, Building2, UserPlus, Receipt, DollarSign, AlertTriangle, Zap, ChevronDown, BarChart3, Wrench, Lightbulb, BookOpen, Tags, Menu, X, Globe } from 'lucide-react';
 import NotificationsInbox from './NotificationsInbox';
 import InviteUserModal from './InviteUserModal';
 
@@ -157,6 +157,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         >
                           <BarChart3 className="w-4 h-4" />
                           <span className="hidden xl:inline">Performance</span>
+                        </Link>
+
+                        <Link
+                          to="/template-analytics"
+                          className={isActive('/template-analytics') ? 'nav-link-active' : 'nav-link'}
+                          title="Template Analytics"
+                        >
+                          <Globe className="w-4 h-4" />
+                          <span className="hidden xl:inline">Templates</span>
                         </Link>
 
                         <Link
@@ -356,6 +365,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <div className="space-y-1">
                       <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Admin Tools</p>
                       <MobileNavLink to="/analytics" icon={BarChart3} label="Performance" />
+                      <MobileNavLink to="/template-analytics" icon={Globe} label="Template Analytics" />
                       <MobileNavLink to="/maintenance" icon={Wrench} label="Maintenance" />
                       <MobileNavLink to="/categories" icon={Tags} label="Categories" />
                     </div>

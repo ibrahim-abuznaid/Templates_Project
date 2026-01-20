@@ -29,10 +29,7 @@ import {
   Download,
   Wrench,
   AlertTriangle,
-  Eye,
-  Activity,
   Globe,
-  ArrowUpRight,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -86,48 +83,6 @@ interface CreationData {
   top_freelancers: Array<{ username: string; templates_count: number; published_count: number }>;
 }
 
-interface TemplateAnalyticsOverview {
-  overview: {
-    totalViews: number;
-    totalInstalls: number;
-    totalActiveFlows: number;
-    uniqueUsersInstalled: number;
-    conversionRate: number;
-    publishedTemplates: number;
-    trackedTemplates: number;
-  };
-  explore: {
-    totalClicks: number;
-    uniqueUsers: number;
-  };
-  topByInstalls: Array<{
-    ideaId: number;
-    flowName: string;
-    publicLibraryId: string;
-    totalViews: number;
-    totalInstalls: number;
-  }>;
-  topByViews: Array<{
-    ideaId: number;
-    flowName: string;
-    publicLibraryId: string;
-    totalViews: number;
-    totalInstalls: number;
-  }>;
-}
-
-interface CategoryAnalytics {
-  departmentId: number;
-  category: string;
-  availableTemplates: number;
-  totalViews: number;
-  totalInstalls: number;
-  installedAtLeastOnce: number;
-  activeFlows: number;
-  avgInstallsPerTemplate: number;
-  conversionRate: number;
-}
-
 const Analytics: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('monthly');
@@ -136,13 +91,9 @@ const Analytics: React.FC = () => {
   const [creationData, setCreationData] = useState<CreationData | null>(null);
   const [reportPeriod, setReportPeriod] = useState<'weekly' | 'past_week' | 'monthly' | 'all'>('monthly');
   const [maintenanceIssues, setMaintenanceIssues] = useState(0);
-  const [templateAnalyticsOverview, setTemplateAnalyticsOverview] = useState<TemplateAnalyticsOverview | null>(null);
-  const [categoryAnalytics, setCategoryAnalytics] = useState<CategoryAnalytics[]>([]);
-  const [showTemplateAnalytics, setShowTemplateAnalytics] = useState(true);
 
   useEffect(() => {
     loadData();
-    loadTemplateAnalytics();
   }, [period, reportPeriod]);
 
   const loadData = async () => {
@@ -163,19 +114,6 @@ const Analytics: React.FC = () => {
       console.error('Failed to load analytics:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadTemplateAnalytics = async () => {
-    try {
-      const [overviewRes, categoryRes] = await Promise.all([
-        analyticsApi.getTemplatesAnalyticsOverview(),
-        analyticsApi.getCategoryAnalytics(),
-      ]);
-      setTemplateAnalyticsOverview(overviewRes.data);
-      setCategoryAnalytics(categoryRes.data.categories);
-    } catch (error) {
-      console.error('Failed to load template analytics:', error);
     }
   };
 
@@ -482,225 +420,26 @@ const Analytics: React.FC = () => {
         </div>
       )}
 
-      {/* Template Analytics Section */}
-      {templateAnalyticsOverview && (
-        <div className="card">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <Globe className="w-5 h-5 text-primary-600" />
+      {/* Template Analytics Link */}
+      <div className="card bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-green-100 rounded-xl">
+              <Globe className="w-6 h-6 text-green-600" />
+            </div>
+            <div>
               <h2 className="text-lg font-semibold text-gray-900">Public Template Analytics</h2>
-            </div>
-            <button
-              onClick={() => setShowTemplateAnalytics(!showTemplateAnalytics)}
-              className="text-sm text-primary-600 hover:text-primary-700 font-medium"
-            >
-              {showTemplateAnalytics ? 'Hide Details' : 'Show Details'}
-            </button>
-          </div>
-
-          {/* Overview Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-blue-600 mb-1">
-                <Eye className="w-4 h-4" />
-                <span className="text-xs font-medium">Total Views</span>
-              </div>
-              <div className="text-2xl font-bold text-blue-800">
-                {templateAnalyticsOverview.overview.totalViews.toLocaleString()}
-              </div>
-            </div>
-            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-green-600 mb-1">
-                <Download className="w-4 h-4" />
-                <span className="text-xs font-medium">Total Installs</span>
-              </div>
-              <div className="text-2xl font-bold text-green-800">
-                {templateAnalyticsOverview.overview.totalInstalls.toLocaleString()}
-              </div>
-            </div>
-            <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-purple-600 mb-1">
-                <Activity className="w-4 h-4" />
-                <span className="text-xs font-medium">Active Flows</span>
-              </div>
-              <div className="text-2xl font-bold text-purple-800">
-                {templateAnalyticsOverview.overview.totalActiveFlows.toLocaleString()}
-              </div>
-            </div>
-            <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-amber-600 mb-1">
-                <Users className="w-4 h-4" />
-                <span className="text-xs font-medium">Unique Users</span>
-              </div>
-              <div className="text-2xl font-bold text-amber-800">
-                {templateAnalyticsOverview.overview.uniqueUsersInstalled.toLocaleString()}
-              </div>
-            </div>
-            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-emerald-600 mb-1">
-                <TrendingUp className="w-4 h-4" />
-                <span className="text-xs font-medium">Conversion Rate</span>
-              </div>
-              <div className="text-2xl font-bold text-emerald-800">
-                {templateAnalyticsOverview.overview.conversionRate.toFixed(1)}%
-              </div>
-            </div>
-            <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-indigo-600 mb-1">
-                <Globe className="w-4 h-4" />
-                <span className="text-xs font-medium">Discover Clicks</span>
-              </div>
-              <div className="text-2xl font-bold text-indigo-800">
-                {templateAnalyticsOverview.explore.totalClicks.toLocaleString()}
-              </div>
-            </div>
-            <div className="bg-gradient-to-br from-pink-50 to-pink-100 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-pink-600 mb-1">
-                <FileText className="w-4 h-4" />
-                <span className="text-xs font-medium">Published</span>
-              </div>
-              <div className="text-2xl font-bold text-pink-800">
-                {templateAnalyticsOverview.overview.publishedTemplates}
-              </div>
+              <p className="text-sm text-gray-600">Track views, installs, and usage of your published templates</p>
             </div>
           </div>
-
-          {showTemplateAnalytics && (
-            <>
-              {/* Top Templates */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                {/* Top by Installs */}
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                    <Download className="w-4 h-4 text-green-600" />
-                    Top Templates by Installs
-                  </h3>
-                  <div className="space-y-2">
-                    {templateAnalyticsOverview.topByInstalls.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-4">No install data yet</p>
-                    ) : (
-                      templateAnalyticsOverview.topByInstalls.map((template, index) => (
-                        <Link
-                          key={template.ideaId}
-                          to={`/ideas/${template.ideaId}`}
-                          className="flex items-center justify-between bg-white rounded-lg p-3 hover:bg-green-50 transition-colors group"
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">
-                              {index + 1}
-                            </span>
-                            <span className="text-sm font-medium text-gray-800 group-hover:text-green-700 truncate max-w-[200px]">
-                              {template.flowName}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-gray-500">{template.totalViews} views</span>
-                            <span className="font-semibold text-green-600">{template.totalInstalls} installs</span>
-                            <ArrowUpRight className="w-4 h-4 text-gray-400 group-hover:text-green-600" />
-                          </div>
-                        </Link>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                {/* Top by Views */}
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                    <Eye className="w-4 h-4 text-blue-600" />
-                    Top Templates by Views
-                  </h3>
-                  <div className="space-y-2">
-                    {templateAnalyticsOverview.topByViews.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-4">No view data yet</p>
-                    ) : (
-                      templateAnalyticsOverview.topByViews.map((template, index) => (
-                        <Link
-                          key={template.ideaId}
-                          to={`/ideas/${template.ideaId}`}
-                          className="flex items-center justify-between bg-white rounded-lg p-3 hover:bg-blue-50 transition-colors group"
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">
-                              {index + 1}
-                            </span>
-                            <span className="text-sm font-medium text-gray-800 group-hover:text-blue-700 truncate max-w-[200px]">
-                              {template.flowName}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="font-semibold text-blue-600">{template.totalViews} views</span>
-                            <span className="text-gray-500">{template.totalInstalls} installs</span>
-                            <ArrowUpRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600" />
-                          </div>
-                        </Link>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Category Analytics */}
-              {categoryAnalytics.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-primary-600" />
-                    Analytics by Category
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-200">
-                          <th className="text-left py-2 px-3 text-xs font-semibold text-gray-600">Category</th>
-                          <th className="text-center py-2 px-3 text-xs font-semibold text-gray-600">Templates</th>
-                          <th className="text-center py-2 px-3 text-xs font-semibold text-gray-600">Views</th>
-                          <th className="text-center py-2 px-3 text-xs font-semibold text-gray-600">Installs</th>
-                          <th className="text-center py-2 px-3 text-xs font-semibold text-gray-600">Active Flows</th>
-                          <th className="text-center py-2 px-3 text-xs font-semibold text-gray-600">Avg Installs</th>
-                          <th className="text-center py-2 px-3 text-xs font-semibold text-gray-600">Conversion</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {categoryAnalytics.map((cat) => (
-                          <tr key={cat.departmentId} className="border-b border-gray-100 hover:bg-gray-50">
-                            <td className="py-2 px-3">
-                              <span className="font-medium text-gray-800">{cat.category}</span>
-                            </td>
-                            <td className="text-center py-2 px-3 text-sm text-gray-600">
-                              {cat.availableTemplates}
-                            </td>
-                            <td className="text-center py-2 px-3 text-sm text-blue-600 font-medium">
-                              {cat.totalViews.toLocaleString()}
-                            </td>
-                            <td className="text-center py-2 px-3 text-sm text-green-600 font-medium">
-                              {cat.totalInstalls.toLocaleString()}
-                            </td>
-                            <td className="text-center py-2 px-3 text-sm text-purple-600 font-medium">
-                              {cat.activeFlows.toLocaleString()}
-                            </td>
-                            <td className="text-center py-2 px-3 text-sm text-gray-600">
-                              {cat.avgInstallsPerTemplate.toFixed(1)}
-                            </td>
-                            <td className="text-center py-2 px-3">
-                              <span className={`text-sm font-medium ${
-                                cat.conversionRate >= 10 ? 'text-green-600' :
-                                cat.conversionRate >= 5 ? 'text-amber-600' :
-                                'text-gray-500'
-                              }`}>
-                                {cat.conversionRate.toFixed(1)}%
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
+          <Link
+            to="/template-analytics"
+            className="btn-primary flex items-center gap-2"
+          >
+            View Analytics
+          </Link>
         </div>
-      )}
+      </div>
 
       {/* Freelancer Reports Table */}
       <div className="card">

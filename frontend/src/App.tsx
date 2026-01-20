@@ -13,6 +13,7 @@ import MyEarnings from './pages/MyEarnings';
 import BlockersOverview from './pages/BlockersOverview';
 import QuickPublish from './pages/QuickPublish';
 import Analytics from './pages/Analytics';
+import TemplateAnalytics from './pages/TemplateAnalytics';
 import Maintenance from './pages/Maintenance';
 import Suggestions from './pages/Suggestions';
 import Guidebook from './pages/Guidebook';
@@ -121,6 +122,16 @@ const AppRoutes: React.FC = () => {
           <PrivateRoute>
             <Layout>
               <Analytics />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/template-analytics"
+        element={
+          <PrivateRoute>
+            <Layout>
+              <TemplateAnalytics />
             </Layout>
           </PrivateRoute>
         }

@@ -847,12 +847,16 @@ router.get('/templates/published', authenticateToken, async (req, res) => {
         i.status,
         i.created_at as published_at,
         u.username as assigned_to_name,
+        d.name as category,
         COALESCE(ta.total_views, 0) as total_views,
         COALESCE(ta.total_installs, 0) as total_installs,
         COALESCE(array_length(ta.installed_by_user_ids, 1), 0) as unique_users_installed,
-        COALESCE(array_length(ta.active_flow_ids, 1), 0) as active_flows
+        COALESCE(array_length(ta.active_flow_ids, 1), 0) as active_flows,
+        ta.installed_by_user_ids,
+        ta.active_flow_ids
       FROM ideas i
       LEFT JOIN users u ON i.assigned_to = u.id
+      LEFT JOIN departments d ON i.department_id = d.id
       LEFT JOIN template_analytics ta ON i.public_library_id = ta.template_id
       WHERE i.status = 'published' AND i.public_library_id IS NOT NULL
       ORDER BY COALESCE(ta.total_installs, 0) DESC
@@ -862,26 +866,27 @@ router.get('/templates/published', authenticateToken, async (req, res) => {
       ideaId: t.idea_id,
       flowName: t.flow_name,
       publicLibraryId: t.public_library_id,
+      category: t.category || 'Uncategorized',
       assignedTo: t.assigned_to_name,
       publishedAt: t.published_at,
-      analytics: {
-        totalViews: t.total_views,
-        totalInstalls: t.total_installs,
-        uniqueUsersInstalled: t.unique_users_installed,
-        activeFlows: t.active_flows,
-        conversionRate: t.total_views > 0 
-          ? parseFloat(((t.total_installs / t.total_views) * 100).toFixed(2))
-          : 0
-      }
+      totalViews: t.total_views,
+      totalInstalls: t.total_installs,
+      uniqueUsers: t.unique_users_installed,
+      activeFlows: t.active_flows,
+      conversionRate: t.total_views > 0 
+        ? parseFloat(((t.total_installs / t.total_views) * 100).toFixed(2))
+        : 0,
+      installedByUserIds: t.installed_by_user_ids || [],
+      activeFlowIds: t.active_flow_ids || []
     }));
 
     // Calculate summary stats
     const summary = {
       totalTemplates: results.length,
-      totalViews: results.reduce((sum, t) => sum + t.analytics.totalViews, 0),
-      totalInstalls: results.reduce((sum, t) => sum + t.analytics.totalInstalls, 0),
-      totalActiveFlows: results.reduce((sum, t) => sum + t.analytics.activeFlows, 0),
-      templatesWithInstalls: results.filter(t => t.analytics.totalInstalls > 0).length
+      totalViews: results.reduce((sum, t) => sum + t.totalViews, 0),
+      totalInstalls: results.reduce((sum, t) => sum + t.totalInstalls, 0),
+      totalActiveFlows: results.reduce((sum, t) => sum + t.activeFlows, 0),
+      templatesWithInstalls: results.filter(t => t.totalInstalls > 0).length
     };
 
     res.json({

@@ -743,15 +743,16 @@ export const analyticsApi = {
         ideaId: number;
         flowName: string;
         publicLibraryId: string;
+        category: string;
         assignedTo: string | null;
         publishedAt: string;
-        analytics: {
-          totalViews: number;
-          totalInstalls: number;
-          uniqueUsersInstalled: number;
-          activeFlows: number;
-          conversionRate: number;
-        };
+        totalViews: number;
+        totalInstalls: number;
+        uniqueUsers: number;
+        activeFlows: number;
+        conversionRate: number;
+        installedByUserIds: string[];
+        activeFlowIds: string[];
       }>;
       generatedAt: string;
     }>('/analytics/templates/published'),
