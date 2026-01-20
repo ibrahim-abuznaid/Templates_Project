@@ -172,32 +172,46 @@ const getWeekBoundaries = (weeksAgo = 0) => {
   return { weekStart, weekEnd };
 };
 
-// Get freelancer performance report (weekly/monthly)
+// Get freelancer performance report (weekly/monthly/custom date range)
 router.get('/freelancer-report', authenticateToken, authorizeRoles('admin'), async (req, res) => {
   try {
-    const { period = 'monthly', freelancerId } = req.query;
+    const { period = 'monthly', freelancerId, startDate, endDate } = req.query;
     
     // Calculate date range based on period
     let dateFilter;
     let dateParams = [];
+    let periodInfo = { type: period, startDate: null, endDate: null };
     
-    if (period === 'weekly') {
+    if (period === 'custom' && startDate && endDate) {
+      // Custom date range
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999); // Include the entire end date
+      dateFilter = "st.submitted_at >= $PARAM1 AND st.submitted_at <= $PARAM2";
+      dateParams = [start.toISOString(), end.toISOString()];
+      periodInfo = { type: 'custom', startDate: start.toISOString(), endDate: end.toISOString() };
+    } else if (period === 'weekly') {
       // Weekly: Thursday 2:00 PM Jordan time to next Thursday 2:00 PM Jordan time
       // Count templates that were SUBMITTED within this period
       const { weekStart, weekEnd } = getWeekBoundaries(0);
       dateFilter = "st.submitted_at >= $PARAM1 AND st.submitted_at < $PARAM2";
       dateParams = [weekStart.toISOString(), weekEnd.toISOString()];
+      periodInfo = { type: 'weekly', startDate: weekStart.toISOString(), endDate: weekEnd.toISOString() };
     } else if (period === 'past_week') {
       // Past Week: Previous Thursday 2:00 PM to the Thursday before that
       const { weekStart, weekEnd } = getWeekBoundaries(1);
       dateFilter = "st.submitted_at >= $PARAM1 AND st.submitted_at < $PARAM2";
       dateParams = [weekStart.toISOString(), weekEnd.toISOString()];
+      periodInfo = { type: 'past_week', startDate: weekStart.toISOString(), endDate: weekEnd.toISOString() };
     } else if (period === 'monthly') {
       dateFilter = "st.submitted_at >= NOW() - INTERVAL '30 days'";
+      periodInfo = { type: 'monthly', startDate: null, endDate: null };
     } else if (period === 'all') {
       dateFilter = "1=1";
+      periodInfo = { type: 'all', startDate: null, endDate: null };
     } else {
       dateFilter = "st.submitted_at >= NOW() - INTERVAL '30 days'";
+      periodInfo = { type: 'monthly', startDate: null, endDate: null };
     }
 
     let query;
@@ -286,11 +300,144 @@ router.get('/freelancer-report', authenticateToken, authorizeRoles('admin'), asy
     
     res.json({
       period,
+      periodInfo,
       reports,
       generated_at: new Date().toISOString()
     });
   } catch (error) {
     console.error('Freelancer report error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get detailed templates for a specific freelancer within a period
+router.get('/freelancer-details/:freelancerId', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const { freelancerId } = req.params;
+    const { period = 'monthly', startDate, endDate } = req.query;
+    
+    // Calculate date range based on period
+    let dateFilter;
+    let dateParams = [];
+    let periodInfo = { type: period, startDate: null, endDate: null };
+    
+    if (period === 'custom' && startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      dateFilter = "submitted_at >= $1 AND submitted_at <= $2";
+      dateParams = [start.toISOString(), end.toISOString()];
+      periodInfo = { type: 'custom', startDate: start.toISOString(), endDate: end.toISOString() };
+    } else if (period === 'weekly') {
+      const { weekStart, weekEnd } = getWeekBoundaries(0);
+      dateFilter = "submitted_at >= $1 AND submitted_at < $2";
+      dateParams = [weekStart.toISOString(), weekEnd.toISOString()];
+      periodInfo = { type: 'weekly', startDate: weekStart.toISOString(), endDate: weekEnd.toISOString() };
+    } else if (period === 'past_week') {
+      const { weekStart, weekEnd } = getWeekBoundaries(1);
+      dateFilter = "submitted_at >= $1 AND submitted_at < $2";
+      dateParams = [weekStart.toISOString(), weekEnd.toISOString()];
+      periodInfo = { type: 'past_week', startDate: weekStart.toISOString(), endDate: weekEnd.toISOString() };
+    } else if (period === 'monthly') {
+      dateFilter = "submitted_at >= NOW() - INTERVAL '30 days'";
+      periodInfo = { type: 'monthly', startDate: null, endDate: null };
+    } else if (period === 'all') {
+      dateFilter = "1=1";
+      periodInfo = { type: 'all', startDate: null, endDate: null };
+    } else {
+      dateFilter = "submitted_at >= NOW() - INTERVAL '30 days'";
+      periodInfo = { type: 'monthly', startDate: null, endDate: null };
+    }
+
+    // Get freelancer info
+    const freelancer = await db.prepare(`
+      SELECT id, username, email FROM users WHERE id = $1 AND role = 'freelancer'
+    `).get(freelancerId);
+
+    if (!freelancer) {
+      return res.status(404).json({ error: 'Freelancer not found' });
+    }
+
+    // Get templates with their submission times
+    const query = `
+      WITH submission_tracking AS (
+        SELECT 
+          i.id as idea_id,
+          i.flow_name,
+          i.status,
+          i.price,
+          i.assigned_to,
+          i.created_at,
+          i.updated_at,
+          COALESCE(i.fix_count, 0) as fix_count,
+          COALESCE(
+            (SELECT MIN(a.created_at) 
+             FROM activity_log a 
+             WHERE a.idea_id = i.id 
+               AND a.action = 'updated' 
+               AND (a.details LIKE '%"status":"submitted"%' OR a.details LIKE '%"status": "submitted"%')
+            ),
+            CASE 
+              WHEN i.status IN ('submitted', 'reviewed', 'published', 'needs_fixes') 
+              THEN i.updated_at 
+              ELSE NULL 
+            END
+          ) as submitted_at
+        FROM ideas i
+        WHERE i.assigned_to = $${dateParams.length + 1}
+      )
+      SELECT 
+        idea_id,
+        flow_name,
+        status,
+        price,
+        fix_count,
+        created_at,
+        updated_at,
+        submitted_at
+      FROM submission_tracking
+      WHERE submitted_at IS NOT NULL AND ${dateFilter}
+      ORDER BY submitted_at DESC
+    `;
+
+    const templates = await db.prepare(query).all(...dateParams, freelancerId);
+
+    // Calculate summary stats
+    const summary = {
+      total: templates.length,
+      submitted: templates.filter(t => t.status === 'submitted').length,
+      needs_fixes: templates.filter(t => t.status === 'needs_fixes').length,
+      reviewed: templates.filter(t => t.status === 'reviewed').length,
+      published: templates.filter(t => t.status === 'published').length,
+      total_earnings: templates.reduce((sum, t) => sum + parseFloat(t.price || 0), 0),
+      completed_earnings: templates
+        .filter(t => ['reviewed', 'published'].includes(t.status))
+        .reduce((sum, t) => sum + parseFloat(t.price || 0), 0)
+    };
+
+    res.json({
+      freelancer: {
+        id: freelancer.id,
+        username: freelancer.username,
+        email: freelancer.email
+      },
+      period,
+      periodInfo,
+      summary,
+      templates: templates.map(t => ({
+        id: t.idea_id,
+        flowName: t.flow_name,
+        status: t.status,
+        price: parseFloat(t.price || 0),
+        fixCount: t.fix_count,
+        createdAt: t.created_at,
+        submittedAt: t.submitted_at,
+        updatedAt: t.updated_at
+      })),
+      generated_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Freelancer details error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

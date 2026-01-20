@@ -29,8 +29,45 @@ import {
   Download,
   Wrench,
   AlertTriangle,
+  Eye,
+  X,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import StatusBadge from '../components/StatusBadge';
+import type { IdeaStatus } from '../types';
+
+interface FreelancerDetails {
+  freelancer: {
+    id: number;
+    username: string;
+    email: string;
+  };
+  period: string;
+  periodInfo: {
+    type: string;
+    startDate: string | null;
+    endDate: string | null;
+  };
+  summary: {
+    total: number;
+    submitted: number;
+    needs_fixes: number;
+    reviewed: number;
+    published: number;
+    total_earnings: number;
+    completed_earnings: number;
+  };
+  templates: Array<{
+    id: number;
+    flowName: string;
+    status: string;
+    price: number;
+    fixCount: number;
+    createdAt: string;
+    submittedAt: string;
+    updatedAt: string;
+  }>;
+}
 
 // Color palette
 const COLORS = ['#6D28D9', '#22c55e', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316'];
@@ -88,19 +125,34 @@ const Analytics: React.FC = () => {
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [freelancerReports, setFreelancerReports] = useState<FreelancerReport[]>([]);
   const [creationData, setCreationData] = useState<CreationData | null>(null);
-  const [reportPeriod, setReportPeriod] = useState<'weekly' | 'past_week' | 'monthly' | 'all'>('monthly');
+  const [reportPeriod, setReportPeriod] = useState<'weekly' | 'past_week' | 'monthly' | 'all' | 'custom'>('monthly');
   const [maintenanceIssues, setMaintenanceIssues] = useState(0);
+  
+  // Custom date range
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  
+  // Freelancer details modal
+  const [selectedFreelancer, setSelectedFreelancer] = useState<FreelancerDetails | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
 
   useEffect(() => {
     loadData();
-  }, [period, reportPeriod]);
+  }, [period, reportPeriod, customStartDate, customEndDate]);
 
   const loadData = async () => {
     setLoading(true);
     try {
       const [summaryRes, freelancerRes, creationRes, incompleteRes] = await Promise.all([
         analyticsApi.getSummary(),
-        analyticsApi.getFreelancerReport(reportPeriod),
+        analyticsApi.getFreelancerReport(
+          reportPeriod, 
+          undefined, 
+          reportPeriod === 'custom' ? customStartDate : undefined,
+          reportPeriod === 'custom' ? customEndDate : undefined
+        ),
         analyticsApi.getCreationRate(period),
         analyticsApi.getIncompletePublished(),
       ]);
@@ -113,6 +165,31 @@ const Analytics: React.FC = () => {
       console.error('Failed to load analytics:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadFreelancerDetails = async (freelancerId: number) => {
+    setDetailsLoading(true);
+    setShowDetailsModal(true);
+    try {
+      const res = await analyticsApi.getFreelancerDetails(
+        freelancerId,
+        reportPeriod,
+        reportPeriod === 'custom' ? customStartDate : undefined,
+        reportPeriod === 'custom' ? customEndDate : undefined
+      );
+      setSelectedFreelancer(res.data);
+    } catch (error) {
+      console.error('Failed to load freelancer details:', error);
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const applyCustomDateRange = () => {
+    if (customStartDate && customEndDate) {
+      setReportPeriod('custom');
+      setShowDatePicker(false);
     }
   };
 
@@ -429,14 +506,52 @@ const Analytics: React.FC = () => {
           <div className="flex items-center gap-3">
             <select
               value={reportPeriod}
-              onChange={(e) => setReportPeriod(e.target.value as any)}
+              onChange={(e) => {
+                const val = e.target.value as any;
+                if (val === 'custom') {
+                  setShowDatePicker(true);
+                } else {
+                  setReportPeriod(val);
+                  setShowDatePicker(false);
+                }
+              }}
               className="input-field w-44"
             >
               <option value="weekly">This Week</option>
               <option value="past_week">Past Week</option>
               <option value="monthly">Monthly</option>
               <option value="all">All Time</option>
+              <option value="custom">Custom Range</option>
             </select>
+            
+            {/* Custom date range picker */}
+            {(showDatePicker || reportPeriod === 'custom') && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="input-field w-36 text-sm"
+                />
+                <span className="text-gray-500">to</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="input-field w-36 text-sm"
+                />
+                {showDatePicker && (
+                  <button
+                    onClick={applyCustomDateRange}
+                    disabled={!customStartDate || !customEndDate}
+                    className="btn-primary text-sm px-3 py-2"
+                  >
+                    Apply
+                  </button>
+                )}
+              </div>
+            )}
+            
             <button 
               onClick={exportReport}
               className="btn-secondary flex items-center gap-2"
@@ -458,12 +573,13 @@ const Analytics: React.FC = () => {
                 <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">In Progress</th>
                 <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Needs Fixes</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Earnings</th>
+                <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Actions</th>
               </tr>
             </thead>
             <tbody>
               {freelancerReports.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-gray-500">
+                  <td colSpan={8} className="text-center py-8 text-gray-500">
                     No freelancer data for this period
                   </td>
                 </tr>
@@ -508,6 +624,15 @@ const Analytics: React.FC = () => {
                         ${Number(report.completed_earnings || 0).toFixed(2)}
                       </span>
                     </td>
+                    <td className="text-center py-3 px-4">
+                      <button
+                        onClick={() => loadFreelancerDetails(report.freelancer_id)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-primary-600 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors"
+                      >
+                        <Eye className="w-4 h-4" />
+                        Details
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -515,6 +640,133 @@ const Analytics: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Freelancer Details Modal */}
+      {showDetailsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  {selectedFreelancer?.freelancer.username}'s Templates
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {reportPeriod === 'custom' 
+                    ? `${customStartDate} to ${customEndDate}`
+                    : reportPeriod === 'weekly' 
+                      ? 'This Week (Thu 2PM - Thu 2PM Jordan Time)'
+                      : reportPeriod === 'past_week'
+                        ? 'Past Week'
+                        : reportPeriod === 'monthly'
+                          ? 'Last 30 Days'
+                          : 'All Time'
+                  }
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDetailsModal(false);
+                  setSelectedFreelancer(null);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-auto p-6">
+              {detailsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader className="w-8 h-8 animate-spin text-primary-600" />
+                </div>
+              ) : selectedFreelancer ? (
+                <>
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="bg-primary-50 rounded-lg p-4 text-center">
+                      <p className="text-2xl font-bold text-primary-700">{selectedFreelancer.summary.total}</p>
+                      <p className="text-sm text-primary-600">Total Submitted</p>
+                    </div>
+                    <div className="bg-green-50 rounded-lg p-4 text-center">
+                      <p className="text-2xl font-bold text-green-700">{selectedFreelancer.summary.published}</p>
+                      <p className="text-sm text-green-600">Published</p>
+                    </div>
+                    <div className="bg-emerald-50 rounded-lg p-4 text-center">
+                      <p className="text-2xl font-bold text-emerald-700">{selectedFreelancer.summary.reviewed}</p>
+                      <p className="text-sm text-emerald-600">Reviewed</p>
+                    </div>
+                    <div className="bg-amber-50 rounded-lg p-4 text-center">
+                      <p className="text-2xl font-bold text-amber-700">${selectedFreelancer.summary.completed_earnings.toFixed(2)}</p>
+                      <p className="text-sm text-amber-600">Earnings</p>
+                    </div>
+                  </div>
+
+                  {/* Templates Table */}
+                  {selectedFreelancer.templates.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                      No templates submitted in this period
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-gray-200 bg-gray-50">
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Template</th>
+                            <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Status</th>
+                            <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Fixes</th>
+                            <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Price</th>
+                            <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">Submitted</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedFreelancer.templates.map((template) => (
+                            <tr key={template.id} className="border-b border-gray-100 hover:bg-gray-50">
+                              <td className="py-3 px-4">
+                                <Link 
+                                  to={`/ideas/${template.id}`}
+                                  className="font-medium text-primary-600 hover:text-primary-700 hover:underline"
+                                  onClick={() => setShowDetailsModal(false)}
+                                >
+                                  {template.flowName || `Template #${template.id}`}
+                                </Link>
+                              </td>
+                              <td className="text-center py-3 px-4">
+                                <StatusBadge status={template.status as IdeaStatus} />
+                              </td>
+                              <td className="text-center py-3 px-4">
+                                {template.fixCount > 0 ? (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                                    {template.fixCount}x
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">-</span>
+                                )}
+                              </td>
+                              <td className="text-right py-3 px-4 font-medium">
+                                ${template.price.toFixed(2)}
+                              </td>
+                              <td className="text-right py-3 px-4 text-sm text-gray-500">
+                                {new Date(template.submittedAt).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

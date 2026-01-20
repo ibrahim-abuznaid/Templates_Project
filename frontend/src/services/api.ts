@@ -577,9 +577,19 @@ export const blockersApi = {
 
 // Analytics endpoints
 export const analyticsApi = {
-  getFreelancerReport: (period: 'weekly' | 'past_week' | 'monthly' | 'all' = 'monthly', freelancerId?: number) =>
+  getFreelancerReport: (
+    period: 'weekly' | 'past_week' | 'monthly' | 'all' | 'custom' = 'monthly', 
+    freelancerId?: number,
+    startDate?: string,
+    endDate?: string
+  ) =>
     api.get<{
       period: string;
+      periodInfo: {
+        type: string;
+        startDate: string | null;
+        endDate: string | null;
+      };
       reports: Array<{
         freelancer_id: number;
         username: string;
@@ -595,7 +605,47 @@ export const analyticsApi = {
         completed_earnings: number;
       }>;
       generated_at: string;
-    }>('/analytics/freelancer-report', { params: { period, freelancerId } }),
+    }>('/analytics/freelancer-report', { params: { period, freelancerId, startDate, endDate } }),
+
+  getFreelancerDetails: (
+    freelancerId: number,
+    period: 'weekly' | 'past_week' | 'monthly' | 'all' | 'custom' = 'monthly',
+    startDate?: string,
+    endDate?: string
+  ) =>
+    api.get<{
+      freelancer: {
+        id: number;
+        username: string;
+        email: string;
+      };
+      period: string;
+      periodInfo: {
+        type: string;
+        startDate: string | null;
+        endDate: string | null;
+      };
+      summary: {
+        total: number;
+        submitted: number;
+        needs_fixes: number;
+        reviewed: number;
+        published: number;
+        total_earnings: number;
+        completed_earnings: number;
+      };
+      templates: Array<{
+        id: number;
+        flowName: string;
+        status: string;
+        price: number;
+        fixCount: number;
+        createdAt: string;
+        submittedAt: string;
+        updatedAt: string;
+      }>;
+      generated_at: string;
+    }>(`/analytics/freelancer-details/${freelancerId}`, { params: { period, startDate, endDate } }),
   
   getCreationRate: (period: 'weekly' | 'monthly' | 'quarterly' | 'yearly' = 'monthly') =>
     api.get<{
