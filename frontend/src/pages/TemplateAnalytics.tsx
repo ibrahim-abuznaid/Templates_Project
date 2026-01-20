@@ -170,7 +170,7 @@ const TemplateAnalytics: React.FC = () => {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Template Analytics</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Analytics</h1>
           <p className="text-gray-500 mt-1">Track views, installs, and usage of your published templates</p>
         </div>
         <button

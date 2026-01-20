@@ -162,7 +162,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         <Link
                           to="/template-analytics"
                           className={isActive('/template-analytics') ? 'nav-link-active' : 'nav-link'}
-                          title="Template Analytics"
+                          title="Analytics"
                         >
                           <Globe className="w-4 h-4" />
                           <span className="hidden xl:inline">Templates</span>
@@ -365,7 +365,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <div className="space-y-1">
                       <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Admin Tools</p>
                       <MobileNavLink to="/analytics" icon={BarChart3} label="Performance" />
-                      <MobileNavLink to="/template-analytics" icon={Globe} label="Template Analytics" />
+                      <MobileNavLink to="/template-analytics" icon={Globe} label="Analytics" />
                       <MobileNavLink to="/maintenance" icon={Wrench} label="Maintenance" />
                       <MobileNavLink to="/categories" icon={Tags} label="Categories" />
                     </div>
