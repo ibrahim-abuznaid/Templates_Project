@@ -50,6 +50,22 @@ const setIdeaDepartments = async (ideaId, departmentIds) => {
 };
 
 // ========================================
+// Idea Response Helpers
+// ========================================
+
+// Parse flow_steps JSON string to array for API responses
+const parseFlowSteps = (idea) => {
+  if (idea && idea.flow_steps && typeof idea.flow_steps === 'string') {
+    try {
+      idea.flow_steps = JSON.parse(idea.flow_steps);
+    } catch (e) {
+      idea.flow_steps = null;
+    }
+  }
+  return idea;
+};
+
+// ========================================
 // Format Normalization Helpers
 // ========================================
 
@@ -920,6 +936,9 @@ router.post('/', authenticateToken, authorizeRoles('admin'), async (req, res) =>
 
     // Fetch departments for the new idea
     newIdea.departments = await getIdeaDepartments(ideaId);
+    
+    // Parse flow_steps
+    parseFlowSteps(newIdea);
 
     // Emit real-time event for new idea
     emitToAll('idea:created', newIdea);
@@ -1057,6 +1076,9 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
     // Fetch departments for the updated idea
     updatedIdea.departments = await getIdeaDepartments(ideaId);
+    
+    // Parse flow_steps
+    parseFlowSteps(updatedIdea);
 
     // Emit real-time update to all users and anyone watching this idea
     emitToAll('idea:updated', updatedIdea);
@@ -1114,6 +1136,9 @@ router.post('/:id/assign', authenticateToken, authorizeRoles('admin'), async (re
       WHERE i.id = ?
     `).get(ideaId);
 
+    // Parse flow_steps
+    parseFlowSteps(updatedIdea);
+
     // Emit real-time assignment event
     emitToAll('idea:assigned', updatedIdea);
     emitToUser(freelancerId, 'idea:assigned', updatedIdea);
@@ -1158,6 +1183,9 @@ router.post('/:id/self-assign', authenticateToken, authorizeRoles('freelancer'),
       LEFT JOIN users u2 ON i.assigned_to = u2.id
       WHERE i.id = ?
     `).get(ideaId);
+
+    // Parse flow_steps
+    parseFlowSteps(updatedIdea);
 
     // Emit real-time self-assignment event (idea no longer available)
     emitToAll('idea:assigned', updatedIdea);
@@ -1234,6 +1262,9 @@ router.post('/:id/unassign', authenticateToken, async (req, res) => {
       LEFT JOIN users u2 ON i.assigned_to = u2.id
       WHERE i.id = ?
     `).get(ideaId);
+
+    // Parse flow_steps
+    parseFlowSteps(updatedIdea);
 
     // Emit real-time event (idea now available again)
     emitToAll('idea:unassigned', updatedIdea);
@@ -1686,14 +1717,8 @@ router.post('/:id/flow-json', authenticateToken, async (req, res) => {
 
     updatedIdea.departments = await getIdeaDepartments(ideaId);
     
-    // Parse flow_steps JSON for the response
-    if (updatedIdea.flow_steps) {
-      try {
-        updatedIdea.flow_steps = JSON.parse(updatedIdea.flow_steps);
-      } catch (e) {
-        updatedIdea.flow_steps = null;
-      }
-    }
+    // Parse flow_steps
+    parseFlowSteps(updatedIdea);
 
     emitToAll('idea:updated', updatedIdea);
     emitToIdea(ideaId, 'idea:updated', updatedIdea);
@@ -2125,6 +2150,9 @@ router.post('/quick-publish', authenticateToken, authorizeRoles('admin'), async 
 
     // Fetch departments for the new idea
     newIdea.departments = await getIdeaDepartments(ideaId);
+    
+    // Parse flow_steps
+    parseFlowSteps(newIdea);
 
     // Emit real-time event for new idea
     emitToAll('idea:created', newIdea);
@@ -2181,6 +2209,9 @@ router.delete('/:id/public-library', authenticateToken, authorizeRoles('admin'),
       LEFT JOIN users u2 ON i.assigned_to = u2.id
       WHERE i.id = ?
     `).get(ideaId);
+
+    // Parse flow_steps
+    parseFlowSteps(updatedIdea);
 
     // Emit real-time update
     emitToAll('idea:updated', updatedIdea);
