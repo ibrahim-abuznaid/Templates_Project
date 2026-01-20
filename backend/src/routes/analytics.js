@@ -219,7 +219,7 @@ router.get('/freelancer-report', authenticateToken, authorizeRoles('admin'), asy
 
     // Build query with submission tracking
     // We look for the first time a template reached 'submitted' status in activity_log
-    // Fall back to updated_at if no activity log entry exists
+    // IMPORTANT: Only use activity_log - do NOT fall back to updated_at as that changes on every edit
     const baseQuery = `
       WITH submission_tracking AS (
         SELECT 
@@ -227,19 +227,13 @@ router.get('/freelancer-report', authenticateToken, authorizeRoles('admin'), asy
           i.status,
           i.price,
           i.assigned_to,
-          -- Get first submission time from activity log, or fall back to updated_at for submitted+ statuses
-          COALESCE(
-            (SELECT MIN(a.created_at) 
-             FROM activity_log a 
-             WHERE a.idea_id = i.id 
-               AND a.action = 'updated' 
-               AND (a.details LIKE '%"status":"submitted"%' OR a.details LIKE '%"status": "submitted"%')
-            ),
-            CASE 
-              WHEN i.status IN ('submitted', 'reviewed', 'published', 'needs_fixes') 
-              THEN i.updated_at 
-              ELSE NULL 
-            END
+          -- Get first submission time from activity log ONLY
+          -- No fallback to updated_at - that would count edits as submissions
+          (SELECT MIN(a.created_at) 
+           FROM activity_log a 
+           WHERE a.idea_id = i.id 
+             AND a.action = 'updated' 
+             AND (a.details LIKE '%"status":"submitted"%' OR a.details LIKE '%"status": "submitted"%')
           ) as submitted_at
         FROM ideas i
         WHERE i.assigned_to IS NOT NULL
@@ -359,6 +353,7 @@ router.get('/freelancer-details/:freelancerId', authenticateToken, authorizeRole
     }
 
     // Get templates with their submission times
+    // ONLY use activity_log - no fallback to updated_at
     const query = `
       WITH submission_tracking AS (
         SELECT 
@@ -370,18 +365,11 @@ router.get('/freelancer-details/:freelancerId', authenticateToken, authorizeRole
           i.created_at,
           i.updated_at,
           COALESCE(i.fix_count, 0) as fix_count,
-          COALESCE(
-            (SELECT MIN(a.created_at) 
-             FROM activity_log a 
-             WHERE a.idea_id = i.id 
-               AND a.action = 'updated' 
-               AND (a.details LIKE '%"status":"submitted"%' OR a.details LIKE '%"status": "submitted"%')
-            ),
-            CASE 
-              WHEN i.status IN ('submitted', 'reviewed', 'published', 'needs_fixes') 
-              THEN i.updated_at 
-              ELSE NULL 
-            END
+          (SELECT MIN(a.created_at) 
+           FROM activity_log a 
+           WHERE a.idea_id = i.id 
+             AND a.action = 'updated' 
+             AND (a.details LIKE '%"status":"submitted"%' OR a.details LIKE '%"status": "submitted"%')
           ) as submitted_at
         FROM ideas i
         WHERE i.assigned_to = $${dateParams.length + 1}
