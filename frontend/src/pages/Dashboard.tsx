@@ -174,7 +174,13 @@ const Dashboard: React.FC = () => {
       const response = await analyticsApi.getPublishedTemplatesAnalytics();
       const analyticsMap = new Map<number, TemplateAnalytics>();
       response.data.templates.forEach((t) => {
-        analyticsMap.set(t.ideaId, t.analytics);
+        analyticsMap.set(t.ideaId, {
+          totalViews: t.totalViews,
+          totalInstalls: t.totalInstalls,
+          uniqueUsersInstalled: t.uniqueUsers,
+          activeFlows: t.activeFlows,
+          conversionRate: t.conversionRate,
+        });
       });
       setTemplateAnalytics(analyticsMap);
     } catch (error) {
