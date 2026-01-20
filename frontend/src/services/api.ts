@@ -854,6 +854,45 @@ export const analyticsApi = {
       }>;
       generatedAt: string;
     }>('/analytics/templates/by-category'),
+
+  getIntegrationAnalytics: () =>
+    api.get<{
+      summary: {
+        totalPieces: number;
+        totalTemplatesWithPieces: number;
+        totalTemplates: number;
+      };
+      topByTemplateCount: Array<{
+        pieceName: string;
+        displayName: string;
+        templateCount: number;
+        totalInstalls: number;
+        triggerCount: number;
+        actionCount: number;
+        templates: Array<{
+          id: number;
+          flowName: string;
+          installs: number;
+        }>;
+      }>;
+      topByInstalls: Array<{
+        pieceName: string;
+        displayName: string;
+        templateCount: number;
+        totalInstalls: number;
+        triggerCount: number;
+        actionCount: number;
+      }>;
+      allPieces: Array<{
+        pieceName: string;
+        displayName: string;
+        templateCount: number;
+        totalInstalls: number;
+        triggerCount: number;
+        actionCount: number;
+      }>;
+      generatedAt: string;
+    }>('/analytics/integrations'),
 };
 
 // Suggestions endpoints (for template builders to suggest new ideas)

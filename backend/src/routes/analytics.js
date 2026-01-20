@@ -1190,4 +1190,107 @@ router.get('/templates/by-category', authenticateToken, async (req, res) => {
   }
 });
 
+// Get integration/piece analytics - most used pieces across all templates
+router.get('/integrations', authenticateToken, async (req, res) => {
+  try {
+    // Get all published templates with their flow_steps
+    const templates = await db.prepare(`
+      SELECT 
+        i.id,
+        i.flow_name,
+        i.flow_steps,
+        i.public_library_id,
+        COALESCE(ta.total_installs, 0) as total_installs,
+        COALESCE(ta.total_views, 0) as total_views
+      FROM ideas i
+      LEFT JOIN template_analytics ta ON i.public_library_id = ta.template_id
+      WHERE i.flow_steps IS NOT NULL AND i.flow_steps != ''
+    `).all();
+
+    // Aggregate piece usage
+    const pieceStats = {};
+    let totalTemplatesWithPieces = 0;
+
+    templates.forEach(template => {
+      let steps = [];
+      try {
+        steps = typeof template.flow_steps === 'string' 
+          ? JSON.parse(template.flow_steps) 
+          : template.flow_steps;
+      } catch (e) {
+        return;
+      }
+
+      if (!Array.isArray(steps) || steps.length === 0) return;
+      
+      totalTemplatesWithPieces++;
+      const piecesInTemplate = new Set();
+
+      steps.forEach(step => {
+        const pieceName = step.pieceName || step.pieceDisplayName;
+        if (!pieceName) return;
+
+        // Track unique pieces per template
+        if (!piecesInTemplate.has(pieceName)) {
+          piecesInTemplate.add(pieceName);
+          
+          if (!pieceStats[pieceName]) {
+            pieceStats[pieceName] = {
+              pieceName: pieceName,
+              displayName: step.pieceDisplayName || pieceName,
+              templateCount: 0,
+              totalInstalls: 0,
+              triggerCount: 0,
+              actionCount: 0,
+              templates: []
+            };
+          }
+          
+          pieceStats[pieceName].templateCount++;
+          pieceStats[pieceName].totalInstalls += template.total_installs || 0;
+          pieceStats[pieceName].templates.push({
+            id: template.id,
+            flowName: template.flow_name,
+            installs: template.total_installs || 0
+          });
+        }
+
+        // Count triggers vs actions
+        if (step.type === 'PIECE_TRIGGER') {
+          pieceStats[pieceName].triggerCount++;
+        } else {
+          pieceStats[pieceName].actionCount++;
+        }
+      });
+    });
+
+    // Convert to array and sort by template count
+    const pieceList = Object.values(pieceStats)
+      .map(p => ({
+        ...p,
+        templates: p.templates.slice(0, 5) // Only include top 5 templates per piece
+      }))
+      .sort((a, b) => b.templateCount - a.templateCount);
+
+    // Top pieces by different metrics
+    const topByTemplateCount = pieceList.slice(0, 10);
+    const topByInstalls = [...pieceList].sort((a, b) => b.totalInstalls - a.totalInstalls).slice(0, 10);
+
+    res.json({
+      summary: {
+        totalPieces: pieceList.length,
+        totalTemplatesWithPieces,
+        totalTemplates: templates.length
+      },
+      topByTemplateCount,
+      topByInstalls,
+      allPieces: pieceList,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Get integration analytics error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

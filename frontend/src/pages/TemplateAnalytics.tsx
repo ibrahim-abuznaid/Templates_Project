@@ -25,6 +25,8 @@ import {
   Globe,
   ArrowUpRight,
   RefreshCw,
+  Puzzle,
+  Zap,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -85,6 +87,31 @@ interface TemplateWithAnalytics {
   installedByUserIds: string[];
 }
 
+interface IntegrationStats {
+  pieceName: string;
+  displayName: string;
+  templateCount: number;
+  totalInstalls: number;
+  triggerCount: number;
+  actionCount: number;
+  templates?: Array<{
+    id: number;
+    flowName: string;
+    installs: number;
+  }>;
+}
+
+interface IntegrationAnalytics {
+  summary: {
+    totalPieces: number;
+    totalTemplatesWithPieces: number;
+    totalTemplates: number;
+  };
+  topByTemplateCount: IntegrationStats[];
+  topByInstalls: IntegrationStats[];
+  allPieces: IntegrationStats[];
+}
+
 const TemplateAnalytics: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -94,6 +121,7 @@ const TemplateAnalytics: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'installs' | 'views' | 'activeFlows' | 'conversion'>('installs');
   const [showUserIds, setShowUserIds] = useState<number | null>(null);
+  const [integrationAnalytics, setIntegrationAnalytics] = useState<IntegrationAnalytics | null>(null);
 
   useEffect(() => {
     loadData();
@@ -102,14 +130,16 @@ const TemplateAnalytics: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [overviewRes, categoryRes, templatesRes] = await Promise.all([
+      const [overviewRes, categoryRes, templatesRes, integrationsRes] = await Promise.all([
         analyticsApi.getTemplatesAnalyticsOverview(),
         analyticsApi.getCategoryAnalytics(),
         analyticsApi.getPublishedTemplatesAnalytics(),
+        analyticsApi.getIntegrationAnalytics(),
       ]);
       setOverview(overviewRes.data);
       setCategoryAnalytics(categoryRes.data.categories || []);
       setAllTemplates(templatesRes.data.templates || []);
+      setIntegrationAnalytics(integrationsRes.data);
     } catch (error) {
       console.error('Failed to load template analytics:', error);
     } finally {
@@ -120,14 +150,16 @@ const TemplateAnalytics: React.FC = () => {
   const refreshData = async () => {
     setRefreshing(true);
     try {
-      const [overviewRes, categoryRes, templatesRes] = await Promise.all([
+      const [overviewRes, categoryRes, templatesRes, integrationsRes] = await Promise.all([
         analyticsApi.getTemplatesAnalyticsOverview(),
         analyticsApi.getCategoryAnalytics(),
         analyticsApi.getPublishedTemplatesAnalytics(),
+        analyticsApi.getIntegrationAnalytics(),
       ]);
       setOverview(overviewRes.data);
       setCategoryAnalytics(categoryRes.data.categories || []);
       setAllTemplates(templatesRes.data.templates || []);
+      setIntegrationAnalytics(integrationsRes.data);
     } catch (error) {
       console.error('Failed to refresh template analytics:', error);
     } finally {
@@ -330,6 +362,110 @@ const TemplateAnalytics: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Integration Analytics Section */}
+      {integrationAnalytics && integrationAnalytics.topByTemplateCount.length > 0 && (
+        <div className="card">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <Puzzle className="w-5 h-5 text-purple-600" />
+              <h2 className="text-lg font-semibold text-gray-900">Most Used Integrations</h2>
+              <span className="text-sm text-gray-500">
+                ({integrationAnalytics.summary.totalPieces} pieces across {integrationAnalytics.summary.totalTemplatesWithPieces} templates)
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Top by Template Count */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-purple-600" />
+                Most Used in Templates
+              </h3>
+              <div className="space-y-2">
+                {integrationAnalytics.topByTemplateCount.slice(0, 10).map((piece, index) => (
+                  <div
+                    key={piece.pieceName}
+                    className="flex items-center justify-between bg-gradient-to-r from-purple-50 to-white rounded-lg p-3 border border-purple-100"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="w-6 h-6 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-xs font-bold">
+                        {index + 1}
+                      </span>
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold">
+                        {piece.displayName.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-gray-800">
+                          {piece.displayName}
+                        </span>
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          {piece.triggerCount > 0 && (
+                            <span className="flex items-center gap-1">
+                              <Zap className="w-3 h-3 text-amber-500" />
+                              {piece.triggerCount} trigger{piece.triggerCount !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                          {piece.actionCount > 0 && (
+                            <span className="flex items-center gap-1">
+                              <Activity className="w-3 h-3 text-purple-500" />
+                              {piece.actionCount} action{piece.actionCount !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-sm font-semibold text-purple-600">
+                        {piece.templateCount} template{piece.templateCount !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Top by Installs */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <Download className="w-4 h-4 text-green-600" />
+                Most Installed (by template installs)
+              </h3>
+              <div className="space-y-2">
+                {integrationAnalytics.topByInstalls.slice(0, 10).map((piece, index) => (
+                  <div
+                    key={piece.pieceName}
+                    className="flex items-center justify-between bg-gradient-to-r from-green-50 to-white rounded-lg p-3 border border-green-100"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">
+                        {index + 1}
+                      </span>
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white text-sm font-bold">
+                        {piece.displayName.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-gray-800">
+                          {piece.displayName}
+                        </span>
+                        <div className="text-xs text-gray-500">
+                          in {piece.templateCount} template{piece.templateCount !== 1 ? 's' : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-sm font-semibold text-green-600">
+                        {piece.totalInstalls.toLocaleString()} install{piece.totalInstalls !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Category Analytics Table */}
       {categoryAnalytics.length > 0 && (
