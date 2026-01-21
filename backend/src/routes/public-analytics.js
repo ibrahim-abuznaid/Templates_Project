@@ -39,10 +39,10 @@ router.use(validateApiKey);
 // ========================================
 
 const EVENT_TYPES = {
-  TEMPLATE_VIEW: 'TEMPLATE_VIEW',
-  TEMPLATE_INSTALL: 'TEMPLATE_INSTALL',
-  TEMPLATE_ACTIVATE: 'TEMPLATE_ACTIVATE',
-  TEMPLATE_DEACTIVATE: 'TEMPLATE_DEACTIVATE',
+  VIEW: 'VIEW',
+  INSTALL: 'INSTALL',
+  ACTIVATE: 'ACTIVATE',
+  DEACTIVATE: 'DEACTIVATE',
   EXPLORE_VIEW: 'EXPLORE_VIEW',
 };
 
@@ -376,36 +376,36 @@ router.post('/explore/view', async (req, res) => {
  * Single endpoint to track all analytics events
  * 
  * Body: {
- *   event: "TEMPLATE_VIEW" | "TEMPLATE_INSTALL" | "TEMPLATE_ACTIVATE" | "TEMPLATE_DEACTIVATE" | "EXPLORE_VIEW",
+ *   eventType: "VIEW" | "INSTALL" | "ACTIVATE" | "DEACTIVATE" | "EXPLORE_VIEW",
  *   templateId?: string,  // Required for template events
- *   userId?: string,      // Required for TEMPLATE_INSTALL, optional for EXPLORE_VIEW
- *   flowId?: string       // Required for TEMPLATE_ACTIVATE and TEMPLATE_DEACTIVATE
+ *   userId?: string,      // Required for INSTALL, optional for EXPLORE_VIEW
+ *   flowId?: string       // Required for ACTIVATE and DEACTIVATE
  * }
  */
 router.post('/event', async (req, res) => {
   try {
-    const { event, templateId, userId, flowId } = req.body;
+    const { eventType, templateId, userId, flowId } = req.body;
 
     // Validate event type
-    if (!event) {
+    if (!eventType) {
       return res.status(400).json({ 
-        error: 'event is required',
-        validEvents: Object.values(EVENT_TYPES)
+        error: 'eventType is required',
+        validEventTypes: Object.values(EVENT_TYPES)
       });
     }
 
-    if (!Object.values(EVENT_TYPES).includes(event)) {
+    if (!Object.values(EVENT_TYPES).includes(eventType)) {
       return res.status(400).json({ 
-        error: `Invalid event type: ${event}`,
-        validEvents: Object.values(EVENT_TYPES)
+        error: `Invalid eventType: ${eventType}`,
+        validEventTypes: Object.values(EVENT_TYPES)
       });
     }
 
     // Handle each event type
-    switch (event) {
-      case EVENT_TYPES.TEMPLATE_VIEW: {
+    switch (eventType) {
+      case EVENT_TYPES.VIEW: {
         if (!templateId) {
-          return res.status(400).json({ error: 'templateId is required for TEMPLATE_VIEW event' });
+          return res.status(400).json({ error: 'templateId is required for VIEW event' });
         }
 
         await getOrCreateTemplateAnalytics(templateId);
@@ -422,7 +422,7 @@ router.post('/event', async (req, res) => {
 
         return res.json({
           success: true,
-          event,
+          eventType,
           message: 'View recorded',
           analytics: {
             templateId: updated.template_id,
@@ -432,12 +432,12 @@ router.post('/event', async (req, res) => {
         });
       }
 
-      case EVENT_TYPES.TEMPLATE_INSTALL: {
+      case EVENT_TYPES.INSTALL: {
         if (!templateId) {
-          return res.status(400).json({ error: 'templateId is required for TEMPLATE_INSTALL event' });
+          return res.status(400).json({ error: 'templateId is required for INSTALL event' });
         }
         if (!userId) {
-          return res.status(400).json({ error: 'userId is required for TEMPLATE_INSTALL event' });
+          return res.status(400).json({ error: 'userId is required for INSTALL event' });
         }
 
         await getOrCreateTemplateAnalytics(templateId);
@@ -460,7 +460,7 @@ router.post('/event', async (req, res) => {
 
         return res.json({
           success: true,
-          event,
+          eventType,
           message: 'Install recorded',
           analytics: {
             templateId: updated.template_id,
@@ -471,12 +471,12 @@ router.post('/event', async (req, res) => {
         });
       }
 
-      case EVENT_TYPES.TEMPLATE_ACTIVATE: {
+      case EVENT_TYPES.ACTIVATE: {
         if (!templateId) {
-          return res.status(400).json({ error: 'templateId is required for TEMPLATE_ACTIVATE event' });
+          return res.status(400).json({ error: 'templateId is required for ACTIVATE event' });
         }
         if (!flowId) {
-          return res.status(400).json({ error: 'flowId is required for TEMPLATE_ACTIVATE event' });
+          return res.status(400).json({ error: 'flowId is required for ACTIVATE event' });
         }
 
         await getOrCreateTemplateAnalytics(templateId);
@@ -498,7 +498,7 @@ router.post('/event', async (req, res) => {
 
         return res.json({
           success: true,
-          event,
+          eventType,
           message: 'Flow activation recorded',
           analytics: {
             templateId: updated.template_id,
@@ -507,12 +507,12 @@ router.post('/event', async (req, res) => {
         });
       }
 
-      case EVENT_TYPES.TEMPLATE_DEACTIVATE: {
+      case EVENT_TYPES.DEACTIVATE: {
         if (!templateId) {
-          return res.status(400).json({ error: 'templateId is required for TEMPLATE_DEACTIVATE event' });
+          return res.status(400).json({ error: 'templateId is required for DEACTIVATE event' });
         }
         if (!flowId) {
-          return res.status(400).json({ error: 'flowId is required for TEMPLATE_DEACTIVATE event' });
+          return res.status(400).json({ error: 'flowId is required for DEACTIVATE event' });
         }
 
         await db.prepare(`
@@ -533,7 +533,7 @@ router.post('/event', async (req, res) => {
 
         return res.json({
           success: true,
-          event,
+          eventType,
           message: 'Flow deactivation recorded',
           analytics: {
             templateId: updated.template_id,
@@ -573,7 +573,7 @@ router.post('/event', async (req, res) => {
 
         return res.json({
           success: true,
-          event,
+          eventType,
           message: 'Explore view recorded',
           analytics: {
             totalViews: updated.total_views,
@@ -584,8 +584,8 @@ router.post('/event', async (req, res) => {
 
       default:
         return res.status(400).json({ 
-          error: `Unhandled event type: ${event}`,
-          validEvents: Object.values(EVENT_TYPES)
+          error: `Unhandled eventType: ${eventType}`,
+          validEventTypes: Object.values(EVENT_TYPES)
         });
     }
   } catch (error) {

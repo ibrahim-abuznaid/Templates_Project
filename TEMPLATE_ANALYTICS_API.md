@@ -27,21 +27,21 @@ Headers:
 
 Body:
 {
-  "event": "<EVENT_TYPE>",
+  "eventType": "<EVENT_TYPE>",
   "templateId": "public_library_id",  // Required for template events
-  "userId": "user_id_xxx",             // Required for TEMPLATE_INSTALL, optional for EXPLORE_VIEW
-  "flowId": "flow_id_xxx"              // Required for TEMPLATE_ACTIVATE / TEMPLATE_DEACTIVATE
+  "userId": "user_id_xxx",             // Required for INSTALL, optional for EXPLORE_VIEW
+  "flowId": "flow_id_xxx"              // Required for ACTIVATE / DEACTIVATE
 }
 ```
 
 ### Event Types
 
-| Event | Required Fields | Description |
-|-------|-----------------|-------------|
-| `TEMPLATE_VIEW` | `templateId` | User views a template page |
-| `TEMPLATE_INSTALL` | `templateId`, `userId` | User installs/uses a template |
-| `TEMPLATE_ACTIVATE` | `templateId`, `flowId` | Flow is created/activated from template |
-| `TEMPLATE_DEACTIVATE` | `templateId`, `flowId` | Flow is deleted/disabled |
+| eventType | Required Fields | Description |
+|-----------|-----------------|-------------|
+| `VIEW` | `templateId` | User views a template page |
+| `INSTALL` | `templateId`, `userId` | User installs/uses a template |
+| `ACTIVATE` | `templateId`, `flowId` | Flow is created/activated from template |
+| `DEACTIVATE` | `templateId`, `flowId` | Flow is deleted/disabled |
 | `EXPLORE_VIEW` | (none, `userId` optional) | User views the explore/discover page |
 
 ### Examples
@@ -51,7 +51,7 @@ Body:
 curl -X POST "https://template-manager.activepieces.com/api/public/analytics/event" \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"event": "TEMPLATE_VIEW", "templateId": "abc123"}'
+  -d '{"eventType": "VIEW", "templateId": "abc123"}'
 ```
 
 **Track Template Install:**
@@ -59,7 +59,7 @@ curl -X POST "https://template-manager.activepieces.com/api/public/analytics/eve
 curl -X POST "https://template-manager.activepieces.com/api/public/analytics/event" \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"event": "TEMPLATE_INSTALL", "templateId": "abc123", "userId": "user_xyz"}'
+  -d '{"eventType": "INSTALL", "templateId": "abc123", "userId": "user_xyz"}'
 ```
 
 **Track Flow Activation:**
@@ -67,7 +67,7 @@ curl -X POST "https://template-manager.activepieces.com/api/public/analytics/eve
 curl -X POST "https://template-manager.activepieces.com/api/public/analytics/event" \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"event": "TEMPLATE_ACTIVATE", "templateId": "abc123", "flowId": "flow_456"}'
+  -d '{"eventType": "ACTIVATE", "templateId": "abc123", "flowId": "flow_456"}'
 ```
 
 **Track Explore View:**
@@ -75,7 +75,7 @@ curl -X POST "https://template-manager.activepieces.com/api/public/analytics/eve
 curl -X POST "https://template-manager.activepieces.com/api/public/analytics/event" \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"event": "EXPLORE_VIEW", "userId": "user_xyz"}'
+  -d '{"eventType": "EXPLORE_VIEW", "userId": "user_xyz"}'
 ```
 
 ### Response Format
@@ -83,7 +83,7 @@ curl -X POST "https://template-manager.activepieces.com/api/public/analytics/eve
 ```json
 {
   "success": true,
-  "event": "TEMPLATE_VIEW",
+  "eventType": "VIEW",
   "message": "View recorded",
   "analytics": {
     "templateId": "abc123",
