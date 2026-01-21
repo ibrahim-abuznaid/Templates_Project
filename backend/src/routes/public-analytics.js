@@ -35,6 +35,18 @@ const validateApiKey = (req, res, next) => {
 router.use(validateApiKey);
 
 // ========================================
+// Event Types
+// ========================================
+
+const EVENT_TYPES = {
+  TEMPLATE_VIEW: 'TEMPLATE_VIEW',
+  TEMPLATE_INSTALL: 'TEMPLATE_INSTALL',
+  TEMPLATE_ACTIVATE: 'TEMPLATE_ACTIVATE',
+  TEMPLATE_DEACTIVATE: 'TEMPLATE_DEACTIVATE',
+  EXPLORE_VIEW: 'EXPLORE_VIEW',
+};
+
+// ========================================
 // Helper Functions
 // ========================================
 
@@ -351,6 +363,233 @@ router.post('/explore/view', async (req, res) => {
     });
   } catch (error) {
     console.error('Explore view tracking error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ========================================
+// Unified Event Endpoint (RECOMMENDED)
+// ========================================
+
+/**
+ * POST /event
+ * Single endpoint to track all analytics events
+ * 
+ * Body: {
+ *   event: "TEMPLATE_VIEW" | "TEMPLATE_INSTALL" | "TEMPLATE_ACTIVATE" | "TEMPLATE_DEACTIVATE" | "EXPLORE_VIEW",
+ *   templateId?: string,  // Required for template events
+ *   userId?: string,      // Required for TEMPLATE_INSTALL, optional for EXPLORE_VIEW
+ *   flowId?: string       // Required for TEMPLATE_ACTIVATE and TEMPLATE_DEACTIVATE
+ * }
+ */
+router.post('/event', async (req, res) => {
+  try {
+    const { event, templateId, userId, flowId } = req.body;
+
+    // Validate event type
+    if (!event) {
+      return res.status(400).json({ 
+        error: 'event is required',
+        validEvents: Object.values(EVENT_TYPES)
+      });
+    }
+
+    if (!Object.values(EVENT_TYPES).includes(event)) {
+      return res.status(400).json({ 
+        error: `Invalid event type: ${event}`,
+        validEvents: Object.values(EVENT_TYPES)
+      });
+    }
+
+    // Handle each event type
+    switch (event) {
+      case EVENT_TYPES.TEMPLATE_VIEW: {
+        if (!templateId) {
+          return res.status(400).json({ error: 'templateId is required for TEMPLATE_VIEW event' });
+        }
+
+        await getOrCreateTemplateAnalytics(templateId);
+
+        await db.prepare(`
+          UPDATE template_analytics 
+          SET total_views = total_views + 1, updated_at = NOW()
+          WHERE template_id = $1
+        `).run(templateId);
+
+        const updated = await db.prepare(`
+          SELECT * FROM template_analytics WHERE template_id = $1
+        `).get(templateId);
+
+        return res.json({
+          success: true,
+          event,
+          message: 'View recorded',
+          analytics: {
+            templateId: updated.template_id,
+            totalViews: updated.total_views,
+            totalInstalls: updated.total_installs
+          }
+        });
+      }
+
+      case EVENT_TYPES.TEMPLATE_INSTALL: {
+        if (!templateId) {
+          return res.status(400).json({ error: 'templateId is required for TEMPLATE_INSTALL event' });
+        }
+        if (!userId) {
+          return res.status(400).json({ error: 'userId is required for TEMPLATE_INSTALL event' });
+        }
+
+        await getOrCreateTemplateAnalytics(templateId);
+
+        await db.prepare(`
+          UPDATE template_analytics 
+          SET 
+            total_installs = total_installs + 1,
+            installed_by_user_ids = CASE 
+              WHEN $2 = ANY(installed_by_user_ids) THEN installed_by_user_ids
+              ELSE array_append(installed_by_user_ids, $2)
+            END,
+            updated_at = NOW()
+          WHERE template_id = $1
+        `).run(templateId, userId);
+
+        const updated = await db.prepare(`
+          SELECT * FROM template_analytics WHERE template_id = $1
+        `).get(templateId);
+
+        return res.json({
+          success: true,
+          event,
+          message: 'Install recorded',
+          analytics: {
+            templateId: updated.template_id,
+            totalViews: updated.total_views,
+            totalInstalls: updated.total_installs,
+            uniqueUsers: updated.installed_by_user_ids.length
+          }
+        });
+      }
+
+      case EVENT_TYPES.TEMPLATE_ACTIVATE: {
+        if (!templateId) {
+          return res.status(400).json({ error: 'templateId is required for TEMPLATE_ACTIVATE event' });
+        }
+        if (!flowId) {
+          return res.status(400).json({ error: 'flowId is required for TEMPLATE_ACTIVATE event' });
+        }
+
+        await getOrCreateTemplateAnalytics(templateId);
+
+        await db.prepare(`
+          UPDATE template_analytics 
+          SET 
+            active_flow_ids = CASE 
+              WHEN $2 = ANY(active_flow_ids) THEN active_flow_ids
+              ELSE array_append(active_flow_ids, $2)
+            END,
+            updated_at = NOW()
+          WHERE template_id = $1
+        `).run(templateId, flowId);
+
+        const updated = await db.prepare(`
+          SELECT * FROM template_analytics WHERE template_id = $1
+        `).get(templateId);
+
+        return res.json({
+          success: true,
+          event,
+          message: 'Flow activation recorded',
+          analytics: {
+            templateId: updated.template_id,
+            activeFlows: updated.active_flow_ids.length
+          }
+        });
+      }
+
+      case EVENT_TYPES.TEMPLATE_DEACTIVATE: {
+        if (!templateId) {
+          return res.status(400).json({ error: 'templateId is required for TEMPLATE_DEACTIVATE event' });
+        }
+        if (!flowId) {
+          return res.status(400).json({ error: 'flowId is required for TEMPLATE_DEACTIVATE event' });
+        }
+
+        await db.prepare(`
+          UPDATE template_analytics 
+          SET 
+            active_flow_ids = array_remove(active_flow_ids, $2),
+            updated_at = NOW()
+          WHERE template_id = $1
+        `).run(templateId, flowId);
+
+        const updated = await db.prepare(`
+          SELECT * FROM template_analytics WHERE template_id = $1
+        `).get(templateId);
+
+        if (!updated) {
+          return res.status(404).json({ error: 'Template analytics not found' });
+        }
+
+        return res.json({
+          success: true,
+          event,
+          message: 'Flow deactivation recorded',
+          analytics: {
+            templateId: updated.template_id,
+            activeFlows: updated.active_flow_ids.length
+          }
+        });
+      }
+
+      case EVENT_TYPES.EXPLORE_VIEW: {
+        await getOrCreateExploreAnalytics();
+
+        if (userId) {
+          await db.prepare(`
+            UPDATE explore_analytics 
+            SET 
+              total_views = total_views + 1,
+              viewed_by_user_ids = CASE 
+                WHEN $1 = ANY(viewed_by_user_ids) THEN viewed_by_user_ids
+                ELSE array_append(viewed_by_user_ids, $1)
+              END,
+              updated_at = NOW()
+            WHERE id = (SELECT id FROM explore_analytics LIMIT 1)
+          `).run(userId);
+        } else {
+          await db.prepare(`
+            UPDATE explore_analytics 
+            SET 
+              total_views = total_views + 1,
+              updated_at = NOW()
+            WHERE id = (SELECT id FROM explore_analytics LIMIT 1)
+          `).run();
+        }
+
+        const updated = await db.prepare(`
+          SELECT * FROM explore_analytics LIMIT 1
+        `).get();
+
+        return res.json({
+          success: true,
+          event,
+          message: 'Explore view recorded',
+          analytics: {
+            totalViews: updated.total_views,
+            uniqueUsers: updated.viewed_by_user_ids.length
+          }
+        });
+      }
+
+      default:
+        return res.status(400).json({ 
+          error: `Unhandled event type: ${event}`,
+          validEvents: Object.values(EVENT_TYPES)
+        });
+    }
+  } catch (error) {
+    console.error('Event tracking error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

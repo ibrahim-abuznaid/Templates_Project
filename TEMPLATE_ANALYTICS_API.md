@@ -10,8 +10,94 @@ The Template Analytics system tracks usage metrics for published templates, incl
 
 These endpoints are secured with an API key and used by the Activepieces product to track template usage.
 
-**Base URL:** `<YOUR_SERVER_URL>/api/public/analytics`  
+**Base URL:** `https://template-manager.activepieces.com/api/public/analytics`  
 **Auth Header:** `X-API-Key: <TEMPLATE_ANALYTICS_API_KEY>`
+
+---
+
+## ⭐ Unified Event Endpoint (RECOMMENDED)
+
+Use a single endpoint to track all analytics events. This is the preferred approach.
+
+```
+POST /event
+Headers:
+  X-API-Key: <TEMPLATE_ANALYTICS_API_KEY>
+  Content-Type: application/json
+
+Body:
+{
+  "event": "<EVENT_TYPE>",
+  "templateId": "public_library_id",  // Required for template events
+  "userId": "user_id_xxx",             // Required for TEMPLATE_INSTALL, optional for EXPLORE_VIEW
+  "flowId": "flow_id_xxx"              // Required for TEMPLATE_ACTIVATE / TEMPLATE_DEACTIVATE
+}
+```
+
+### Event Types
+
+| Event | Required Fields | Description |
+|-------|-----------------|-------------|
+| `TEMPLATE_VIEW` | `templateId` | User views a template page |
+| `TEMPLATE_INSTALL` | `templateId`, `userId` | User installs/uses a template |
+| `TEMPLATE_ACTIVATE` | `templateId`, `flowId` | Flow is created/activated from template |
+| `TEMPLATE_DEACTIVATE` | `templateId`, `flowId` | Flow is deleted/disabled |
+| `EXPLORE_VIEW` | (none, `userId` optional) | User views the explore/discover page |
+
+### Examples
+
+**Track Template View:**
+```bash
+curl -X POST "https://template-manager.activepieces.com/api/public/analytics/event" \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"event": "TEMPLATE_VIEW", "templateId": "abc123"}'
+```
+
+**Track Template Install:**
+```bash
+curl -X POST "https://template-manager.activepieces.com/api/public/analytics/event" \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"event": "TEMPLATE_INSTALL", "templateId": "abc123", "userId": "user_xyz"}'
+```
+
+**Track Flow Activation:**
+```bash
+curl -X POST "https://template-manager.activepieces.com/api/public/analytics/event" \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"event": "TEMPLATE_ACTIVATE", "templateId": "abc123", "flowId": "flow_456"}'
+```
+
+**Track Explore View:**
+```bash
+curl -X POST "https://template-manager.activepieces.com/api/public/analytics/event" \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"event": "EXPLORE_VIEW", "userId": "user_xyz"}'
+```
+
+### Response Format
+
+```json
+{
+  "success": true,
+  "event": "TEMPLATE_VIEW",
+  "message": "View recorded",
+  "analytics": {
+    "templateId": "abc123",
+    "totalViews": 151,
+    "totalInstalls": 25
+  }
+}
+```
+
+---
+
+## Legacy Endpoints (Deprecated - Still Supported)
+
+The following individual endpoints are still supported for backward compatibility, but we recommend migrating to the unified `/event` endpoint above.
 
 ---
 
