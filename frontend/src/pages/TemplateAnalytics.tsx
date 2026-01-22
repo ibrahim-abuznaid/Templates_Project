@@ -122,7 +122,6 @@ const TemplateAnalytics: React.FC = () => {
   const [allTemplates, setAllTemplates] = useState<TemplateWithAnalytics[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'installs' | 'views' | 'activeFlows' | 'conversion'>('installs');
-  const [showUserIds, setShowUserIds] = useState<number | null>(null);
   const [integrationAnalytics, setIntegrationAnalytics] = useState<IntegrationAnalytics | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -480,20 +479,18 @@ const TemplateAnalytics: React.FC = () => {
                 <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Active</th>
                 <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Users</th>
                 <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">CR</th>
-                <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Actions</th>
               </tr>
             </thead>
             <tbody>
               {paginatedTemplates.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8 text-gray-500">
+                  <td colSpan={7} className="text-center py-8 text-gray-500">
                     No templates with analytics data
                   </td>
                 </tr>
               ) : (
                 paginatedTemplates.map((template) => (
-                  <React.Fragment key={template.ideaId}>
-                    <tr className="border-b border-gray-100 hover:bg-gray-50">
+                    <tr key={template.ideaId} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-4">
                         <Link
                           to={`/ideas/${template.ideaId}`}
@@ -530,38 +527,7 @@ const TemplateAnalytics: React.FC = () => {
                           {template.conversionRate.toFixed(1)}%
                         </span>
                       </td>
-                      <td className="text-center py-3 px-4">
-                        {template.uniqueUsers > 0 && (
-                          <button
-                            onClick={() => setShowUserIds(showUserIds === template.ideaId ? null : template.ideaId)}
-                            className="text-xs text-primary-600 hover:text-primary-700 font-medium"
-                          >
-                            {showUserIds === template.ideaId ? 'Hide' : 'Show'} Users
-                          </button>
-                        )}
-                      </td>
                     </tr>
-                    {showUserIds === template.ideaId && template.installedByUserIds && template.installedByUserIds.length > 0 && (
-                      <tr className="bg-gray-50">
-                        <td colSpan={8} className="py-3 px-4">
-                          <div className="text-xs text-gray-600 mb-2 font-medium">
-                            User IDs who installed this template:
-                          </div>
-                          <div className="flex flex-wrap gap-1">
-                            {template.installedByUserIds.map((userId, idx) => (
-                              <span
-                                key={idx}
-                                className="inline-flex items-center px-2 py-1 bg-white text-gray-700 text-xs rounded border border-gray-200 font-mono"
-                                title={userId}
-                              >
-                                {userId.length > 30 ? userId.substring(0, 30) + '...' : userId}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
                 ))
               )}
             </tbody>
