@@ -72,6 +72,10 @@ const Dashboard: React.FC = () => {
   const [assigneeFilter, setAssigneeFilter] = useState<string>(() => {
     return searchParams.get('assignee') || 'all';
   });
+  // Department/category filter
+  const [departmentFilter, setDepartmentFilter] = useState<string>(() => {
+    return searchParams.get('department') || 'all';
+  });
   const [searchQuery, setSearchQuery] = useState<string>(() => {
     return searchParams.get('search') || '';
   });
@@ -96,6 +100,7 @@ const Dashboard: React.FC = () => {
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
   const [freelancerUsers, setFreelancerUsers] = useState<User[]>([]);
   const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false);
+  const [showDepartmentFilter, setShowDepartmentFilter] = useState(false);
   const [templateAnalytics, setTemplateAnalytics] = useState<Map<number, TemplateAnalytics>>(new Map());
 
   useEffect(() => {
@@ -112,10 +117,12 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     const urlStatus = searchParams.get('status');
     const urlAssignee = searchParams.get('assignee');
+    const urlDepartment = searchParams.get('department');
     const urlSearch = searchParams.get('search');
     
     if (urlStatus) setStatusFilter(urlStatus);
     if (urlAssignee) setAssigneeFilter(urlAssignee);
+    if (urlDepartment) setDepartmentFilter(urlDepartment);
     if (urlSearch) setSearchQuery(urlSearch);
     
     setFiltersInitialized(true);
@@ -135,12 +142,15 @@ const Dashboard: React.FC = () => {
     if (assigneeFilter !== 'all') {
       params.set('assignee', assigneeFilter);
     }
+    if (departmentFilter !== 'all') {
+      params.set('department', departmentFilter);
+    }
     if (searchQuery.trim()) {
       params.set('search', searchQuery.trim());
     }
     
     setSearchParams(params, { replace: true });
-  }, [statusFilter, assigneeFilter, searchQuery, isFreelancer, filtersInitialized, setSearchParams]);
+  }, [statusFilter, assigneeFilter, departmentFilter, searchQuery, isFreelancer, filtersInitialized, setSearchParams]);
 
   const loadDepartments = async () => {
     try {
@@ -329,6 +339,13 @@ const Dashboard: React.FC = () => {
       if (!name.includes(query)) return false;
     }
     
+    // Apply department filter (for both freelancers and admins)
+    if (departmentFilter !== 'all') {
+      const deptId = parseInt(departmentFilter, 10);
+      const ideaDeptIds = idea.departments?.map(d => d.id) || [];
+      if (!ideaDeptIds.includes(deptId)) return false;
+    }
+    
     // For freelancers: Apply simple category filter
     if (isFreelancer) {
       if (statusFilter === 'all') return true;
@@ -425,13 +442,14 @@ const Dashboard: React.FC = () => {
     const defaultStatus = isFreelancer ? 'active_and_available' : 'all';
     setStatusFilter(defaultStatus);
     setAssigneeFilter('all');
+    setDepartmentFilter('all');
     setSearchQuery('');
     // Clear URL params
     setSearchParams({}, { replace: true });
   };
   
   const defaultStatusFilter = isFreelancer ? 'active_and_available' : 'all';
-  const hasActiveFilters = statusFilter !== defaultStatusFilter || assigneeFilter !== 'all' || searchQuery.trim() !== '';
+  const hasActiveFilters = statusFilter !== defaultStatusFilter || assigneeFilter !== 'all' || departmentFilter !== 'all' || searchQuery.trim() !== '';
 
   if (loading) {
     return (
@@ -670,6 +688,70 @@ const Dashboard: React.FC = () => {
         {isFreelancer ? (
           /* Freelancer Filter Pills */
           <div className="space-y-3">
+            {/* Category Filter for Freelancers */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <span className="font-medium">Category:</span>
+              </div>
+              <div className="relative">
+                <button
+                  onClick={() => setShowDepartmentFilter(!showDepartmentFilter)}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors min-w-[180px]"
+                >
+                  <span className="flex-1 text-left text-sm">
+                    {departmentFilter === 'all' 
+                      ? 'All Categories' 
+                      : allDepartments.find(d => d.id === parseInt(departmentFilter, 10))?.name || 'Unknown'}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showDepartmentFilter ? 'rotate-180' : ''}`} />
+                </button>
+                
+                {showDepartmentFilter && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-10" 
+                      onClick={() => setShowDepartmentFilter(false)}
+                    />
+                    <div className="absolute z-20 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                      <button
+                        onClick={() => { setDepartmentFilter('all'); setShowDepartmentFilter(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
+                          departmentFilter === 'all' ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
+                        }`}
+                      >
+                        <span className="flex-1 text-left">All Categories</span>
+                        <span className="text-xs text-gray-400">({getBaseIdeasForFreelancer().length})</span>
+                      </button>
+                      <div className="border-t border-gray-100 my-1" />
+                      {allDepartments.map((dept) => {
+                        const count = getBaseIdeasForFreelancer().filter(i => i.departments?.some(d => d.id === dept.id)).length;
+                        return (
+                          <button
+                            key={dept.id}
+                            onClick={() => { setDepartmentFilter(String(dept.id)); setShowDepartmentFilter(false); }}
+                            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
+                              departmentFilter === String(dept.id) ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
+                            }`}
+                          >
+                            <span className="flex-1 text-left truncate">{dept.name}</span>
+                            <span className="text-xs text-gray-400">({count})</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+              {departmentFilter !== 'all' && (
+                <button
+                  onClick={() => setDepartmentFilter('all')}
+                  className="text-sm text-primary-600 hover:text-primary-700"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            
             {/* Quick Filters Row */}
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <span className="font-medium">Quick Filters:</span>
@@ -900,79 +982,138 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
             
-            {/* Assignee Filter */}
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Users className="w-4 h-4" />
-                <span className="font-medium">Assigned to:</span>
-              </div>
-              <div className="relative">
-                <button
-                  onClick={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
-                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors min-w-[200px]"
-                >
-                  <UserIcon className="w-4 h-4 text-gray-400" />
-                  <span className="flex-1 text-left text-sm">
-                    {assigneeFilter === 'all' 
-                      ? 'All Assignees' 
-                      : assigneeFilter === 'unassigned'
-                        ? 'Unassigned'
-                        : freelancerUsers.find(u => u.id === parseInt(assigneeFilter, 10))?.username || 'Unknown'}
-                  </span>
-                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showAssigneeDropdown ? 'rotate-180' : ''}`} />
-                </button>
-                
-                {showAssigneeDropdown && (
-                  <>
-                    <div 
-                      className="fixed inset-0 z-10" 
-                      onClick={() => setShowAssigneeDropdown(false)}
-                    />
-                    <div className="absolute z-20 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                      <button
-                        onClick={() => { setAssigneeFilter('all'); setShowAssigneeDropdown(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
-                          assigneeFilter === 'all' ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
-                        }`}
-                      >
-                        <Users className="w-4 h-4" />
-                        <span className="flex-1 text-left">All Assignees</span>
-                        <span className="text-xs text-gray-400">({getCountForAssignee('all')})</span>
-                      </button>
-                      <button
-                        onClick={() => { setAssigneeFilter('unassigned'); setShowAssigneeDropdown(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
-                          assigneeFilter === 'unassigned' ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
-                        }`}
-                      >
-                        <div className="w-4 h-4 rounded-full border-2 border-dashed border-gray-300" />
-                        <span className="flex-1 text-left">Unassigned</span>
-                        <span className="text-xs text-gray-400">({getCountForAssignee('unassigned')})</span>
-                      </button>
-                      <div className="border-t border-gray-100 my-1" />
-                      <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                        Creators
-                      </div>
-                      {freelancerUsers.map((freelancer) => (
+            {/* Assignee & Department Filters */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-wrap">
+              {/* Assignee Filter */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Users className="w-4 h-4" />
+                  <span className="font-medium">Assigned to:</span>
+                </div>
+                <div className="relative">
+                  <button
+                    onClick={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
+                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors min-w-[200px]"
+                  >
+                    <UserIcon className="w-4 h-4 text-gray-400" />
+                    <span className="flex-1 text-left text-sm">
+                      {assigneeFilter === 'all' 
+                        ? 'All Assignees' 
+                        : assigneeFilter === 'unassigned'
+                          ? 'Unassigned'
+                          : freelancerUsers.find(u => u.id === parseInt(assigneeFilter, 10))?.username || 'Unknown'}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showAssigneeDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+                  
+                  {showAssigneeDropdown && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-10" 
+                        onClick={() => setShowAssigneeDropdown(false)}
+                      />
+                      <div className="absolute z-20 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
                         <button
-                          key={freelancer.id}
-                          onClick={() => { setAssigneeFilter(String(freelancer.id)); setShowAssigneeDropdown(false); }}
+                          onClick={() => { setAssigneeFilter('all'); setShowAssigneeDropdown(false); }}
                           className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
-                            assigneeFilter === String(freelancer.id) ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
+                            assigneeFilter === 'all' ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
                           }`}
                         >
-                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
-                            <span className="text-xs font-medium text-white">
-                              {freelancer.username.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                          <span className="flex-1 text-left truncate">{freelancer.username}</span>
-                          <span className="text-xs text-gray-400">({getCountForAssignee(String(freelancer.id))})</span>
+                          <Users className="w-4 h-4" />
+                          <span className="flex-1 text-left">All Assignees</span>
+                          <span className="text-xs text-gray-400">({getCountForAssignee('all')})</span>
                         </button>
-                      ))}
-                    </div>
-                  </>
-                )}
+                        <button
+                          onClick={() => { setAssigneeFilter('unassigned'); setShowAssigneeDropdown(false); }}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
+                            assigneeFilter === 'unassigned' ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
+                          }`}
+                        >
+                          <div className="w-4 h-4 rounded-full border-2 border-dashed border-gray-300" />
+                          <span className="flex-1 text-left">Unassigned</span>
+                          <span className="text-xs text-gray-400">({getCountForAssignee('unassigned')})</span>
+                        </button>
+                        <div className="border-t border-gray-100 my-1" />
+                        <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                          Creators
+                        </div>
+                        {freelancerUsers.map((freelancer) => (
+                          <button
+                            key={freelancer.id}
+                            onClick={() => { setAssigneeFilter(String(freelancer.id)); setShowAssigneeDropdown(false); }}
+                            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
+                              assigneeFilter === String(freelancer.id) ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
+                            }`}
+                          >
+                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center">
+                              <span className="text-xs font-medium text-white">
+                                {freelancer.username.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                            <span className="flex-1 text-left truncate">{freelancer.username}</span>
+                            <span className="text-xs text-gray-400">({getCountForAssignee(String(freelancer.id))})</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Department Filter */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <span className="font-medium">Category:</span>
+                </div>
+                <div className="relative">
+                  <button
+                    onClick={() => setShowDepartmentFilter(!showDepartmentFilter)}
+                    className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors min-w-[180px]"
+                  >
+                    <span className="flex-1 text-left text-sm">
+                      {departmentFilter === 'all' 
+                        ? 'All Categories' 
+                        : allDepartments.find(d => d.id === parseInt(departmentFilter, 10))?.name || 'Unknown'}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showDepartmentFilter ? 'rotate-180' : ''}`} />
+                  </button>
+                  
+                  {showDepartmentFilter && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-10" 
+                        onClick={() => setShowDepartmentFilter(false)}
+                      />
+                      <div className="absolute z-20 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                        <button
+                          onClick={() => { setDepartmentFilter('all'); setShowDepartmentFilter(false); }}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
+                            departmentFilter === 'all' ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
+                          }`}
+                        >
+                          <span className="flex-1 text-left">All Categories</span>
+                          <span className="text-xs text-gray-400">({ideas.length})</span>
+                        </button>
+                        <div className="border-t border-gray-100 my-1" />
+                        {allDepartments.map((dept) => {
+                          const count = ideas.filter(i => i.departments?.some(d => d.id === dept.id)).length;
+                          return (
+                            <button
+                              key={dept.id}
+                              onClick={() => { setDepartmentFilter(String(dept.id)); setShowDepartmentFilter(false); }}
+                              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
+                                departmentFilter === String(dept.id) ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
+                              }`}
+                            >
+                              <span className="flex-1 text-left truncate">{dept.name}</span>
+                              <span className="text-xs text-gray-400">({count})</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
               
               {/* Clear Filters Button */}
