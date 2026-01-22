@@ -1589,58 +1589,163 @@ const IdeaDetail: React.FC = () => {
                     ? 'bg-green-50/50 border-green-200' 
                     : 'bg-gray-50 border-gray-200'
                 }`}>
-                  <div className="flex items-center justify-between gap-4">
-                    {idea.flow_json ? (
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                          <FileJson className="w-6 h-6 text-green-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-green-800">
-                            {(() => {
-                              try {
-                                const parsed = JSON.parse(idea.flow_json!);
-                                const count = parsed._flowCount || (parsed.flows?.length) || 1;
-                                return `${count} flow${count !== 1 ? 's' : ''} uploaded`;
-                              } catch {
-                                return 'Flow JSON uploaded';
-                              }
-                            })()}
-                          </p>
-                          <button
-                            onClick={async () => {
-                              try {
-                                // Get full reconstructed template with real flow name
-                                const response = await ideasApi.downloadTemplate(idea.id);
-                                const { filename, template } = response.data;
-                                
-                                // Download as properly formatted JSON
-                                const blob = new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' });
-                                const url = URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = filename;
-                                a.click();
-                                URL.revokeObjectURL(url);
-                              } catch (error) {
-                                console.error('Download failed:', error);
-                                // Fallback to raw download
-                                const blob = new Blob([idea.flow_json!], { type: 'application/json' });
-                                const url = URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = `${(idea.flow_name || 'template').replace(/[^a-zA-Z0-9-_]/g, '-')}.json`;
-                                a.click();
-                                URL.revokeObjectURL(url);
-                              }
-                            }}
-                            className="text-sm text-green-600 hover:text-green-700 underline"
+                  {idea.flow_json ? (
+                    <div className="space-y-3">
+                      {/* Header with action buttons */}
+                      {canEdit && (
+                        <div className="flex items-center justify-end gap-2 pb-3 border-b border-green-100">
+                          <input
+                            ref={flowJsonInputRef}
+                            type="file"
+                            accept=".json,application/json"
+                            onChange={(e) => handleFlowJsonUpload(e, false)}
+                            className="hidden"
+                            id="flow-json-upload"
+                            multiple
+                          />
+                          <label
+                            htmlFor="flow-json-upload"
+                            className={`inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors ${uploadingFlowJson ? 'opacity-50' : ''}`}
                           >
-                            Download Full Template
-                          </button>
+                            {uploadingFlowJson ? (
+                              <Loader className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Upload className="w-4 h-4" />
+                            )}
+                            <span>Replace</span>
+                          </label>
+                          
+                          <input
+                            ref={flowJsonAppendInputRef}
+                            type="file"
+                            accept=".json,application/json"
+                            onChange={(e) => handleFlowJsonUpload(e, true)}
+                            className="hidden"
+                            id="flow-json-append"
+                            multiple
+                          />
+                          <label
+                            htmlFor="flow-json-append"
+                            className={`inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 cursor-pointer transition-colors ${appendingFlows ? 'opacity-50' : ''}`}
+                          >
+                            {appendingFlows ? (
+                              <Loader className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Plus className="w-4 h-4" />
+                            )}
+                            <span>Add More</span>
+                          </label>
                         </div>
-                      </div>
-                    ) : (
+                      )}
+
+                      {/* Individual flows list */}
+                      {(() => {
+                        try {
+                          const parsed = JSON.parse(idea.flow_json!);
+                          const flows = parsed.flows || [];
+                          const flowCount = parsed._flowCount || flows.length || 1;
+
+                          return (
+                            <div className="space-y-2">
+                              {flows.map((flow: { displayName?: string }, index: number) => (
+                                <div 
+                                  key={index} 
+                                  className="flex items-center justify-between gap-3 p-3 bg-white rounded-lg border border-green-100 hover:border-green-200 transition-colors"
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                      <FileJson className="w-4 h-4 text-green-600" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="font-medium text-gray-900 truncate">
+                                        {flow.displayName || `Flow ${index + 1}`}
+                                      </p>
+                                      <p className="text-xs text-gray-500">Flow {index + 1} of {flowCount}</p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        const response = await ideasApi.downloadSingleFlow(idea.id, index);
+                                        const { filename, template } = response.data;
+                                        const blob = new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' });
+                                        const url = URL.createObjectURL(blob);
+                                        const a = document.createElement('a');
+                                        a.href = url;
+                                        a.download = filename;
+                                        a.click();
+                                        URL.revokeObjectURL(url);
+                                      } catch (error) {
+                                        console.error('Download failed:', error);
+                                      }
+                                    }}
+                                    className="text-sm text-green-600 hover:text-green-700 font-medium flex items-center gap-1.5 flex-shrink-0 px-2 py-1 rounded hover:bg-green-50 transition-colors"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                    Download
+                                  </button>
+                                </div>
+                              ))}
+
+                              {/* Download All button when multiple flows */}
+                              {flowCount > 1 && (
+                                <div className="pt-2 border-t border-green-100 mt-2">
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        const response = await ideasApi.downloadTemplate(idea.id);
+                                        const { filename, template } = response.data;
+                                        const blob = new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' });
+                                        const url = URL.createObjectURL(blob);
+                                        const a = document.createElement('a');
+                                        a.href = url;
+                                        a.download = filename;
+                                        a.click();
+                                        URL.revokeObjectURL(url);
+                                      } catch (error) {
+                                        console.error('Download failed:', error);
+                                      }
+                                    }}
+                                    className="w-full text-sm text-green-700 hover:text-green-800 font-medium flex items-center justify-center gap-2 py-2 rounded-lg hover:bg-green-100/50 transition-colors"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                    Download All ({flowCount} flows)
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        } catch {
+                          // Fallback for invalid JSON
+                          return (
+                            <div className="flex items-center gap-3">
+                              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                                <FileJson className="w-6 h-6 text-green-600" />
+                              </div>
+                              <div>
+                                <p className="font-medium text-green-800">Flow JSON uploaded</p>
+                                <button
+                                  onClick={async () => {
+                                    const blob = new Blob([idea.flow_json!], { type: 'application/json' });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = `${(idea.flow_name || 'template').replace(/[^a-zA-Z0-9-_]/g, '-')}.json`;
+                                    a.click();
+                                    URL.revokeObjectURL(url);
+                                  }}
+                                  className="text-sm text-green-600 hover:text-green-700 underline"
+                                >
+                                  Download Template
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+                      })()}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
                           <FileJson className="w-6 h-6 text-gray-400" />
@@ -1650,58 +1755,33 @@ const IdeaDetail: React.FC = () => {
                           <p className="text-sm text-gray-400">Upload flow JSON to enable publishing</p>
                         </div>
                       </div>
-                    )}
-                    
-                    {canEdit && (
-                      <div className="flex items-center gap-2">
-                        <input
-                          ref={flowJsonInputRef}
-                          type="file"
-                          accept=".json,application/json"
-                          onChange={(e) => handleFlowJsonUpload(e, false)}
-                          className="hidden"
-                          id="flow-json-upload"
-                          multiple
-                        />
-                        <label
-                          htmlFor="flow-json-upload"
-                          className={`inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors ${uploadingFlowJson ? 'opacity-50' : ''}`}
-                        >
-                          {uploadingFlowJson ? (
-                            <Loader className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Upload className="w-4 h-4" />
-                          )}
-                          <span>{idea.flow_json ? 'Replace' : 'Upload'}</span>
-                        </label>
-                        
-                        {idea.flow_json && (
-                          <>
-                            <input
-                              ref={flowJsonAppendInputRef}
-                              type="file"
-                              accept=".json,application/json"
-                              onChange={(e) => handleFlowJsonUpload(e, true)}
-                              className="hidden"
-                              id="flow-json-append"
-                              multiple
-                            />
-                            <label
-                              htmlFor="flow-json-append"
-                              className={`inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 cursor-pointer transition-colors ${appendingFlows ? 'opacity-50' : ''}`}
-                            >
-                              {appendingFlows ? (
-                                <Loader className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <Plus className="w-4 h-4" />
-                              )}
-                              <span>Add More</span>
-                            </label>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                      
+                      {canEdit && (
+                        <div className="flex items-center gap-2">
+                          <input
+                            ref={flowJsonInputRef}
+                            type="file"
+                            accept=".json,application/json"
+                            onChange={(e) => handleFlowJsonUpload(e, false)}
+                            className="hidden"
+                            id="flow-json-upload"
+                            multiple
+                          />
+                          <label
+                            htmlFor="flow-json-upload"
+                            className={`inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 cursor-pointer transition-colors ${uploadingFlowJson ? 'opacity-50' : ''}`}
+                          >
+                            {uploadingFlowJson ? (
+                              <Loader className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Upload className="w-4 h-4" />
+                            )}
+                            <span>Upload</span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 

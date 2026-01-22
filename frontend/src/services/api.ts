@@ -147,6 +147,26 @@ export const ideasApi = {
       };
     }>(`/ideas/${id}/download-template`),
 
+  // Download single flow as template (by flow index)
+  downloadSingleFlow: (id: number, flowIndex: number) =>
+    api.get<{
+      filename: string;
+      template: {
+        name: string;
+        type: string;
+        summary: string;
+        description: string;
+        tags: Array<{ title: string; color: string }>;
+        author: string;
+        categories: string[];
+        pieces: string[];
+        status: string;
+        blogUrl: string;
+        metadata: null;
+        flows: any[];
+      };
+    }>(`/ideas/${id}/download-template/${flowIndex}`),
+
   // Get publish preview (shows what would be sent to Public Library API)
   getPublishPreview: (id: number) =>
     api.get<{
