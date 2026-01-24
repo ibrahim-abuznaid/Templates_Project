@@ -7,14 +7,14 @@
  *   node scripts/test-public-library-verbose.js
  */
 
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = process.env.API_BASE || 'http://localhost:3001/api';
 const PUBLIC_LIBRARY_API = 'https://cloud.activepieces.com/api/v1/admin/templates';
-const API_KEY = process.env.PUBLIC_LIBRARY_API_KEY || 'ZUuXPWgRsM9SK9LW8v9pkFxsJyXHB3gn';
+const API_KEY = process.env.PUBLIC_LIBRARY_API_KEY || '';
 
-// Test credentials
+// Test credentials - set via environment variables
 const TEST_USER = {
-  username: 'admin',
-  password: 'admin123'
+  username: process.env.TEST_ADMIN_USERNAME || 'admin',
+  password: process.env.TEST_ADMIN_PASSWORD || ''  // Required: set TEST_ADMIN_PASSWORD env var
 };
 
 // Helper to log request/response

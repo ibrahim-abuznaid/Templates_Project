@@ -541,9 +541,23 @@ async function seedDefaultUsers() {
     if (userCount === 0) {
       console.log('📝 Seeding default users...');
 
-      // Use environment variables for default passwords, with fallbacks for development
-      const defaultAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'admin123';
-      const defaultFreelancerPassword = process.env.DEFAULT_FREELANCER_PASSWORD || 'freelancer123';
+      // Use environment variables for default passwords
+      // Fallbacks only allowed in development mode for security
+      const isProduction = process.env.NODE_ENV === 'production';
+      const defaultAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD || 
+        (!isProduction ? 'admin123' : null);
+      const defaultFreelancerPassword = process.env.DEFAULT_FREELANCER_PASSWORD || 
+        (!isProduction ? 'freelancer123' : null);
+
+      if (!defaultAdminPassword || !defaultFreelancerPassword) {
+        console.error('❌ DEFAULT_ADMIN_PASSWORD and DEFAULT_FREELANCER_PASSWORD environment variables are required in production');
+        console.error('   Please set these in your .env file before seeding the database');
+        return;
+      }
+
+      if (!isProduction && (!process.env.DEFAULT_ADMIN_PASSWORD || !process.env.DEFAULT_FREELANCER_PASSWORD)) {
+        console.warn('⚠️  Using default development passwords. Set DEFAULT_ADMIN_PASSWORD and DEFAULT_FREELANCER_PASSWORD env vars for custom passwords.');
+      }
 
       const adminPassword = await bcrypt.hash(defaultAdminPassword, 10);
       const freelancerPassword = await bcrypt.hash(defaultFreelancerPassword, 10);

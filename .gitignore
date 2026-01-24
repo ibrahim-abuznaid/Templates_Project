@@ -82,3 +82,9 @@ coverage/
 *.tgz
 .vercel
 .netlify
+
+# ===========================================
+# Test Scripts with Credentials
+# ===========================================
+test-analytics.sh
+delete-test-analytics.sh

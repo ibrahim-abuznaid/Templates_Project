@@ -13,8 +13,8 @@ const API_BASE = process.env.API_BASE || 'http://localhost:3001/api';
 
 // Test credentials - adjust these to your admin user
 const TEST_USER = {
-  username: 'admin',  // Change this to your admin username/handle
-  password: 'admin123'  // Change this to your admin password
+  username: process.env.TEST_ADMIN_USERNAME || 'admin',  // Set TEST_ADMIN_USERNAME env var
+  password: process.env.TEST_ADMIN_PASSWORD || ''  // Set TEST_ADMIN_PASSWORD env var (required)
 };
 
 async function login() {
