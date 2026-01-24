@@ -511,7 +511,32 @@ const extractStepsFromFlows = (flowJson) => {
 const buildPublishRequestBody = async (idea) => {
   // Parse flow JSON if available - extract only the flows array
   const result = extractFlowsFromJson(idea.flow_json);
-  const flows = result.success ? result.flows : [];
+  let flows = result.success ? result.flows : [];
+
+  // IMPORTANT: Ensure each flow has a displayName
+  // The Public Library API requires displayName at the flow level
+  const templateName = idea.flow_name || 'Untitled Template';
+  flows = flows.map((flow, index) => {
+    // If flow already has a displayName, keep it
+    if (flow.displayName) {
+      return flow;
+    }
+    
+    // For single-flow templates, use the template name as the flow displayName
+    // For multi-flow templates, append a number to distinguish them
+    let flowDisplayName;
+    if (flows.length === 1) {
+      flowDisplayName = templateName;
+    } else {
+      flowDisplayName = `${templateName} - Flow ${index + 1}`;
+    }
+    
+    console.log(`📚 [BUILD REQUEST] Adding displayName to flow ${index + 1}: "${flowDisplayName}"`);
+    return {
+      ...flow,
+      displayName: flowDisplayName
+    };
+  });
 
   // Build tags array from time_save_per_week and cost_per_year
   const tags = [];
@@ -1776,7 +1801,17 @@ router.get('/:id/download-template', authenticateToken, async (req, res) => {
 
     // Extract flows from stored data
     const result = extractFlowsFromJson(idea.flow_json);
-    const flows = result.success ? result.flows : [];
+    let flows = result.success ? result.flows : [];
+
+    // Ensure each flow has a displayName
+    const templateName = idea.flow_name || 'Untitled Template';
+    flows = flows.map((flow, index) => {
+      if (flow.displayName) return flow;
+      const flowDisplayName = flows.length === 1 
+        ? templateName 
+        : `${templateName} - Flow ${index + 1}`;
+      return { ...flow, displayName: flowDisplayName };
+    });
 
     // Get departments for categories
     const departments = await getIdeaDepartments(idea.id);
@@ -1868,8 +1903,16 @@ router.get('/:id/download-template/:flowIndex', authenticateToken, async (req, r
       return res.status(400).json({ error: 'Invalid flow index' });
     }
 
-    const selectedFlow = flows[flowIndex];
-    const flowName = selectedFlow.displayName || `Flow ${flowIndex + 1}`;
+    let selectedFlow = flows[flowIndex];
+    
+    // Ensure the flow has a displayName
+    const templateName = idea.flow_name || 'Untitled Template';
+    const flowName = selectedFlow.displayName || (flows.length === 1 ? templateName : `${templateName} - Flow ${flowIndex + 1}`);
+    
+    // Add displayName to the flow if missing
+    if (!selectedFlow.displayName) {
+      selectedFlow = { ...selectedFlow, displayName: flowName };
+    }
 
     // Get departments for categories
     const departments = await getIdeaDepartments(idea.id);
