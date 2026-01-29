@@ -165,7 +165,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       </>
                     )}
 
-                    {/* Non-admin: show Departments and Earnings */}
+                    {/* Non-admin: show Departments, Analytics and Earnings */}
                     {!isAdmin && (
                       <>
                         <Link
@@ -174,6 +174,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         >
                           <Building2 className="w-4 h-4" />
                           <span>Departments</span>
+                        </Link>
+
+                        <Link
+                          to="/template-analytics"
+                          className={isActive('/template-analytics') ? 'nav-link-active' : 'nav-link'}
+                        >
+                          <Globe className="w-4 h-4" />
+                          <span>Analytics</span>
                         </Link>
 
                         <Link
@@ -376,6 +384,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <MobileNavLink to="/blockers" icon={AlertTriangle} label="Blockers" />
                     <MobileNavLink to="/suggestions" icon={Lightbulb} label="Suggestions" color="amber" />
                     <MobileNavLink to="/departments" icon={Building2} label="Departments" />
+                    <MobileNavLink to="/template-analytics" icon={Globe} label="Analytics" />
                   </div>
 
                   {/* Admin Tools */}
@@ -383,7 +392,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <div className="space-y-1">
                       <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Admin</p>
                       <MobileNavLink to="/analytics" icon={BarChart3} label="Performance" />
-                      <MobileNavLink to="/template-analytics" icon={Globe} label="Analytics" />
                       <MobileNavLink to="/invoices" icon={Receipt} label="Invoices" />
                     </div>
                   )}
