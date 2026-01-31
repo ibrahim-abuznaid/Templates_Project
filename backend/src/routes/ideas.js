@@ -517,7 +517,13 @@ const buildPublishRequestBody = async (idea) => {
   // The Public Library API requires displayName at the flow level
   const templateName = idea.flow_name || 'Untitled Template';
   flows = flows.map((flow, index) => {
-    // If flow already has a displayName, keep it
+    // Preserve notes array if it exists in the flow
+    const flowNotes = flow.notes || [];
+    if (flowNotes.length > 0) {
+      console.log(`📚 [BUILD REQUEST] Flow ${index + 1} has ${flowNotes.length} note(s)`);
+    }
+    
+    // If flow already has a displayName, keep it (notes are preserved as part of flow)
     if (flow.displayName) {
       return flow;
     }
@@ -532,6 +538,9 @@ const buildPublishRequestBody = async (idea) => {
     }
     
     console.log(`📚 [BUILD REQUEST] Adding displayName to flow ${index + 1}: "${flowDisplayName}"`);
+    
+    // Return the flow with displayName, preserving all other properties including notes
+    // The spread operator preserves notes array from the original flow
     return {
       ...flow,
       displayName: flowDisplayName
@@ -1708,9 +1717,22 @@ router.post('/:id/flow-json', authenticateToken, async (req, res) => {
     }
     
     console.log(`📚 [FLOW UPLOAD] Total flows to store: ${allFlows.length}`);
+    
+    // Log notes information for each flow
+    let totalNotes = 0;
+    allFlows.forEach((flow, index) => {
+      if (flow.notes && flow.notes.length > 0) {
+        console.log(`📚 [FLOW UPLOAD] Flow ${index + 1} has ${flow.notes.length} note(s)`);
+        totalNotes += flow.notes.length;
+      }
+    });
+    if (totalNotes > 0) {
+      console.log(`📚 [FLOW UPLOAD] Total notes across all flows: ${totalNotes}`);
+    }
 
     // Store as a wrapper object with flows array for consistency
     // This makes it easy to extract later and maintains the structure
+    // Notes are preserved as part of each flow object
     const storageData = allFlows.length > 0 ? JSON.stringify({
       _flowCount: allFlows.length,
       flows: allFlows
@@ -1803,13 +1825,19 @@ router.get('/:id/download-template', authenticateToken, async (req, res) => {
     const result = extractFlowsFromJson(idea.flow_json);
     let flows = result.success ? result.flows : [];
 
-    // Ensure each flow has a displayName
+    // Ensure each flow has a displayName and preserve notes
     const templateName = idea.flow_name || 'Untitled Template';
     flows = flows.map((flow, index) => {
+      // Log if flow has notes
+      if (flow.notes && flow.notes.length > 0) {
+        console.log(`📚 [DOWNLOAD] Flow ${index + 1} has ${flow.notes.length} note(s)`);
+      }
+      
       if (flow.displayName) return flow;
       const flowDisplayName = flows.length === 1 
         ? templateName 
         : `${templateName} - Flow ${index + 1}`;
+      // Spread preserves all properties including notes
       return { ...flow, displayName: flowDisplayName };
     });
 
@@ -1905,11 +1933,16 @@ router.get('/:id/download-template/:flowIndex', authenticateToken, async (req, r
 
     let selectedFlow = flows[flowIndex];
     
+    // Log if flow has notes
+    if (selectedFlow.notes && selectedFlow.notes.length > 0) {
+      console.log(`📚 [DOWNLOAD SINGLE] Flow has ${selectedFlow.notes.length} note(s)`);
+    }
+    
     // Ensure the flow has a displayName
     const templateName = idea.flow_name || 'Untitled Template';
     const flowName = selectedFlow.displayName || (flows.length === 1 ? templateName : `${templateName} - Flow ${flowIndex + 1}`);
     
-    // Add displayName to the flow if missing
+    // Add displayName to the flow if missing (spread preserves notes)
     if (!selectedFlow.displayName) {
       selectedFlow = { ...selectedFlow, displayName: flowName };
     }
