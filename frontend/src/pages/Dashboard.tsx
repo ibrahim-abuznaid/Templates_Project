@@ -6,7 +6,7 @@ import { ideasApi, departmentsApi, analyticsApi } from '../services/api';
 import type { Idea, Department, User } from '../types';
 import IdeaCard from '../components/IdeaCard';
 import StatusLegend from '../components/StatusLegend';
-import { Plus, Loader, Wifi, WifiOff, X, ChevronDown, Search, User as UserIcon, Users } from 'lucide-react';
+import { Plus, Loader, Wifi, WifiOff, X, ChevronDown, Search, User as UserIcon, Users, Puzzle } from 'lucide-react';
 
 // Template analytics map type
 interface TemplateAnalytics {
@@ -101,6 +101,10 @@ const Dashboard: React.FC = () => {
   const [freelancerUsers, setFreelancerUsers] = useState<User[]>([]);
   const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false);
   const [showDepartmentFilter, setShowDepartmentFilter] = useState(false);
+  const [pieceFilter, setPieceFilter] = useState<string>(() => {
+    return searchParams.get('piece') || 'all';
+  });
+  const [showPieceFilter, setShowPieceFilter] = useState(false);
   const [templateAnalytics, setTemplateAnalytics] = useState<Map<number, TemplateAnalytics>>(new Map());
 
   useEffect(() => {
@@ -124,6 +128,8 @@ const Dashboard: React.FC = () => {
     if (urlAssignee) setAssigneeFilter(urlAssignee);
     if (urlDepartment) setDepartmentFilter(urlDepartment);
     if (urlSearch) setSearchQuery(urlSearch);
+    const urlPiece = searchParams.get('piece');
+    if (urlPiece) setPieceFilter(urlPiece);
     
     setFiltersInitialized(true);
   }, []); // Only run once on mount
@@ -145,12 +151,15 @@ const Dashboard: React.FC = () => {
     if (departmentFilter !== 'all') {
       params.set('department', departmentFilter);
     }
+    if (pieceFilter !== 'all') {
+      params.set('piece', pieceFilter);
+    }
     if (searchQuery.trim()) {
       params.set('search', searchQuery.trim());
     }
     
     setSearchParams(params, { replace: true });
-  }, [statusFilter, assigneeFilter, departmentFilter, searchQuery, isFreelancer, filtersInitialized, setSearchParams]);
+  }, [statusFilter, assigneeFilter, departmentFilter, pieceFilter, searchQuery, isFreelancer, filtersInitialized, setSearchParams]);
 
   const loadDepartments = async () => {
     try {
@@ -345,6 +354,12 @@ const Dashboard: React.FC = () => {
       const ideaDeptIds = idea.departments?.map(d => d.id) || [];
       if (!ideaDeptIds.includes(deptId)) return false;
     }
+
+    // Apply piece filter (for both freelancers and admins)
+    if (pieceFilter !== 'all') {
+      const steps = idea.flow_steps || [];
+      if (!steps.some(s => s.pieceName === pieceFilter)) return false;
+    }
     
     // For freelancers: Apply simple category filter
     if (isFreelancer) {
@@ -443,13 +458,29 @@ const Dashboard: React.FC = () => {
     setStatusFilter(defaultStatus);
     setAssigneeFilter('all');
     setDepartmentFilter('all');
+    setPieceFilter('all');
     setSearchQuery('');
-    // Clear URL params
     setSearchParams({}, { replace: true });
   };
   
   const defaultStatusFilter = isFreelancer ? 'active_and_available' : 'all';
-  const hasActiveFilters = statusFilter !== defaultStatusFilter || assigneeFilter !== 'all' || departmentFilter !== 'all' || searchQuery.trim() !== '';
+  const hasActiveFilters = statusFilter !== defaultStatusFilter || assigneeFilter !== 'all' || departmentFilter !== 'all' || pieceFilter !== 'all' || searchQuery.trim() !== '';
+
+  // Derive sorted unique pieces from all loaded ideas
+  const allPieces = React.useMemo(() => {
+    const pieceMap = new Map<string, { pieceName: string; pieceDisplayName: string; count: number }>();
+    ideas.forEach(idea => {
+      (idea.flow_steps || []).forEach(step => {
+        if (!step.pieceName || !step.pieceDisplayName) return;
+        if (pieceMap.has(step.pieceName)) {
+          pieceMap.get(step.pieceName)!.count += 1;
+        } else {
+          pieceMap.set(step.pieceName, { pieceName: step.pieceName, pieceDisplayName: step.pieceDisplayName, count: 1 });
+        }
+      });
+    });
+    return Array.from(pieceMap.values()).sort((a, b) => a.pieceDisplayName.localeCompare(b.pieceDisplayName));
+  }, [ideas]);
 
   if (loading) {
     return (
@@ -1110,6 +1141,69 @@ const Dashboard: React.FC = () => {
                             </button>
                           );
                         })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Piece Filter */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Puzzle className="w-4 h-4" />
+                  <span className="font-medium">Piece:</span>
+                </div>
+                <div className="relative">
+                  <button
+                    onClick={() => setShowPieceFilter(!showPieceFilter)}
+                    className={`flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:border-gray-300 transition-colors min-w-[200px] ${
+                      pieceFilter !== 'all' ? 'border-primary-400 bg-primary-50' : 'border-gray-200'
+                    }`}
+                  >
+                    <span className="flex-1 text-left text-sm truncate">
+                      {pieceFilter === 'all'
+                        ? 'All Pieces'
+                        : allPieces.find(p => p.pieceName === pieceFilter)?.pieceDisplayName || pieceFilter}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${showPieceFilter ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {showPieceFilter && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setShowPieceFilter(false)}
+                      />
+                      <div className="absolute z-20 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-y-auto">
+                        <button
+                          onClick={() => { setPieceFilter('all'); setShowPieceFilter(false); }}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
+                            pieceFilter === 'all' ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
+                          }`}
+                        >
+                          <span className="flex-1 text-left">All Pieces</span>
+                          <span className="text-xs text-gray-400">({ideas.length})</span>
+                        </button>
+                        <div className="border-t border-gray-100 my-1" />
+                        {allPieces.length === 0 ? (
+                          <p className="text-xs text-gray-400 text-center py-3">No pieces found. Upload flow JSON to templates first.</p>
+                        ) : (
+                          allPieces.map((piece) => {
+                            const count = ideas.filter(i => (i.flow_steps || []).some(s => s.pieceName === piece.pieceName)).length;
+                            return (
+                              <button
+                                key={piece.pieceName}
+                                onClick={() => { setPieceFilter(piece.pieceName); setShowPieceFilter(false); }}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
+                                  pieceFilter === piece.pieceName ? 'bg-primary-50 text-primary-700' : 'text-gray-700'
+                                }`}
+                              >
+                                <span className="flex-1 text-left truncate">{piece.pieceDisplayName}</span>
+                                <span className="text-xs text-gray-400">({count})</span>
+                              </button>
+                            );
+                          })
+                        )}
                       </div>
                     </>
                   )}
