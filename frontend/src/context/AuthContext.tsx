@@ -18,12 +18,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is logged in on mount
     const token = localStorage.getItem('token');
     if (token) {
       authApi.getCurrentUser()
-        .then(response => {
+        .then(async (response) => {
           setUser(response.data);
+          // Silently refresh the token to extend the session
+          try {
+            const refreshRes = await authApi.refreshToken();
+            localStorage.setItem('token', refreshRes.data.token);
+          } catch {
+            // Token refresh failed but user is still valid for now
+          }
         })
         .catch(() => {
           localStorage.removeItem('token');

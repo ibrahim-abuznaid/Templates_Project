@@ -46,7 +46,7 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '90d' }
     );
 
     res.json({
@@ -78,6 +78,33 @@ router.get('/me', authenticateToken, async (req, res) => {
     res.json(user);
   } catch (error) {
     console.error('Get user error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Refresh token - issues a new token if the current one is still valid
+router.post('/refresh', authenticateToken, async (req, res) => {
+  try {
+    const user = await db.prepare('SELECT id, username, email, handle, role, is_active FROM users WHERE id = ?')
+      .get(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.is_active === false) {
+      return res.status(403).json({ error: 'Account has been disabled' });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '90d' }
+    );
+
+    res.json({ token });
+  } catch (error) {
+    console.error('Token refresh error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -269,7 +296,7 @@ router.post('/invitations/accept', async (req, res) => {
     const jwtToken = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '90d' }
     );
 
     res.status(201).json({
