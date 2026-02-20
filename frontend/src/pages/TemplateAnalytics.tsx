@@ -11,9 +11,14 @@ import {
   PieChart,
   Pie,
   Cell,
+  Area,
+  ComposedChart,
+  Legend,
+  ReferenceLine,
 } from 'recharts';
 import {
   TrendingUp,
+  TrendingDown,
   Users,
   FileText,
   Loader,
@@ -29,6 +34,9 @@ import {
   Zap,
   ChevronLeft,
   ChevronRight,
+  Calendar,
+  Flame,
+  Award,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -114,6 +122,34 @@ interface IntegrationAnalytics {
   allPieces: IntegrationStats[];
 }
 
+interface TimelineDataPoint {
+  month: string;
+  label: string;
+  newTemplates: number;
+  installs: number;
+  views: number;
+  cumulativeInstalls: number;
+  cumulativeViews: number;
+  cumulativeTemplates: number;
+}
+
+interface TimelineAnalytics {
+  period: string;
+  timeline: TimelineDataPoint[];
+  summary: {
+    totalMonths: number;
+    totalInstalls: number;
+    totalViews: number;
+    peakInstallMonth: { label: string; count: number } | null;
+    peakViewMonth: { label: string; count: number } | null;
+    momInstallGrowth: number | null;
+  };
+}
+
+type TimelinePeriod = '3m' | '6m' | '12m' | '24m' | 'all';
+type TimelineMetric = 'installs' | 'views' | 'both';
+type TimelineMode = 'cumulative' | 'monthly';
+
 const TemplateAnalytics: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -126,9 +162,32 @@ const TemplateAnalytics: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
+  // Timeline state
+  const [timelineData, setTimelineData] = useState<TimelineAnalytics | null>(null);
+  const [timelinePeriod, setTimelinePeriod] = useState<TimelinePeriod>('12m');
+  const [timelineMetric, setTimelineMetric] = useState<TimelineMetric>('both');
+  const [timelineMode, setTimelineMode] = useState<TimelineMode>('monthly');
+  const [timelineLoading, setTimelineLoading] = useState(false);
+
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    loadTimeline();
+  }, [timelinePeriod]);
+
+  const loadTimeline = async () => {
+    setTimelineLoading(true);
+    try {
+      const res = await analyticsApi.getTimelineAnalytics(timelinePeriod);
+      setTimelineData(res.data);
+    } catch (error) {
+      console.error('Failed to load timeline analytics:', error);
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -153,16 +212,18 @@ const TemplateAnalytics: React.FC = () => {
   const refreshData = async () => {
     setRefreshing(true);
     try {
-      const [overviewRes, categoryRes, templatesRes, integrationsRes] = await Promise.all([
+      const [overviewRes, categoryRes, templatesRes, integrationsRes, timelineRes] = await Promise.all([
         analyticsApi.getTemplatesAnalyticsOverview(),
         analyticsApi.getCategoryAnalytics(),
         analyticsApi.getPublishedTemplatesAnalytics(),
         analyticsApi.getIntegrationAnalytics(),
+        analyticsApi.getTimelineAnalytics(timelinePeriod),
       ]);
       setOverview(overviewRes.data);
       setCategoryAnalytics(categoryRes.data.categories || []);
       setAllTemplates(templatesRes.data.templates || []);
       setIntegrationAnalytics(integrationsRes.data);
+      setTimelineData(timelineRes.data);
     } catch (error) {
       console.error('Failed to refresh template analytics:', error);
     } finally {
@@ -203,6 +264,38 @@ const TemplateAnalytics: React.FC = () => {
       name: c.category,
       value: c.totalInstalls,
     }));
+
+  // Peak month for reference line
+  const peakMonth = timelineData?.timeline.reduce(
+    (best, r) => (!best || r.installs > best.installs ? r : best),
+    null as TimelineDataPoint | null
+  );
+
+  const periodLabels: Record<TimelinePeriod, string> = {
+    '3m': '3 Months',
+    '6m': '6 Months',
+    '12m': '12 Months',
+    '24m': '24 Months',
+    'all': 'All Time',
+  };
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload || !payload.length) return null;
+    return (
+      <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-sm min-w-[160px]">
+        <p className="font-semibold text-gray-800 mb-2 border-b pb-1">{label}</p>
+        {payload.map((entry: any) => (
+          <div key={entry.dataKey} className="flex items-center justify-between gap-4 py-0.5">
+            <span className="flex items-center gap-1.5 text-gray-600">
+              <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: entry.color }} />
+              {entry.name}
+            </span>
+            <span className="font-semibold text-gray-900">{entry.value?.toLocaleString()}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -584,6 +677,297 @@ const TemplateAnalytics: React.FC = () => {
               </button>
             </div>
           </div>
+        )}
+      </div>
+
+      {/* ── Time-Based Analysis ── */}
+      <div className="card">
+        {/* Section Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-primary-600" />
+            <h2 className="text-lg font-semibold text-gray-900">Time-Based Analysis</h2>
+            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+              by publish date
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Mode toggle */}
+            <div className="flex items-center bg-gray-100 rounded-lg p-1 gap-1">
+              {(['monthly', 'cumulative'] as TimelineMode[]).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setTimelineMode(m)}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                    timelineMode === m
+                      ? 'bg-white shadow text-gray-900'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {m === 'monthly' ? 'Monthly' : 'Cumulative'}
+                </button>
+              ))}
+            </div>
+
+            {/* Metric toggle */}
+            <div className="flex items-center bg-gray-100 rounded-lg p-1 gap-1">
+              {(['installs', 'views', 'both'] as TimelineMetric[]).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setTimelineMetric(m)}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all capitalize ${
+                    timelineMetric === m
+                      ? 'bg-white shadow text-gray-900'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+
+            {/* Period selector */}
+            <div className="flex items-center bg-gray-100 rounded-lg p-1 gap-1">
+              {(['3m', '6m', '12m', '24m', 'all'] as TimelinePeriod[]).map(p => (
+                <button
+                  key={p}
+                  onClick={() => setTimelinePeriod(p)}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                    timelinePeriod === p
+                      ? 'bg-primary-600 text-white shadow'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {p === 'all' ? 'All' : p.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Summary Cards */}
+        {timelineData && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            <div className="bg-gradient-to-br from-violet-50 to-violet-100 rounded-xl p-4">
+              <div className="flex items-center gap-2 text-violet-600 mb-1">
+                <Calendar className="w-4 h-4" />
+                <span className="text-xs font-medium">Period</span>
+              </div>
+              <div className="text-xl font-bold text-violet-800">
+                {periodLabels[timelinePeriod]}
+              </div>
+              <div className="text-xs text-violet-600 mt-0.5">
+                {timelineData.summary.totalMonths} month{timelineData.summary.totalMonths !== 1 ? 's' : ''} of data
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4">
+              <div className="flex items-center gap-2 text-green-600 mb-1">
+                <Flame className="w-4 h-4" />
+                <span className="text-xs font-medium">Peak Install Month</span>
+              </div>
+              <div className="text-xl font-bold text-green-800 truncate">
+                {timelineData.summary.peakInstallMonth?.label ?? '—'}
+              </div>
+              <div className="text-xs text-green-600 mt-0.5">
+                {timelineData.summary.peakInstallMonth
+                  ? `${timelineData.summary.peakInstallMonth.count.toLocaleString()} installs`
+                  : 'No data'}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4">
+              <div className="flex items-center gap-2 text-blue-600 mb-1">
+                <Award className="w-4 h-4" />
+                <span className="text-xs font-medium">Peak View Month</span>
+              </div>
+              <div className="text-xl font-bold text-blue-800 truncate">
+                {timelineData.summary.peakViewMonth?.label ?? '—'}
+              </div>
+              <div className="text-xs text-blue-600 mt-0.5">
+                {timelineData.summary.peakViewMonth
+                  ? `${timelineData.summary.peakViewMonth.count.toLocaleString()} views`
+                  : 'No data'}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4">
+              <div className="flex items-center gap-2 text-amber-600 mb-1">
+                {timelineData.summary.momInstallGrowth !== null && timelineData.summary.momInstallGrowth >= 0
+                  ? <TrendingUp className="w-4 h-4" />
+                  : <TrendingDown className="w-4 h-4" />}
+                <span className="text-xs font-medium">MoM Growth</span>
+              </div>
+              <div className={`text-xl font-bold ${
+                timelineData.summary.momInstallGrowth === null ? 'text-amber-800' :
+                timelineData.summary.momInstallGrowth >= 0 ? 'text-green-700' : 'text-red-600'
+              }`}>
+                {timelineData.summary.momInstallGrowth === null
+                  ? '—'
+                  : `${timelineData.summary.momInstallGrowth >= 0 ? '+' : ''}${timelineData.summary.momInstallGrowth}%`}
+              </div>
+              <div className="text-xs text-amber-600 mt-0.5">vs previous month</div>
+            </div>
+          </div>
+        )}
+
+        {/* Chart */}
+        {timelineLoading ? (
+          <div className="h-80 flex items-center justify-center">
+            <Loader className="w-6 h-6 animate-spin text-primary-400" />
+          </div>
+        ) : !timelineData || timelineData.timeline.length === 0 ? (
+          <div className="h-80 flex flex-col items-center justify-center text-gray-400 gap-2">
+            <Calendar className="w-10 h-10 opacity-30" />
+            <p className="text-sm">No time-series data available for this period.</p>
+          </div>
+        ) : (
+          <>
+            <ResponsiveContainer width="100%" height={360}>
+              <ComposedChart data={timelineData.timeline} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="installGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="viewGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fill: '#9ca3af', fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  yAxisId="left"
+                  tick={{ fill: '#9ca3af', fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  tick={{ fill: '#c4b5fd', fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend
+                  wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }}
+                  iconType="circle"
+                  iconSize={8}
+                />
+
+                {/* New templates published as bars (right axis) */}
+                <Bar
+                  yAxisId="right"
+                  dataKey="newTemplates"
+                  name="New Templates"
+                  fill="#c4b5fd"
+                  opacity={0.5}
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={28}
+                />
+
+                {/* Peak reference line */}
+                {peakMonth && (
+                  <ReferenceLine
+                    yAxisId="left"
+                    x={peakMonth.label}
+                    stroke="#f59e0b"
+                    strokeDasharray="4 2"
+                    label={{ value: 'Peak', position: 'insideTopRight', fontSize: 10, fill: '#f59e0b' }}
+                  />
+                )}
+
+                {/* Installs area */}
+                {(timelineMetric === 'installs' || timelineMetric === 'both') && (
+                  <Area
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey={timelineMode === 'cumulative' ? 'cumulativeInstalls' : 'installs'}
+                    name={timelineMode === 'cumulative' ? 'Cumulative Installs' : 'Installs'}
+                    stroke="#22c55e"
+                    strokeWidth={2.5}
+                    fill="url(#installGrad)"
+                    dot={false}
+                    activeDot={{ r: 5, fill: '#22c55e' }}
+                  />
+                )}
+
+                {/* Views area */}
+                {(timelineMetric === 'views' || timelineMetric === 'both') && (
+                  <Area
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey={timelineMode === 'cumulative' ? 'cumulativeViews' : 'views'}
+                    name={timelineMode === 'cumulative' ? 'Cumulative Views' : 'Views'}
+                    stroke="#3b82f6"
+                    strokeWidth={2.5}
+                    fill="url(#viewGrad)"
+                    dot={false}
+                    activeDot={{ r: 5, fill: '#3b82f6' }}
+                  />
+                )}
+              </ComposedChart>
+            </ResponsiveContainer>
+
+            {/* Monthly breakdown mini table */}
+            <div className="mt-6 border-t pt-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Monthly Breakdown</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left">
+                      <th className="pb-2 pr-4 text-xs text-gray-400 font-medium">Month</th>
+                      <th className="pb-2 pr-4 text-xs text-gray-400 font-medium text-center">New Templates</th>
+                      <th className="pb-2 pr-4 text-xs text-gray-400 font-medium text-right">Installs</th>
+                      <th className="pb-2 pr-4 text-xs text-gray-400 font-medium text-right">Views</th>
+                      <th className="pb-2 text-xs text-gray-400 font-medium text-right">Install Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...timelineData.timeline].reverse().map((row) => {
+                      const isPeak = peakMonth?.month === row.month;
+                      const installRate = row.views > 0 ? ((row.installs / row.views) * 100).toFixed(1) : '—';
+                      return (
+                        <tr
+                          key={row.month}
+                          className={`border-t border-gray-50 ${isPeak ? 'bg-amber-50' : 'hover:bg-gray-50'}`}
+                        >
+                          <td className="py-2 pr-4 font-medium text-gray-800 flex items-center gap-1.5">
+                            {isPeak && <Flame className="w-3 h-3 text-amber-500 flex-shrink-0" />}
+                            {row.label}
+                          </td>
+                          <td className="py-2 pr-4 text-center">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-violet-50 text-violet-700 font-medium">
+                              +{row.newTemplates}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-4 text-right text-green-600 font-medium">
+                            {row.installs.toLocaleString()}
+                          </td>
+                          <td className="py-2 pr-4 text-right text-blue-600 font-medium">
+                            {row.views.toLocaleString()}
+                          </td>
+                          <td className="py-2 text-right text-gray-500">
+                            {installRate === '—' ? '—' : `${installRate}%`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
         )}
       </div>
 

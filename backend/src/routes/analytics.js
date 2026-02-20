@@ -1190,6 +1190,95 @@ router.get('/templates/by-category', authenticateToken, async (req, res) => {
   }
 });
 
+// Get time-series analytics for the public library (installs + views over time)
+router.get('/templates/timeline', authenticateToken, async (req, res) => {
+  try {
+    const { period = '12m' } = req.query;
+
+    let dateFilter = '';
+    if (period === '3m') {
+      dateFilter = "AND ta.created_at >= NOW() - INTERVAL '3 months'";
+    } else if (period === '6m') {
+      dateFilter = "AND ta.created_at >= NOW() - INTERVAL '6 months'";
+    } else if (period === '12m') {
+      dateFilter = "AND ta.created_at >= NOW() - INTERVAL '12 months'";
+    } else if (period === '24m') {
+      dateFilter = "AND ta.created_at >= NOW() - INTERVAL '24 months'";
+    }
+    // 'all' = no date filter
+
+    const rows = await db.prepare(`
+      WITH monthly_stats AS (
+        SELECT
+          TO_CHAR(ta.created_at AT TIME ZONE 'UTC', 'YYYY-MM') AS month,
+          TO_CHAR(DATE_TRUNC('month', ta.created_at AT TIME ZONE 'UTC'), 'Mon YYYY') AS label,
+          COUNT(DISTINCT i.id)::int AS new_templates,
+          COALESCE(SUM(ta.total_installs), 0)::int AS installs,
+          COALESCE(SUM(ta.total_views), 0)::int AS views
+        FROM ideas i
+        INNER JOIN template_analytics ta ON i.public_library_id = ta.template_id
+        WHERE i.status = 'published' ${dateFilter}
+        GROUP BY TO_CHAR(ta.created_at AT TIME ZONE 'UTC', 'YYYY-MM'),
+                 TO_CHAR(DATE_TRUNC('month', ta.created_at AT TIME ZONE 'UTC'), 'Mon YYYY')
+      )
+      SELECT
+        month,
+        label,
+        new_templates,
+        installs,
+        views,
+        SUM(installs) OVER (ORDER BY month ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)::int AS cumulative_installs,
+        SUM(views) OVER (ORDER BY month ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)::int AS cumulative_views,
+        SUM(new_templates) OVER (ORDER BY month ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)::int AS cumulative_templates
+      FROM monthly_stats
+      ORDER BY month ASC
+    `).all();
+
+    // Calculate summary
+    const peakInstallMonth = rows.reduce((best, r) => (!best || r.installs > best.installs ? r : best), null);
+    const peakViewMonth = rows.reduce((best, r) => (!best || r.views > best.views ? r : best), null);
+
+    const totalInstalls = rows.length > 0 ? rows[rows.length - 1].cumulative_installs : 0;
+    const totalViews = rows.length > 0 ? rows[rows.length - 1].cumulative_views : 0;
+
+    // Month-over-month growth for installs (last 2 months)
+    let momGrowth = null;
+    if (rows.length >= 2) {
+      const last = rows[rows.length - 1];
+      const prev = rows[rows.length - 2];
+      if (prev.installs > 0) {
+        momGrowth = parseFloat((((last.installs - prev.installs) / prev.installs) * 100).toFixed(1));
+      }
+    }
+
+    res.json({
+      period,
+      timeline: rows.map(r => ({
+        month: r.month,
+        label: r.label,
+        newTemplates: r.new_templates,
+        installs: r.installs,
+        views: r.views,
+        cumulativeInstalls: r.cumulative_installs,
+        cumulativeViews: r.cumulative_views,
+        cumulativeTemplates: r.cumulative_templates,
+      })),
+      summary: {
+        totalMonths: rows.length,
+        totalInstalls,
+        totalViews,
+        peakInstallMonth: peakInstallMonth ? { label: peakInstallMonth.label, count: peakInstallMonth.installs } : null,
+        peakViewMonth: peakViewMonth ? { label: peakViewMonth.label, count: peakViewMonth.views } : null,
+        momInstallGrowth: momGrowth,
+      },
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Timeline analytics error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get integration/piece analytics - most used pieces across all templates
 router.get('/integrations', authenticateToken, async (req, res) => {
   try {

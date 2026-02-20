@@ -875,6 +875,30 @@ export const analyticsApi = {
       generatedAt: string;
     }>('/analytics/templates/by-category'),
 
+  getTimelineAnalytics: (period: '3m' | '6m' | '12m' | '24m' | 'all' = '12m') =>
+    api.get<{
+      period: string;
+      timeline: Array<{
+        month: string;
+        label: string;
+        newTemplates: number;
+        installs: number;
+        views: number;
+        cumulativeInstalls: number;
+        cumulativeViews: number;
+        cumulativeTemplates: number;
+      }>;
+      summary: {
+        totalMonths: number;
+        totalInstalls: number;
+        totalViews: number;
+        peakInstallMonth: { label: string; count: number } | null;
+        peakViewMonth: { label: string; count: number } | null;
+        momInstallGrowth: number | null;
+      };
+      generatedAt: string;
+    }>('/analytics/templates/timeline', { params: { period } }),
+
   getIntegrationAnalytics: () =>
     api.get<{
       summary: {
