@@ -821,11 +821,34 @@ export const analyticsApi = {
         uniqueUsers: number;
         activeFlows: number;
         conversionRate: number;
+        isComplete: boolean;
+        performanceScore: number;
         installedByUserIds: string[];
         activeFlowIds: string[];
       }>;
       generatedAt: string;
     }>('/analytics/templates/published'),
+
+  getTemplateHealth: () =>
+    api.get<{
+      lowPerformers: Array<{ ideaId: number; flowName: string; publicLibraryId: string; category: string; totalViews: number; totalInstalls: number; conversionRate: number }>;
+      zeroTraction: Array<{ ideaId: number; flowName: string; publicLibraryId: string; category: string; totalViews: number; totalInstalls: number; createdAt: string }>;
+      highFixCount: Array<{ ideaId: number; flowName: string; publicLibraryId: string; category: string; fixCount: number; totalViews: number; totalInstalls: number }>;
+      openBlockers: Array<{ ideaId: number; flowName: string; publicLibraryId: string; category: string; openBlockerCount: number; blockerTypes: string[]; priorities: string[] }>;
+      incompleteFields: Array<{ ideaId: number; flowName: string; publicLibraryId: string; category: string; missingCount: number; missingFields: string[] }>;
+      counts: { lowPerformers: number; zeroTraction: number; highFixCount: number; openBlockers: number; incompleteFields: number };
+      generatedAt: string;
+    }>('/analytics/templates/health'),
+
+  getTemplateInsights: () =>
+    api.get<{
+      topOpportunities: Array<{ ideaId: number; flowName: string; publicLibraryId: string; category: string; totalViews: number; totalInstalls: number; conversionRate: number; avgConversion: number; potentialInstalls: number }>;
+      categoryGaps: Array<{ departmentId: number; category: string; templateCount: number; totalInstalls: number; avgInstallsPerTemplate: number }>;
+      integrationGaps: Array<{ pieceName: string; displayName: string; templateCount: number; totalInstalls: number }>;
+      bestPractices: { avgDescriptionLength: number; blogUrlPercent: number; avgIntegrations: number; topCategories: Array<{ name: string; count: number }>; sampleSize: number };
+      meta: { avgConversion: number; totalPublished: number };
+      generatedAt: string;
+    }>('/analytics/templates/insights'),
 
   getTemplatesAnalyticsOverview: () =>
     api.get<{

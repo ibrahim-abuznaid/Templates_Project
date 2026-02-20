@@ -970,11 +970,9 @@ router.get('/template/by-idea/:ideaId', authenticateToken, async (req, res) => {
   }
 });
 
-// Get analytics for all published templates
+// Get analytics for all published templates (with performance scores)
 router.get('/templates/published', authenticateToken, async (req, res) => {
   try {
-    // Get all published templates with their analytics
-    // Join through idea_departments to get category (first department)
     const templates = await db.prepare(`
       SELECT 
         i.id as idea_id,
@@ -989,7 +987,16 @@ router.get('/templates/published', authenticateToken, async (req, res) => {
         COALESCE(array_length(ta.installed_by_user_ids, 1), 0) as unique_users_installed,
         COALESCE(array_length(ta.active_flow_ids, 1), 0) as active_flows,
         ta.installed_by_user_ids,
-        ta.active_flow_ids
+        ta.active_flow_ids,
+        (
+          (i.summary IS NOT NULL AND i.summary != '') AND
+          (i.description IS NOT NULL AND i.description != '') AND
+          (i.time_save_per_week IS NOT NULL AND i.time_save_per_week != '') AND
+          (i.cost_per_year IS NOT NULL AND i.cost_per_year != '') AND
+          (i.author IS NOT NULL AND i.author != '') AND
+          (i.scribe_url IS NOT NULL AND i.scribe_url != '') AND
+          (i.flow_json IS NOT NULL AND i.flow_json != '')
+        ) as is_complete
       FROM ideas i
       LEFT JOIN users u ON i.assigned_to = u.id
       LEFT JOIN idea_departments id ON id.idea_id = i.id
@@ -997,29 +1004,55 @@ router.get('/templates/published', authenticateToken, async (req, res) => {
       LEFT JOIN template_analytics ta ON i.public_library_id = ta.template_id
       WHERE i.status = 'published' AND i.public_library_id IS NOT NULL
       GROUP BY i.id, i.flow_name, i.public_library_id, i.status, i.created_at, u.username, d.name, i.department,
-               ta.total_views, ta.total_installs, ta.installed_by_user_ids, ta.active_flow_ids
+               ta.total_views, ta.total_installs, ta.installed_by_user_ids, ta.active_flow_ids,
+               i.summary, i.description, i.time_save_per_week, i.cost_per_year, i.author, i.scribe_url, i.flow_json
       ORDER BY COALESCE(ta.total_installs, 0) DESC
     `).all();
 
-    const results = templates.map(t => ({
+    const baseResults = templates.map(t => ({
       ideaId: t.idea_id,
       flowName: t.flow_name,
       publicLibraryId: t.public_library_id,
       category: t.category || 'Uncategorized',
       assignedTo: t.assigned_to_name,
       publishedAt: t.published_at,
-      totalViews: t.total_views,
-      totalInstalls: t.total_installs,
-      uniqueUsers: t.unique_users_installed,
-      activeFlows: t.active_flows,
-      conversionRate: t.total_views > 0 
+      totalViews: parseInt(t.total_views) || 0,
+      totalInstalls: parseInt(t.total_installs) || 0,
+      uniqueUsers: parseInt(t.unique_users_installed) || 0,
+      activeFlows: parseInt(t.active_flows) || 0,
+      conversionRate: t.total_views > 0
         ? parseFloat(((t.total_installs / t.total_views) * 100).toFixed(2))
         : 0,
+      isComplete: !!t.is_complete,
       installedByUserIds: t.installed_by_user_ids || [],
       activeFlowIds: t.active_flow_ids || []
     }));
 
-    // Calculate summary stats
+    // Compute performance scores using percentile ranking
+    const n = baseResults.length;
+    const computePercentiles = (values) => {
+      if (n <= 1) return values.map(() => 0.5);
+      const indexed = values.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
+      const out = new Array(n);
+      indexed.forEach(({ i }, rank) => { out[i] = rank / (n - 1); });
+      return out;
+    };
+
+    const viewsP = computePercentiles(baseResults.map(t => t.totalViews));
+    const installsP = computePercentiles(baseResults.map(t => t.totalInstalls));
+    const conversionP = computePercentiles(baseResults.map(t => t.conversionRate));
+    const activeRatioP = computePercentiles(baseResults.map(t =>
+      t.totalInstalls > 0 ? t.activeFlows / t.totalInstalls : 0
+    ));
+
+    const results = baseResults.map((t, i) => ({
+      ...t,
+      performanceScore: Math.round(
+        (viewsP[i] * 0.20 + installsP[i] * 0.30 + conversionP[i] * 0.25 + activeRatioP[i] * 0.15) * 90
+        + (t.isComplete ? 10 : 0)
+      )
+    }));
+
     const summary = {
       totalTemplates: results.length,
       totalViews: results.reduce((sum, t) => sum + t.totalViews, 0),
@@ -1035,6 +1068,372 @@ router.get('/templates/published', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Get published templates analytics error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get template health report – surfaces actionable issues
+router.get('/templates/health', authenticateToken, async (req, res) => {
+  try {
+    // Low performers: enough views but very low conversion
+    const lowPerformers = await db.prepare(`
+      SELECT
+        i.id as idea_id,
+        i.flow_name,
+        i.public_library_id,
+        COALESCE(d.name, i.department) as category,
+        ta.total_views,
+        ta.total_installs,
+        ROUND((ta.total_installs::numeric / NULLIF(ta.total_views, 0)) * 100, 2) as conversion_rate
+      FROM ideas i
+      INNER JOIN template_analytics ta ON i.public_library_id = ta.template_id
+      LEFT JOIN idea_departments id ON id.idea_id = i.id
+      LEFT JOIN departments d ON d.id = id.department_id
+      WHERE i.status = 'published'
+        AND ta.total_views >= 10
+        AND (ta.total_installs::float / ta.total_views * 100) < 2
+      GROUP BY i.id, i.flow_name, i.public_library_id, d.name, i.department,
+               ta.total_views, ta.total_installs
+      ORDER BY ta.total_views DESC
+      LIMIT 20
+    `).all();
+
+    // Zero traction: published but never seen or installed
+    const zeroTraction = await db.prepare(`
+      SELECT
+        i.id as idea_id,
+        i.flow_name,
+        i.public_library_id,
+        COALESCE(d.name, i.department) as category,
+        COALESCE(ta.total_views, 0) as total_views,
+        COALESCE(ta.total_installs, 0) as total_installs,
+        i.created_at
+      FROM ideas i
+      LEFT JOIN template_analytics ta ON i.public_library_id = ta.template_id
+      LEFT JOIN idea_departments id ON id.idea_id = i.id
+      LEFT JOIN departments d ON d.id = id.department_id
+      WHERE i.status = 'published'
+        AND i.public_library_id IS NOT NULL
+        AND (ta.template_id IS NULL OR (ta.total_views = 0 AND ta.total_installs = 0))
+      GROUP BY i.id, i.flow_name, i.public_library_id, d.name, i.department,
+               ta.total_views, ta.total_installs, ta.template_id, i.created_at
+      ORDER BY i.created_at DESC
+      LIMIT 20
+    `).all();
+
+    // High fix count: templates that needed many rounds of fixes
+    const highFixCount = await db.prepare(`
+      SELECT
+        i.id as idea_id,
+        i.flow_name,
+        i.public_library_id,
+        COALESCE(d.name, i.department) as category,
+        COALESCE(i.fix_count, 0) as fix_count,
+        COALESCE(ta.total_views, 0) as total_views,
+        COALESCE(ta.total_installs, 0) as total_installs
+      FROM ideas i
+      LEFT JOIN template_analytics ta ON i.public_library_id = ta.template_id
+      LEFT JOIN idea_departments id ON id.idea_id = i.id
+      LEFT JOIN departments d ON d.id = id.department_id
+      WHERE i.status = 'published'
+        AND i.public_library_id IS NOT NULL
+        AND COALESCE(i.fix_count, 0) >= 3
+      GROUP BY i.id, i.flow_name, i.public_library_id, d.name, i.department,
+               i.fix_count, ta.total_views, ta.total_installs
+      ORDER BY i.fix_count DESC
+      LIMIT 20
+    `).all();
+
+    // Open blockers: published templates with unresolved blockers
+    const openBlockers = await db.prepare(`
+      SELECT
+        i.id as idea_id,
+        i.flow_name,
+        i.public_library_id,
+        COALESCE(d.name, i.department) as category,
+        COUNT(b.id)::int as open_blocker_count,
+        array_agg(DISTINCT b.blocker_type) as blocker_types,
+        array_agg(DISTINCT b.priority) as priorities
+      FROM ideas i
+      INNER JOIN blockers b ON b.idea_id = i.id AND b.status IN ('open', 'in_progress')
+      LEFT JOIN idea_departments id ON id.idea_id = i.id
+      LEFT JOIN departments d ON d.id = id.department_id
+      WHERE i.status = 'published' AND i.public_library_id IS NOT NULL
+      GROUP BY i.id, i.flow_name, i.public_library_id, d.name, i.department
+      ORDER BY open_blocker_count DESC
+      LIMIT 20
+    `).all();
+
+    // Incomplete fields: missing required content
+    const incompleteFields = await db.prepare(`
+      SELECT
+        i.id as idea_id,
+        i.flow_name,
+        i.public_library_id,
+        COALESCE(d.name, i.department) as category,
+        (i.summary IS NULL OR i.summary = '')::int +
+        (i.description IS NULL OR i.description = '')::int +
+        (i.time_save_per_week IS NULL OR i.time_save_per_week = '')::int +
+        (i.cost_per_year IS NULL OR i.cost_per_year = '')::int +
+        (i.author IS NULL OR i.author = '')::int +
+        (i.scribe_url IS NULL OR i.scribe_url = '')::int +
+        (i.flow_json IS NULL OR i.flow_json = '')::int AS missing_count,
+        array_remove(ARRAY[
+          CASE WHEN (i.summary IS NULL OR i.summary = '') THEN 'Summary' END,
+          CASE WHEN (i.description IS NULL OR i.description = '') THEN 'Description' END,
+          CASE WHEN (i.time_save_per_week IS NULL OR i.time_save_per_week = '') THEN 'Time Save' END,
+          CASE WHEN (i.cost_per_year IS NULL OR i.cost_per_year = '') THEN 'Cost/Year' END,
+          CASE WHEN (i.author IS NULL OR i.author = '') THEN 'Author' END,
+          CASE WHEN (i.scribe_url IS NULL OR i.scribe_url = '') THEN 'Blog URL' END,
+          CASE WHEN (i.flow_json IS NULL OR i.flow_json = '') THEN 'Flow JSON' END
+        ], NULL) AS missing_fields
+      FROM ideas i
+      LEFT JOIN idea_departments id ON id.idea_id = i.id
+      LEFT JOIN departments d ON d.id = id.department_id
+      WHERE i.status = 'published'
+        AND i.public_library_id IS NOT NULL
+        AND (
+          i.summary IS NULL OR i.summary = '' OR
+          i.description IS NULL OR i.description = '' OR
+          i.time_save_per_week IS NULL OR i.time_save_per_week = '' OR
+          i.cost_per_year IS NULL OR i.cost_per_year = '' OR
+          i.author IS NULL OR i.author = '' OR
+          i.scribe_url IS NULL OR i.scribe_url = '' OR
+          i.flow_json IS NULL OR i.flow_json = ''
+        )
+      GROUP BY i.id, i.flow_name, i.public_library_id, d.name, i.department,
+               i.summary, i.description, i.time_save_per_week, i.cost_per_year,
+               i.author, i.scribe_url, i.flow_json
+      ORDER BY missing_count DESC
+      LIMIT 20
+    `).all();
+
+    const fmt = (rows) => rows.map(r => ({
+      ideaId: r.idea_id,
+      flowName: r.flow_name,
+      publicLibraryId: r.public_library_id,
+      category: r.category || 'Uncategorized',
+      ...r
+    }));
+
+    res.json({
+      lowPerformers: fmt(lowPerformers).map(r => ({
+        ideaId: r.ideaId, flowName: r.flowName, publicLibraryId: r.publicLibraryId,
+        category: r.category, totalViews: parseInt(r.total_views),
+        totalInstalls: parseInt(r.total_installs),
+        conversionRate: parseFloat(r.conversion_rate) || 0
+      })),
+      zeroTraction: fmt(zeroTraction).map(r => ({
+        ideaId: r.ideaId, flowName: r.flowName, publicLibraryId: r.publicLibraryId,
+        category: r.category, totalViews: parseInt(r.total_views) || 0,
+        totalInstalls: parseInt(r.total_installs) || 0, createdAt: r.created_at
+      })),
+      highFixCount: fmt(highFixCount).map(r => ({
+        ideaId: r.ideaId, flowName: r.flowName, publicLibraryId: r.publicLibraryId,
+        category: r.category, fixCount: parseInt(r.fix_count),
+        totalViews: parseInt(r.total_views) || 0, totalInstalls: parseInt(r.total_installs) || 0
+      })),
+      openBlockers: fmt(openBlockers).map(r => ({
+        ideaId: r.ideaId, flowName: r.flowName, publicLibraryId: r.publicLibraryId,
+        category: r.category, openBlockerCount: r.open_blocker_count,
+        blockerTypes: r.blocker_types || [], priorities: r.priorities || []
+      })),
+      incompleteFields: fmt(incompleteFields).map(r => ({
+        ideaId: r.ideaId, flowName: r.flowName, publicLibraryId: r.publicLibraryId,
+        category: r.category, missingCount: parseInt(r.missing_count),
+        missingFields: r.missing_fields || []
+      })),
+      counts: {
+        lowPerformers: lowPerformers.length,
+        zeroTraction: zeroTraction.length,
+        highFixCount: highFixCount.length,
+        openBlockers: openBlockers.length,
+        incompleteFields: incompleteFields.length,
+      },
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Template health error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get actionable insights – what to work on next
+router.get('/templates/insights', authenticateToken, async (req, res) => {
+  try {
+    // ── Top Opportunities ──
+    // Templates with high views (top 25%) but below-average conversion
+    const allPublished = await db.prepare(`
+      SELECT
+        i.id as idea_id,
+        i.flow_name,
+        i.public_library_id,
+        COALESCE(d.name, i.department) as category,
+        COALESCE(ta.total_views, 0) as total_views,
+        COALESCE(ta.total_installs, 0) as total_installs,
+        CASE WHEN ta.total_views > 0
+          THEN ROUND((ta.total_installs::numeric / ta.total_views) * 100, 2)
+          ELSE 0 END as conversion_rate
+      FROM ideas i
+      LEFT JOIN template_analytics ta ON i.public_library_id = ta.template_id
+      LEFT JOIN idea_departments id ON id.idea_id = i.id
+      LEFT JOIN departments d ON d.id = id.department_id
+      WHERE i.status = 'published' AND i.public_library_id IS NOT NULL
+      GROUP BY i.id, i.flow_name, i.public_library_id, d.name, i.department,
+               ta.total_views, ta.total_installs
+    `).all();
+
+    const totalPublished = allPublished.length;
+    const avgConversion = totalPublished > 0
+      ? allPublished.reduce((s, r) => s + parseFloat(r.conversion_rate || 0), 0) / totalPublished
+      : 0;
+
+    const sortedByViews = [...allPublished].sort((a, b) => b.total_views - a.total_views);
+    const top25ViewThreshold = totalPublished > 0
+      ? sortedByViews[Math.floor(totalPublished * 0.25)]?.total_views || 0
+      : 0;
+
+    const topOpportunities = allPublished
+      .filter(r => r.total_views >= Math.max(top25ViewThreshold, 5) && parseFloat(r.conversion_rate) < avgConversion)
+      .map(r => ({
+        ideaId: r.idea_id,
+        flowName: r.flow_name,
+        publicLibraryId: r.public_library_id,
+        category: r.category || 'Uncategorized',
+        totalViews: parseInt(r.total_views),
+        totalInstalls: parseInt(r.total_installs),
+        conversionRate: parseFloat(r.conversion_rate),
+        avgConversion: parseFloat(avgConversion.toFixed(2)),
+        potentialInstalls: Math.round(parseInt(r.total_views) * (avgConversion / 100)) - parseInt(r.total_installs)
+      }))
+      .sort((a, b) => b.potentialInstalls - a.potentialInstalls)
+      .slice(0, 10);
+
+    // ── Category Gaps ──
+    const categoryGaps = await db.prepare(`
+      SELECT
+        d.id as department_id,
+        d.name as category,
+        COUNT(DISTINCT i.id)::int as template_count,
+        COALESCE(SUM(ta.total_installs), 0)::int as total_installs,
+        CASE WHEN COUNT(DISTINCT i.id) > 0
+          THEN ROUND(COALESCE(SUM(ta.total_installs), 0)::numeric / COUNT(DISTINCT i.id), 2)
+          ELSE 0 END as avg_installs_per_template
+      FROM departments d
+      LEFT JOIN idea_departments id ON d.id = id.department_id
+      LEFT JOIN ideas i ON id.idea_id = i.id AND i.status = 'published'
+      LEFT JOIN template_analytics ta ON i.public_library_id = ta.template_id
+      GROUP BY d.id, d.name
+      ORDER BY avg_installs_per_template DESC
+    `).all();
+
+    // ── Integration Gaps ──
+    // Pieces that drive high installs but appear in few templates
+    const templatesWithSteps = await db.prepare(`
+      SELECT i.id, i.flow_name, i.flow_steps,
+        COALESCE(ta.total_installs, 0) as total_installs
+      FROM ideas i
+      LEFT JOIN template_analytics ta ON i.public_library_id = ta.template_id
+      WHERE i.status = 'published'
+        AND i.flow_steps IS NOT NULL AND i.flow_steps != ''
+    `).all();
+
+    const pieceMap = {};
+    templatesWithSteps.forEach(t => {
+      let steps = [];
+      try { steps = JSON.parse(t.flow_steps); } catch { return; }
+      if (!Array.isArray(steps) || !steps.length) return;
+      const seen = new Set();
+      steps.forEach(s => {
+        const name = s.pieceName || s.pieceDisplayName;
+        if (!name || seen.has(name)) return;
+        seen.add(name);
+        if (!pieceMap[name]) {
+          pieceMap[name] = { pieceName: name, displayName: s.pieceDisplayName || name, templateCount: 0, totalInstalls: 0 };
+        }
+        pieceMap[name].templateCount++;
+        pieceMap[name].totalInstalls += parseInt(t.total_installs) || 0;
+      });
+    });
+
+    const allPieces = Object.values(pieceMap);
+    const avgPieceTemplateCount = allPieces.length > 0
+      ? allPieces.reduce((s, p) => s + p.templateCount, 0) / allPieces.length
+      : 0;
+    const avgPieceInstalls = allPieces.length > 0
+      ? allPieces.reduce((s, p) => s + p.totalInstalls, 0) / allPieces.length
+      : 0;
+
+    const integrationGaps = allPieces
+      .filter(p => p.totalInstalls > avgPieceInstalls && p.templateCount < avgPieceTemplateCount)
+      .sort((a, b) => (b.totalInstalls / b.templateCount) - (a.totalInstalls / a.templateCount))
+      .slice(0, 8);
+
+    // ── Best Practices from Top Performers ──
+    const topPerformers = await db.prepare(`
+      SELECT i.id, i.flow_name, i.description, i.scribe_url, i.flow_steps,
+        COALESCE(d.name, i.department) as category,
+        COALESCE(ta.total_installs, 0) as total_installs,
+        COALESCE(ta.total_views, 0) as total_views
+      FROM ideas i
+      INNER JOIN template_analytics ta ON i.public_library_id = ta.template_id
+      LEFT JOIN idea_departments id ON id.idea_id = i.id
+      LEFT JOIN departments d ON d.id = id.department_id
+      WHERE i.status = 'published' AND ta.total_installs > 0
+      GROUP BY i.id, i.flow_name, i.description, i.scribe_url, i.flow_steps, d.name, i.department,
+               ta.total_installs, ta.total_views
+      ORDER BY ta.total_installs DESC
+      LIMIT 10
+    `).all();
+
+    const bpDescLengths = topPerformers
+      .map(t => (t.description || '').length)
+      .filter(l => l > 0);
+    const bpBlogUrl = topPerformers.filter(t => t.scribe_url).length;
+    const bpIntegrationCounts = topPerformers.map(t => {
+      let steps = [];
+      try { steps = JSON.parse(t.flow_steps || '[]'); } catch { return 0; }
+      return new Set(steps.map(s => s.pieceName || s.pieceDisplayName).filter(Boolean)).size;
+    });
+    const categoryCounts = {};
+    topPerformers.forEach(t => {
+      const c = t.category || 'Uncategorized';
+      categoryCounts[c] = (categoryCounts[c] || 0) + 1;
+    });
+
+    const bestPractices = {
+      avgDescriptionLength: bpDescLengths.length > 0
+        ? Math.round(bpDescLengths.reduce((s, l) => s + l, 0) / bpDescLengths.length)
+        : 0,
+      blogUrlPercent: topPerformers.length > 0
+        ? Math.round((bpBlogUrl / topPerformers.length) * 100)
+        : 0,
+      avgIntegrations: bpIntegrationCounts.length > 0
+        ? parseFloat((bpIntegrationCounts.reduce((s, c) => s + c, 0) / bpIntegrationCounts.length).toFixed(1))
+        : 0,
+      topCategories: Object.entries(categoryCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([name, count]) => ({ name, count })),
+      sampleSize: topPerformers.length
+    };
+
+    res.json({
+      topOpportunities,
+      categoryGaps: categoryGaps.map(r => ({
+        departmentId: r.department_id,
+        category: r.category,
+        templateCount: r.template_count,
+        totalInstalls: parseInt(r.total_installs),
+        avgInstallsPerTemplate: parseFloat(r.avg_installs_per_template)
+      })),
+      integrationGaps,
+      bestPractices,
+      meta: { avgConversion: parseFloat(avgConversion.toFixed(2)), totalPublished },
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Template insights error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

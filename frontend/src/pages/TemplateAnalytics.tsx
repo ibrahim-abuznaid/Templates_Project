@@ -37,6 +37,16 @@ import {
   Calendar,
   Flame,
   Award,
+  AlertTriangle,
+  AlertCircle,
+  CheckCircle,
+  XCircle,
+  Lightbulb,
+  Target,
+  Star,
+  Wrench,
+  ShieldAlert,
+  ChevronDown,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -94,7 +104,26 @@ interface TemplateWithAnalytics {
   activeFlows: number;
   uniqueUsers: number;
   conversionRate: number;
+  isComplete: boolean;
+  performanceScore: number;
   installedByUserIds: string[];
+}
+
+interface HealthData {
+  lowPerformers: Array<{ ideaId: number; flowName: string; publicLibraryId: string; category: string; totalViews: number; totalInstalls: number; conversionRate: number }>;
+  zeroTraction: Array<{ ideaId: number; flowName: string; publicLibraryId: string; category: string; totalViews: number; totalInstalls: number; createdAt: string }>;
+  highFixCount: Array<{ ideaId: number; flowName: string; publicLibraryId: string; category: string; fixCount: number; totalViews: number; totalInstalls: number }>;
+  openBlockers: Array<{ ideaId: number; flowName: string; publicLibraryId: string; category: string; openBlockerCount: number; blockerTypes: string[]; priorities: string[] }>;
+  incompleteFields: Array<{ ideaId: number; flowName: string; publicLibraryId: string; category: string; missingCount: number; missingFields: string[] }>;
+  counts: { lowPerformers: number; zeroTraction: number; highFixCount: number; openBlockers: number; incompleteFields: number };
+}
+
+interface InsightsData {
+  topOpportunities: Array<{ ideaId: number; flowName: string; publicLibraryId: string; category: string; totalViews: number; totalInstalls: number; conversionRate: number; avgConversion: number; potentialInstalls: number }>;
+  categoryGaps: Array<{ departmentId: number; category: string; templateCount: number; totalInstalls: number; avgInstallsPerTemplate: number }>;
+  integrationGaps: Array<{ pieceName: string; displayName: string; templateCount: number; totalInstalls: number }>;
+  bestPractices: { avgDescriptionLength: number; blogUrlPercent: number; avgIntegrations: number; topCategories: Array<{ name: string; count: number }>; sampleSize: number };
+  meta: { avgConversion: number; totalPublished: number };
 }
 
 interface IntegrationStats {
@@ -157,7 +186,7 @@ const TemplateAnalytics: React.FC = () => {
   const [categoryAnalytics, setCategoryAnalytics] = useState<CategoryAnalytics[]>([]);
   const [allTemplates, setAllTemplates] = useState<TemplateWithAnalytics[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'installs' | 'views' | 'activeFlows' | 'conversion'>('installs');
+  const [sortBy, setSortBy] = useState<'installs' | 'views' | 'activeFlows' | 'conversion' | 'score'>('installs');
   const [integrationAnalytics, setIntegrationAnalytics] = useState<IntegrationAnalytics | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -168,6 +197,13 @@ const TemplateAnalytics: React.FC = () => {
   const [timelineMetric, setTimelineMetric] = useState<TimelineMetric>('both');
   const [timelineMode, setTimelineMode] = useState<TimelineMode>('monthly');
   const [timelineLoading, setTimelineLoading] = useState(false);
+
+  // Health & Insights state
+  const [healthData, setHealthData] = useState<HealthData | null>(null);
+  const [insightsData, setInsightsData] = useState<InsightsData | null>(null);
+  const [healthTab, setHealthTab] = useState<'lowPerformers' | 'zeroTraction' | 'highFixCount' | 'openBlockers' | 'incompleteFields'>('lowPerformers');
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [insightsLoading, setInsightsLoading] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -207,23 +243,54 @@ const TemplateAnalytics: React.FC = () => {
     } finally {
       setLoading(false);
     }
+    // Load heavy sections in background
+    loadHealth();
+    loadInsights();
+  };
+
+  const loadHealth = async () => {
+    setHealthLoading(true);
+    try {
+      const res = await analyticsApi.getTemplateHealth();
+      setHealthData(res.data);
+    } catch (error) {
+      console.error('Failed to load health data:', error);
+    } finally {
+      setHealthLoading(false);
+    }
+  };
+
+  const loadInsights = async () => {
+    setInsightsLoading(true);
+    try {
+      const res = await analyticsApi.getTemplateInsights();
+      setInsightsData(res.data);
+    } catch (error) {
+      console.error('Failed to load insights data:', error);
+    } finally {
+      setInsightsLoading(false);
+    }
   };
 
   const refreshData = async () => {
     setRefreshing(true);
     try {
-      const [overviewRes, categoryRes, templatesRes, integrationsRes, timelineRes] = await Promise.all([
+      const [overviewRes, categoryRes, templatesRes, integrationsRes, timelineRes, healthRes, insightsRes] = await Promise.all([
         analyticsApi.getTemplatesAnalyticsOverview(),
         analyticsApi.getCategoryAnalytics(),
         analyticsApi.getPublishedTemplatesAnalytics(),
         analyticsApi.getIntegrationAnalytics(),
         analyticsApi.getTimelineAnalytics(timelinePeriod),
+        analyticsApi.getTemplateHealth(),
+        analyticsApi.getTemplateInsights(),
       ]);
       setOverview(overviewRes.data);
       setCategoryAnalytics(categoryRes.data.categories || []);
       setAllTemplates(templatesRes.data.templates || []);
       setIntegrationAnalytics(integrationsRes.data);
       setTimelineData(timelineRes.data);
+      setHealthData(healthRes.data);
+      setInsightsData(insightsRes.data);
     } catch (error) {
       console.error('Failed to refresh template analytics:', error);
     } finally {
@@ -239,6 +306,7 @@ const TemplateAnalytics: React.FC = () => {
         case 'views': return b.totalViews - a.totalViews;
         case 'activeFlows': return b.activeFlows - a.activeFlows;
         case 'conversion': return b.conversionRate - a.conversionRate;
+        case 'score': return (b.performanceScore ?? 0) - (a.performanceScore ?? 0);
         default: return 0;
       }
     });
@@ -392,6 +460,419 @@ const TemplateAnalytics: React.FC = () => {
         </div>
       )}
 
+      {/* ── Engagement Quality Row ── */}
+      {overview && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {(() => {
+            const installToActive = overview.overview.totalInstalls > 0
+              ? ((overview.overview.totalActiveFlows / overview.overview.totalInstalls) * 100).toFixed(1)
+              : '0';
+            const avgPerUser = overview.overview.uniqueUsersInstalled > 0
+              ? (overview.overview.totalInstalls / overview.overview.uniqueUsersInstalled).toFixed(1)
+              : '0';
+            const coverage = overview.overview.publishedTemplates > 0
+              ? ((overview.overview.trackedTemplates / overview.overview.publishedTemplates) * 100).toFixed(0)
+              : '0';
+            const exploreToInstall = overview.explore.totalClicks > 0
+              ? ((overview.overview.totalInstalls / overview.explore.totalClicks) * 100).toFixed(2)
+              : '0';
+            return (
+              <>
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
+                    <Activity className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 font-medium">Install → Active</div>
+                    <div className="text-xl font-bold text-gray-900">{installToActive}%</div>
+                    <div className="text-xs text-gray-400">of installs stay active</div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                    <Users className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 font-medium">Avg / User</div>
+                    <div className="text-xl font-bold text-gray-900">{avgPerUser}</div>
+                    <div className="text-xs text-gray-400">installs per unique user</div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <BarChart3 className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 font-medium">Tracking Coverage</div>
+                    <div className="text-xl font-bold text-gray-900">{coverage}%</div>
+                    <div className="text-xs text-gray-400">{overview.overview.trackedTemplates} of {overview.overview.publishedTemplates} templates</div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                    <Globe className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 font-medium">Explore → Install</div>
+                    <div className="text-xl font-bold text-gray-900">{exploreToInstall}%</div>
+                    <div className="text-xs text-gray-400">from discover page</div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ── Conversion Funnel ── */}
+      {overview && (
+        <div className="card">
+          <div className="flex items-center gap-2 mb-6">
+            <TrendingUp className="w-5 h-5 text-primary-600" />
+            <h2 className="text-lg font-semibold text-gray-900">Conversion Funnel</h2>
+            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full ml-1">user journey</span>
+          </div>
+          {(() => {
+            const stages = [
+              { label: 'Explore Page Views', value: overview.explore.totalClicks, color: 'bg-indigo-500', textColor: 'text-indigo-700', bg: 'bg-indigo-50' },
+              { label: 'Template Detail Views', value: overview.overview.totalViews, color: 'bg-blue-500', textColor: 'text-blue-700', bg: 'bg-blue-50' },
+              { label: 'Installs', value: overview.overview.totalInstalls, color: 'bg-green-500', textColor: 'text-green-700', bg: 'bg-green-50' },
+              { label: 'Active Flows', value: overview.overview.totalActiveFlows, color: 'bg-purple-500', textColor: 'text-purple-700', bg: 'bg-purple-50' },
+            ];
+            const maxVal = Math.max(...stages.map(s => s.value), 1);
+            return (
+              <div className="space-y-3">
+                {stages.map((stage, i) => {
+                  const pct = ((stage.value / maxVal) * 100).toFixed(0);
+                  const dropOff = i > 0 && stages[i - 1].value > 0
+                    ? ((1 - stage.value / stages[i - 1].value) * 100).toFixed(1)
+                    : null;
+                  const convRate = i > 0 && stages[i - 1].value > 0
+                    ? ((stage.value / stages[i - 1].value) * 100).toFixed(1)
+                    : null;
+                  const rateNum = convRate ? parseFloat(convRate) : 100;
+                  const rateColor = rateNum >= 10 ? 'text-green-600' : rateNum >= 5 ? 'text-amber-600' : 'text-red-500';
+                  return (
+                    <div key={stage.label}>
+                      {i > 0 && dropOff !== null && (
+                        <div className="flex items-center gap-2 my-1 pl-4">
+                          <ChevronDown className="w-3 h-3 text-gray-300" />
+                          <span className={`text-xs font-semibold ${rateColor}`}>{convRate}% passed through</span>
+                          <span className="text-xs text-gray-400">({dropOff}% dropped off)</span>
+                        </div>
+                      )}
+                      <div className={`rounded-xl px-5 py-3 flex items-center justify-between gap-4 ${stage.bg}`}
+                           style={{ width: `${Math.max(parseFloat(pct), 30)}%`, minWidth: '240px', maxWidth: '100%' }}>
+                        <span className={`text-sm font-semibold ${stage.textColor}`}>{stage.label}</span>
+                        <span className={`text-lg font-bold ${stage.textColor}`}>{stage.value.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ── Template Health Dashboard ── */}
+      <div className="card">
+        <div className="flex items-center gap-2 mb-5">
+          <ShieldAlert className="w-5 h-5 text-rose-600" />
+          <h2 className="text-lg font-semibold text-gray-900">Template Health</h2>
+          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full ml-1">issues to fix now</span>
+          {healthData && (
+            <span className="ml-auto text-xs text-gray-400">
+              {Object.values(healthData.counts).reduce((a, b) => a + b, 0)} issues across {Object.values(healthData.counts).filter(c => c > 0).length} categories
+            </span>
+          )}
+        </div>
+
+        {healthLoading ? (
+          <div className="h-48 flex items-center justify-center">
+            <Loader className="w-6 h-6 animate-spin text-primary-400" />
+          </div>
+        ) : !healthData ? (
+          <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Could not load health data</div>
+        ) : (
+          <>
+            {/* Tab bar */}
+            <div className="flex flex-wrap gap-2 mb-5">
+              {[
+                { key: 'lowPerformers' as const, label: 'Low Conversion', count: healthData.counts.lowPerformers, icon: TrendingDown, color: 'red' },
+                { key: 'zeroTraction' as const, label: 'Zero Traction', count: healthData.counts.zeroTraction, icon: XCircle, color: 'orange' },
+                { key: 'highFixCount' as const, label: 'High Fix Count', count: healthData.counts.highFixCount, icon: Wrench, color: 'amber' },
+                { key: 'openBlockers' as const, label: 'Open Blockers', count: healthData.counts.openBlockers, icon: AlertTriangle, color: 'yellow' },
+                { key: 'incompleteFields' as const, label: 'Incomplete', count: healthData.counts.incompleteFields, icon: AlertCircle, color: 'blue' },
+              ].map(({ key, label, count, icon: Icon, color }) => {
+                const isActive = healthTab === key;
+                const colorMap: Record<string, string> = {
+                  red: isActive ? 'bg-red-600 text-white border-red-600' : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100',
+                  orange: isActive ? 'bg-orange-600 text-white border-orange-600' : 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100',
+                  amber: isActive ? 'bg-amber-600 text-white border-amber-600' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100',
+                  yellow: isActive ? 'bg-yellow-600 text-white border-yellow-600' : 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100',
+                  blue: isActive ? 'bg-blue-600 text-white border-blue-600' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100',
+                };
+                return (
+                  <button key={key} onClick={() => setHealthTab(key)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all ${colorMap[color]}`}>
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${isActive ? 'bg-white/20' : 'bg-white border border-current/20'}`}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Tab content */}
+            <div className="overflow-x-auto">
+              {healthTab === 'lowPerformers' && (
+                healthData.lowPerformers.length === 0
+                  ? <p className="text-sm text-gray-400 py-6 text-center">No low-conversion templates found.</p>
+                  : <table className="w-full text-sm">
+                    <thead><tr className="border-b border-gray-100 text-left">
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium">Template</th>
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium">Category</th>
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium text-right">Views</th>
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium text-right">Installs</th>
+                      <th className="pb-2 text-xs text-gray-400 font-medium text-right">Conversion</th>
+                    </tr></thead>
+                    <tbody>{healthData.lowPerformers.map(t => (
+                      <tr key={t.ideaId} className="border-t border-gray-50 hover:bg-gray-50">
+                        <td className="py-2 pr-3"><Link to={`/ideas/${t.ideaId}`} className="font-medium text-gray-800 hover:text-primary-600 flex items-center gap-1">{t.flowName}<ArrowUpRight className="w-3 h-3 text-gray-400" /></Link></td>
+                        <td className="py-2 pr-3"><span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{t.category}</span></td>
+                        <td className="py-2 pr-3 text-right text-blue-600 font-medium">{t.totalViews.toLocaleString()}</td>
+                        <td className="py-2 pr-3 text-right text-green-600 font-medium">{t.totalInstalls.toLocaleString()}</td>
+                        <td className="py-2 text-right"><span className="text-red-600 font-semibold">{t.conversionRate.toFixed(1)}%</span></td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+              )}
+              {healthTab === 'zeroTraction' && (
+                healthData.zeroTraction.length === 0
+                  ? <p className="text-sm text-gray-400 py-6 text-center">All published templates have some activity.</p>
+                  : <table className="w-full text-sm">
+                    <thead><tr className="border-b border-gray-100 text-left">
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium">Template</th>
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium">Category</th>
+                      <th className="pb-2 text-xs text-gray-400 font-medium">Status</th>
+                    </tr></thead>
+                    <tbody>{healthData.zeroTraction.map(t => (
+                      <tr key={t.ideaId} className="border-t border-gray-50 hover:bg-gray-50">
+                        <td className="py-2 pr-3"><Link to={`/ideas/${t.ideaId}`} className="font-medium text-gray-800 hover:text-primary-600 flex items-center gap-1">{t.flowName}<ArrowUpRight className="w-3 h-3 text-gray-400" /></Link></td>
+                        <td className="py-2 pr-3"><span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{t.category}</span></td>
+                        <td className="py-2"><span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">0 views · 0 installs</span></td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+              )}
+              {healthTab === 'highFixCount' && (
+                healthData.highFixCount.length === 0
+                  ? <p className="text-sm text-gray-400 py-6 text-center">No templates with high fix counts.</p>
+                  : <table className="w-full text-sm">
+                    <thead><tr className="border-b border-gray-100 text-left">
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium">Template</th>
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium">Category</th>
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium text-center">Fix Count</th>
+                      <th className="pb-2 text-xs text-gray-400 font-medium text-right">Installs</th>
+                    </tr></thead>
+                    <tbody>{healthData.highFixCount.map(t => (
+                      <tr key={t.ideaId} className="border-t border-gray-50 hover:bg-gray-50">
+                        <td className="py-2 pr-3"><Link to={`/ideas/${t.ideaId}`} className="font-medium text-gray-800 hover:text-primary-600 flex items-center gap-1">{t.flowName}<ArrowUpRight className="w-3 h-3 text-gray-400" /></Link></td>
+                        <td className="py-2 pr-3"><span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{t.category}</span></td>
+                        <td className="py-2 pr-3 text-center"><span className="text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full text-xs font-bold">{t.fixCount}x fixes</span></td>
+                        <td className="py-2 text-right text-green-600 font-medium">{t.totalInstalls.toLocaleString()}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+              )}
+              {healthTab === 'openBlockers' && (
+                healthData.openBlockers.length === 0
+                  ? <p className="text-sm text-gray-400 py-6 text-center">No open blockers on published templates.</p>
+                  : <table className="w-full text-sm">
+                    <thead><tr className="border-b border-gray-100 text-left">
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium">Template</th>
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium">Category</th>
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium text-center">Open Blockers</th>
+                      <th className="pb-2 text-xs text-gray-400 font-medium">Types</th>
+                    </tr></thead>
+                    <tbody>{healthData.openBlockers.map(t => (
+                      <tr key={t.ideaId} className="border-t border-gray-50 hover:bg-gray-50">
+                        <td className="py-2 pr-3"><Link to={`/ideas/${t.ideaId}`} className="font-medium text-gray-800 hover:text-primary-600 flex items-center gap-1">{t.flowName}<ArrowUpRight className="w-3 h-3 text-gray-400" /></Link></td>
+                        <td className="py-2 pr-3"><span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{t.category}</span></td>
+                        <td className="py-2 pr-3 text-center"><span className="text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full text-xs font-bold">{t.openBlockerCount}</span></td>
+                        <td className="py-2"><div className="flex flex-wrap gap-1">{t.blockerTypes.slice(0, 3).map(bt => <span key={bt} className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{bt.replace('_', ' ')}</span>)}</div></td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+              )}
+              {healthTab === 'incompleteFields' && (
+                healthData.incompleteFields.length === 0
+                  ? <p className="text-sm text-gray-400 py-6 text-center">All published templates have complete fields.</p>
+                  : <table className="w-full text-sm">
+                    <thead><tr className="border-b border-gray-100 text-left">
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium">Template</th>
+                      <th className="pb-2 pr-3 text-xs text-gray-400 font-medium">Category</th>
+                      <th className="pb-2 text-xs text-gray-400 font-medium">Missing Fields</th>
+                    </tr></thead>
+                    <tbody>{healthData.incompleteFields.map(t => (
+                      <tr key={t.ideaId} className="border-t border-gray-50 hover:bg-gray-50">
+                        <td className="py-2 pr-3"><Link to={`/ideas/${t.ideaId}`} className="font-medium text-gray-800 hover:text-primary-600 flex items-center gap-1">{t.flowName}<ArrowUpRight className="w-3 h-3 text-gray-400" /></Link></td>
+                        <td className="py-2 pr-3"><span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{t.category}</span></td>
+                        <td className="py-2"><div className="flex flex-wrap gap-1">{t.missingFields.map(f => <span key={f} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">{f}</span>)}</div></td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ── Actionable Insights ── */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Lightbulb className="w-5 h-5 text-amber-500" />
+          <h2 className="text-xl font-bold text-gray-900">Actionable Insights</h2>
+          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full ml-1">what to work on next</span>
+        </div>
+
+        {insightsLoading ? (
+          <div className="h-48 flex items-center justify-center card">
+            <Loader className="w-6 h-6 animate-spin text-primary-400" />
+          </div>
+        ) : !insightsData ? (
+          <div className="h-48 flex items-center justify-center card text-gray-400 text-sm">Could not load insights</div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Top Opportunities */}
+            <div className="card">
+              <div className="flex items-center gap-2 mb-4">
+                <Target className="w-4 h-4 text-rose-600" />
+                <h3 className="font-semibold text-gray-900">High-View, Low-Conversion Templates</h3>
+              </div>
+              <p className="text-xs text-gray-500 mb-4">These templates get views but don't convert. Improving descriptions or fixing flows here will have the biggest install impact.</p>
+              {insightsData.topOpportunities.length === 0 ? (
+                <div className="flex items-center gap-2 text-green-600 text-sm py-4"><CheckCircle className="w-4 h-4" /> All high-view templates are performing well!</div>
+              ) : (
+                <div className="space-y-2">
+                  {insightsData.topOpportunities.slice(0, 6).map((t, i) => (
+                    <div key={t.ideaId} className="flex items-center justify-between p-3 bg-rose-50 rounded-lg border border-rose-100 hover:bg-rose-100 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-6 h-6 rounded-full bg-rose-200 text-rose-800 flex items-center justify-center text-xs font-bold flex-shrink-0">{i + 1}</span>
+                        <div className="min-w-0">
+                          <Link to={`/ideas/${t.ideaId}`} className="text-sm font-medium text-gray-800 hover:text-primary-600 truncate block">{t.flowName}</Link>
+                          <span className="text-xs text-gray-500">{t.totalViews.toLocaleString()} views · {t.conversionRate.toFixed(1)}% CR vs {t.avgConversion.toFixed(1)}% avg</span>
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0 ml-3">
+                        <div className="text-xs font-semibold text-rose-700">+{t.potentialInstalls} potential</div>
+                        <div className="text-xs text-gray-400">installs</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Best Practices */}
+            <div className="card">
+              <div className="flex items-center gap-2 mb-4">
+                <Star className="w-4 h-4 text-amber-500" />
+                <h3 className="font-semibold text-gray-900">What Top Templates Have in Common</h3>
+              </div>
+              <p className="text-xs text-gray-500 mb-4">Analysis of your top {insightsData.bestPractices.sampleSize} best-performing templates by install count.</p>
+              {insightsData.bestPractices.sampleSize === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">Not enough data yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
+                    <span className="text-sm text-gray-700">Avg. description length</span>
+                    <span className="font-bold text-amber-800">{insightsData.bestPractices.avgDescriptionLength} chars</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
+                    <span className="text-sm text-gray-700">Have a blog/article URL</span>
+                    <span className="font-bold text-amber-800">{insightsData.bestPractices.blogUrlPercent}%</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
+                    <span className="text-sm text-gray-700">Avg. integrations used</span>
+                    <span className="font-bold text-amber-800">{insightsData.bestPractices.avgIntegrations}</span>
+                  </div>
+                  {insightsData.bestPractices.topCategories.length > 0 && (
+                    <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
+                      <span className="text-sm text-gray-700">Top performing categories</span>
+                      <div className="flex gap-1 flex-wrap justify-end">
+                        {insightsData.bestPractices.topCategories.map(c => (
+                          <span key={c.name} className="text-xs bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-medium">{c.name}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Category Gaps */}
+            <div className="card">
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 className="w-4 h-4 text-blue-600" />
+                <h3 className="font-semibold text-gray-900">Category Demand vs Supply</h3>
+              </div>
+              <p className="text-xs text-gray-500 mb-4">Categories with high avg. installs per template = high demand. Build more templates there.</p>
+              <div className="space-y-2">
+                {insightsData.categoryGaps.slice(0, 8).map(cat => {
+                  const maxAvg = insightsData.categoryGaps[0]?.avgInstallsPerTemplate || 1;
+                  const barPct = maxAvg > 0 ? (cat.avgInstallsPerTemplate / maxAvg) * 100 : 0;
+                  return (
+                    <div key={cat.departmentId} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium text-gray-700 truncate max-w-[160px]">{cat.category}</span>
+                        <span className="text-gray-500 flex-shrink-0 ml-2">{cat.templateCount} templates · {cat.avgInstallsPerTemplate.toFixed(1)} avg installs</span>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${barPct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Integration Gaps */}
+            <div className="card">
+              <div className="flex items-center gap-2 mb-4">
+                <Puzzle className="w-4 h-4 text-violet-600" />
+                <h3 className="font-semibold text-gray-900">High-Demand Integrations (Underused)</h3>
+              </div>
+              <p className="text-xs text-gray-500 mb-4">Integrations that drive many installs but appear in fewer templates than average. Build more templates with these.</p>
+              {insightsData.integrationGaps.length === 0 ? (
+                <div className="flex items-center gap-2 text-green-600 text-sm py-4"><CheckCircle className="w-4 h-4" /> Good coverage across all high-install integrations.</div>
+              ) : (
+                <div className="space-y-2">
+                  {insightsData.integrationGaps.map((piece) => (
+                    <div key={piece.pieceName} className="flex items-center justify-between p-3 bg-violet-50 rounded-lg border border-violet-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                          {piece.displayName.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-800">{piece.displayName}</span>
+                          <div className="text-xs text-gray-500">{piece.templateCount} template{piece.templateCount !== 1 ? 's' : ''}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-bold text-violet-700">{piece.totalInstalls.toLocaleString()}</div>
+                        <div className="text-xs text-gray-400">installs</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Top by Installs */}
@@ -484,45 +965,79 @@ const TemplateAnalytics: React.FC = () => {
                 <tr className="border-b border-gray-200">
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Category</th>
                   <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Templates</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 w-32">Views vs Installs</th>
                   <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Views</th>
                   <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Installs</th>
                   <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Active Flows</th>
                   <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Avg Installs</th>
                   <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Conversion</th>
+                  <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Health</th>
+                  <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Growth Potential</th>
                 </tr>
               </thead>
               <tbody>
-                {categoryAnalytics.map((cat) => (
-                  <tr key={cat.departmentId} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-3 px-4">
-                      <span className="font-medium text-gray-800">{cat.category}</span>
-                    </td>
-                    <td className="text-center py-3 px-4 text-sm text-gray-600">
-                      {cat.availableTemplates}
-                    </td>
-                    <td className="text-center py-3 px-4 text-sm text-blue-600 font-medium">
-                      {cat.totalViews.toLocaleString()}
-                    </td>
-                    <td className="text-center py-3 px-4 text-sm text-green-600 font-medium">
-                      {cat.totalInstalls.toLocaleString()}
-                    </td>
-                    <td className="text-center py-3 px-4 text-sm text-purple-600 font-medium">
-                      {cat.activeFlows.toLocaleString()}
-                    </td>
-                    <td className="text-center py-3 px-4 text-sm text-gray-600">
-                      {cat.avgInstallsPerTemplate.toFixed(1)}
-                    </td>
-                    <td className="text-center py-3 px-4">
-                      <span className={`text-sm font-medium ${
-                        cat.conversionRate >= 10 ? 'text-green-600' :
-                        cat.conversionRate >= 5 ? 'text-amber-600' :
-                        'text-gray-500'
-                      }`}>
-                        {cat.conversionRate.toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {(() => {
+                  const avgCR = categoryAnalytics.filter(c => c.conversionRate > 0).reduce((s, c) => s + c.conversionRate, 0) / Math.max(categoryAnalytics.filter(c => c.conversionRate > 0).length, 1);
+                  const maxViews = Math.max(...categoryAnalytics.map(c => c.totalViews), 1);
+                  const maxInstalls = Math.max(...categoryAnalytics.map(c => c.totalInstalls), 1);
+                  const maxAvgInstalls = Math.max(...categoryAnalytics.map(c => c.avgInstallsPerTemplate), 1);
+                  return categoryAnalytics.map((cat) => (
+                    <tr key={cat.departmentId} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-3 px-4">
+                        <span className="font-medium text-gray-800">{cat.category}</span>
+                      </td>
+                      <td className="text-center py-3 px-4 text-sm text-gray-600">
+                        {cat.availableTemplates}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col gap-0.5 w-28">
+                          <div className="flex items-center gap-1">
+                            <div className="h-2 rounded-full bg-blue-400" style={{ width: `${(cat.totalViews / maxViews) * 100}%`, minWidth: cat.totalViews > 0 ? '4px' : '0' }} />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <div className="h-2 rounded-full bg-green-500" style={{ width: `${(cat.totalInstalls / maxInstalls) * 100}%`, minWidth: cat.totalInstalls > 0 ? '4px' : '0' }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="text-center py-3 px-4 text-sm text-blue-600 font-medium">
+                        {cat.totalViews.toLocaleString()}
+                      </td>
+                      <td className="text-center py-3 px-4 text-sm text-green-600 font-medium">
+                        {cat.totalInstalls.toLocaleString()}
+                      </td>
+                      <td className="text-center py-3 px-4 text-sm text-purple-600 font-medium">
+                        {cat.activeFlows.toLocaleString()}
+                      </td>
+                      <td className="text-center py-3 px-4 text-sm text-gray-600">
+                        {cat.avgInstallsPerTemplate.toFixed(1)}
+                      </td>
+                      <td className="text-center py-3 px-4">
+                        <span className={`text-sm font-medium ${
+                          cat.conversionRate >= 10 ? 'text-green-600' :
+                          cat.conversionRate >= 5 ? 'text-amber-600' :
+                          'text-gray-500'
+                        }`}>
+                          {cat.conversionRate.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="text-center py-3 px-4">
+                        {cat.totalInstalls === 0
+                          ? <span title="No installs"><XCircle className="w-4 h-4 text-red-400 mx-auto" /></span>
+                          : cat.conversionRate >= avgCR
+                          ? <span title="Above average conversion"><CheckCircle className="w-4 h-4 text-green-500 mx-auto" /></span>
+                          : <span title="Below average conversion"><AlertCircle className="w-4 h-4 text-amber-400 mx-auto" /></span>}
+                      </td>
+                      <td className="text-center py-3 px-4">
+                        <div className="flex items-center justify-center gap-1">
+                          <div className="h-1.5 w-12 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(cat.avgInstallsPerTemplate / maxAvgInstalls) * 100}%` }} />
+                          </div>
+                          <span className="text-xs text-gray-500">{((cat.avgInstallsPerTemplate / maxAvgInstalls) * 100).toFixed(0)}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ));
+                })()}
               </tbody>
             </table>
           </div>
@@ -557,6 +1072,7 @@ const TemplateAnalytics: React.FC = () => {
               <option value="views">Sort by Views</option>
               <option value="activeFlows">Sort by Active Flows</option>
               <option value="conversion">Sort by Conversion</option>
+              <option value="score">Sort by Score</option>
             </select>
           </div>
         </div>
@@ -572,12 +1088,13 @@ const TemplateAnalytics: React.FC = () => {
                 <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Active</th>
                 <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Users</th>
                 <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">CR</th>
+                <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Score</th>
               </tr>
             </thead>
             <tbody>
               {paginatedTemplates.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-gray-500">
+                  <td colSpan={8} className="text-center py-8 text-gray-500">
                     No templates with analytics data
                   </td>
                 </tr>
@@ -619,6 +1136,17 @@ const TemplateAnalytics: React.FC = () => {
                         }`}>
                           {template.conversionRate.toFixed(1)}%
                         </span>
+                      </td>
+                      <td className="text-center py-3 px-4">
+                        {template.performanceScore !== undefined ? (
+                          <span className={`inline-flex items-center justify-center w-9 h-6 rounded-full text-xs font-bold ${
+                            template.performanceScore >= 70 ? 'bg-green-100 text-green-700' :
+                            template.performanceScore >= 40 ? 'bg-amber-100 text-amber-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {template.performanceScore}
+                          </span>
+                        ) : <span className="text-gray-300">—</span>}
                       </td>
                     </tr>
                 ))
