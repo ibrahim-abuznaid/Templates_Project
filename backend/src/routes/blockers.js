@@ -1,7 +1,7 @@
 import express from 'express';
 import db from '../database/db.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { createNotification } from './notifications.js';
+import { createNotification, parseMentions } from './notifications.js';
 
 const router = express.Router();
 
@@ -370,7 +370,7 @@ router.get('/:blockerId/discussions', authenticateToken, async (req, res) => {
 router.post('/:blockerId/discussions', authenticateToken, async (req, res) => {
   try {
     const { blockerId } = req.params;
-    const { message, is_solution } = req.body;
+    const { message, is_solution, images } = req.body;
 
     if (!message || !message.trim()) {
       return res.status(400).json({ error: 'Message is required' });
@@ -381,10 +381,12 @@ router.post('/:blockerId/discussions', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Blocker not found' });
     }
 
+    const imagesJson = images && images.length > 0 ? JSON.stringify(images) : null;
+
     const result = await db.prepare(`
-      INSERT INTO blocker_discussions (blocker_id, user_id, message, is_solution)
-      VALUES (?, ?, ?, ?)
-    `).run(blockerId, req.user.id, message, is_solution || false);
+      INSERT INTO blocker_discussions (blocker_id, user_id, message, is_solution, images)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(blockerId, req.user.id, message, is_solution || false, imagesJson);
 
     const idea = await db.prepare('SELECT * FROM ideas WHERE id = ?').get(blocker.idea_id);
     const ideaTitle = idea.flow_name || idea.use_case;
@@ -409,6 +411,24 @@ router.post('/:blockerId/discussions', authenticateToken, async (req, res) => {
         idea.id,
         req.user.id
       );
+    }
+
+    // Handle @mentions in the discussion message
+    const mentions = parseMentions(message);
+    if (mentions.length > 0) {
+      for (const handle of mentions) {
+        const mentionedUser = await db.prepare('SELECT id FROM users WHERE handle = ?').get(handle);
+        if (mentionedUser && mentionedUser.id !== req.user.id) {
+          await createNotification(
+            mentionedUser.id,
+            'mention',
+            `@${req.user.username} mentioned you`,
+            `You were mentioned in a blocker discussion on "${blocker.title}" in "${ideaTitle}"`,
+            idea.id,
+            req.user.id
+          );
+        }
+      }
     }
 
     const newDiscussion = await db.prepare(`

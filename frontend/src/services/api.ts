@@ -588,8 +588,8 @@ export const blockersApi = {
   getDiscussions: (blockerId: number) =>
     api.get<BlockerDiscussion[]>(`/blockers/${blockerId}/discussions`),
   
-  addDiscussion: (blockerId: number, message: string, isSolution = false) =>
-    api.post<BlockerDiscussion>(`/blockers/${blockerId}/discussions`, { message, is_solution: isSolution }),
+  addDiscussion: (blockerId: number, message: string, isSolution = false, images?: string[]) =>
+    api.post<BlockerDiscussion>(`/blockers/${blockerId}/discussions`, { message, is_solution: isSolution, images }),
   
   deleteDiscussion: (discussionId: number) =>
     api.delete(`/blockers/discussions/${discussionId}`),

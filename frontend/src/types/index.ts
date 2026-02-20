@@ -300,6 +300,7 @@ export interface BlockerDiscussion {
   role: UserRole;
   message: string;
   is_solution: boolean;
+  images?: string | string[];
   created_at: string;
 }
 

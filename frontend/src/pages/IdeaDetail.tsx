@@ -125,6 +125,13 @@ const IdeaDetail: React.FC = () => {
   const [expandedBlocker, setExpandedBlocker] = useState<number | null>(null);
   const [blockerDiscussions, setBlockerDiscussions] = useState<{[key: number]: any[]}>({});
   const [discussionMessage, setDiscussionMessage] = useState<{[key: number]: string}>({});
+  const [blockerDiscussionImages, setBlockerDiscussionImages] = useState<{[key: number]: { url: string; uploading: boolean }[]}>({});
+  const [uploadingBlockerImage, setUploadingBlockerImage] = useState<{[key: number]: boolean}>({});
+  const [showBlockerMentionList, setShowBlockerMentionList] = useState<{[key: number]: boolean}>({});
+  const [blockerMentionSearch, setBlockerMentionSearch] = useState<{[key: number]: string}>({});
+  const [selectedBlockerMentionIndex, setSelectedBlockerMentionIndex] = useState<{[key: number]: number}>({});
+  const blockerDiscussionInputRefs = useRef<{[key: number]: HTMLTextAreaElement | null}>({});
+  const blockerImageInputRefs = useRef<{[key: number]: HTMLInputElement | null}>({});
   const [recentlyUpdated, setRecentlyUpdated] = useState(false);
   const [allDepartments, setAllDepartments] = useState<Department[]>([]);
   const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<number[]>([]);
@@ -280,13 +287,166 @@ const IdeaDetail: React.FC = () => {
     if (!message || !message.trim()) return;
 
     try {
-      await blockersApi.addDiscussion(blockerId, message);
+      const imageUrls = (blockerDiscussionImages[blockerId] || [])
+        .filter(img => !img.uploading && img.url)
+        .map(img => img.url);
+
+      await blockersApi.addDiscussion(blockerId, message, false, imageUrls.length > 0 ? imageUrls : undefined);
       setDiscussionMessage(prev => ({ ...prev, [blockerId]: '' }));
+      setBlockerDiscussionImages(prev => ({ ...prev, [blockerId]: [] }));
+      setShowBlockerMentionList(prev => ({ ...prev, [blockerId]: false }));
       loadBlockerDiscussions(blockerId);
-      loadBlockers(); // Reload to update discussion count
+      loadBlockers();
     } catch (error) {
       console.error('Failed to add discussion:', error);
     }
+  };
+
+  const handleBlockerDiscussionChange = (blockerId: number, e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setDiscussionMessage(prev => ({ ...prev, [blockerId]: value }));
+
+    const cursorPosition = e.target.selectionStart;
+    const textBeforeCursor = value.substring(0, cursorPosition);
+    const lastAtIndex = textBeforeCursor.lastIndexOf('@');
+
+    if (lastAtIndex !== -1) {
+      const textAfterAt = textBeforeCursor.substring(lastAtIndex + 1);
+      if (!textAfterAt.includes(' ')) {
+        setBlockerMentionSearch(prev => ({ ...prev, [blockerId]: textAfterAt.toLowerCase() }));
+        setShowBlockerMentionList(prev => ({ ...prev, [blockerId]: true }));
+        setSelectedBlockerMentionIndex(prev => ({ ...prev, [blockerId]: 0 }));
+        return;
+      }
+    }
+    setShowBlockerMentionList(prev => ({ ...prev, [blockerId]: false }));
+  };
+
+  const insertBlockerMention = (blockerId: number, handle: string) => {
+    const inputEl = blockerDiscussionInputRefs.current[blockerId];
+    if (!inputEl) return;
+
+    const cursorPosition = inputEl.selectionStart || 0;
+    const currentMessage = discussionMessage[blockerId] || '';
+    const textBeforeCursor = currentMessage.substring(0, cursorPosition);
+    const lastAtIndex = textBeforeCursor.lastIndexOf('@');
+
+    if (lastAtIndex !== -1) {
+      const before = currentMessage.substring(0, lastAtIndex);
+      const after = currentMessage.substring(cursorPosition);
+      const newMessage = `${before}@${handle} ${after}`;
+      setDiscussionMessage(prev => ({ ...prev, [blockerId]: newMessage }));
+
+      setTimeout(() => {
+        if (blockerDiscussionInputRefs.current[blockerId]) {
+          const newCursorPos = lastAtIndex + handle.length + 2;
+          blockerDiscussionInputRefs.current[blockerId]!.selectionStart = newCursorPos;
+          blockerDiscussionInputRefs.current[blockerId]!.selectionEnd = newCursorPos;
+        }
+      }, 0);
+    }
+
+    setShowBlockerMentionList(prev => ({ ...prev, [blockerId]: false }));
+    inputEl.focus();
+  };
+
+  const handleBlockerDiscussionKeyDown = (blockerId: number, e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const isShowing = showBlockerMentionList[blockerId];
+    const visibleOptions = getBlockerMentionOptions(blockerId);
+    if (!isShowing || visibleOptions.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedBlockerMentionIndex(prev => ({ ...prev, [blockerId]: ((prev[blockerId] || 0) + 1) % visibleOptions.length }));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedBlockerMentionIndex(prev => ({ ...prev, [blockerId]: ((prev[blockerId] || 0) - 1 + visibleOptions.length) % visibleOptions.length }));
+    } else if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+      e.preventDefault();
+      const selected = visibleOptions[selectedBlockerMentionIndex[blockerId] || 0];
+      if (selected) insertBlockerMention(blockerId, selected.handle);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setShowBlockerMentionList(prev => ({ ...prev, [blockerId]: false }));
+    }
+  };
+
+  const getBlockerMentionOptions = (blockerId: number) => {
+    const search = blockerMentionSearch[blockerId] || '';
+    return allUsers
+      .filter(u => u.id !== user?.id && (
+        u.handle.toLowerCase().includes(search) ||
+        u.username.toLowerCase().includes(search)
+      ))
+      .slice(0, 5);
+  };
+
+  const handleBlockerImagePaste = async (blockerId: number, e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) await uploadBlockerImage(blockerId, file);
+        break;
+      }
+    }
+  };
+
+  const handleBlockerImageSelect = async (blockerId: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    for (let i = 0; i < files.length; i++) {
+      await uploadBlockerImage(blockerId, files[i]);
+    }
+    if (blockerImageInputRefs.current[blockerId]) {
+      blockerImageInputRefs.current[blockerId]!.value = '';
+    }
+  };
+
+  const uploadBlockerImage = async (blockerId: number, file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image too large. Maximum size is 5MB.');
+      return;
+    }
+
+    setBlockerDiscussionImages(prev => ({ ...prev, [blockerId]: [...(prev[blockerId] || []), { url: '', uploading: true }] }));
+    setUploadingBlockerImage(prev => ({ ...prev, [blockerId]: true }));
+
+    try {
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(file);
+      const base64 = await base64Promise;
+
+      const response = await uploadsApi.uploadImage(base64, file.name);
+
+      setBlockerDiscussionImages(prev => {
+        const imgs = [...(prev[blockerId] || [])];
+        const lastUploadingIdx = imgs.map(img => img.uploading).lastIndexOf(true);
+        if (lastUploadingIdx !== -1) imgs[lastUploadingIdx] = { url: response.data.url, uploading: false };
+        return { ...prev, [blockerId]: imgs };
+      });
+    } catch (error) {
+      console.error('Failed to upload blocker discussion image:', error);
+      setBlockerDiscussionImages(prev => {
+        const imgs = (prev[blockerId] || []).filter((_img, idx, arr) => !(idx === arr.map(i => i.uploading).lastIndexOf(true)));
+        return { ...prev, [blockerId]: imgs };
+      });
+    } finally {
+      setUploadingBlockerImage(prev => ({ ...prev, [blockerId]: false }));
+    }
+  };
+
+  const removeBlockerImage = (blockerId: number, index: number) => {
+    setBlockerDiscussionImages(prev => ({ ...prev, [blockerId]: (prev[blockerId] || []).filter((_, i) => i !== index) }));
   };
 
   const loadUsers = async () => {
@@ -1349,9 +1509,6 @@ const IdeaDetail: React.FC = () => {
                   <label className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
                     Summary
                   </label>
-                  {!editing && (
-                    <span className="text-xs text-gray-400 font-normal normal-case">Supports Markdown</span>
-                  )}
                 </div>
                 {editing ? (
                   <div className="space-y-2">
@@ -1360,9 +1517,8 @@ const IdeaDetail: React.FC = () => {
                       onChange={(e) => setEditData({ ...editData, summary: e.target.value })}
                       className="input-field font-mono text-sm"
                       rows={3}
-                      placeholder="Brief summary for public library. Supports **markdown** formatting."
+                      placeholder="Brief summary for public library."
                     />
-                    <p className="text-xs text-gray-500">Tip: Use **bold**, *italic*, `code`, and [links](url) for formatting</p>
                   </div>
                 ) : (
                   <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
@@ -1378,9 +1534,6 @@ const IdeaDetail: React.FC = () => {
                   <label className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
                     Description
                   </label>
-                  {!editing && (
-                    <span className="text-xs text-gray-400 font-normal normal-case">Supports Markdown</span>
-                  )}
                 </div>
                 {editing ? (
                   <div className="space-y-2">
@@ -1389,9 +1542,8 @@ const IdeaDetail: React.FC = () => {
                       onChange={(e) => setEditData({ ...editData, description: e.target.value })}
                       className="input-field font-mono text-sm"
                       rows={8}
-                      placeholder="Detailed description of the template. Supports markdown formatting including:&#10;- Lists&#10;- **Bold** and *italic*&#10;- `code blocks`&#10;- [Links](url)"
+                      placeholder="Detailed description of the template."
                     />
-                    <p className="text-xs text-gray-500">Tip: Use markdown for rich formatting. Preview will appear after saving.</p>
                   </div>
                 ) : (
                   <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
@@ -1448,7 +1600,7 @@ const IdeaDetail: React.FC = () => {
                       onChange={(e) => setEditData({ ...editData, idea_notes: e.target.value })}
                       className="input-field font-mono text-sm"
                       rows={4}
-                      placeholder="Internal notes about the template idea. Supports markdown formatting..."
+                      placeholder="Internal notes about the template idea."
                     />
                   </div>
                 ) : (
@@ -2344,6 +2496,33 @@ const IdeaDetail: React.FC = () => {
                                     <span className="text-xs text-gray-500">{new Date(disc.created_at).toLocaleString()}</span>
                                   </div>
                                   <p className="text-sm text-gray-700">{renderCommentText(disc.message)}</p>
+                                  {(() => {
+                                    let discImages: string[] = [];
+                                    try {
+                                      if (disc.images) {
+                                        discImages = typeof disc.images === 'string' ? JSON.parse(disc.images) : disc.images;
+                                      }
+                                    } catch (_) {}
+                                    return discImages.length > 0 ? (
+                                      <div className="flex flex-wrap gap-2 mt-2">
+                                        {discImages.map((imgUrl: string, idx: number) => (
+                                          <a
+                                            key={idx}
+                                            href={`${getUploadsBaseUrl()}${imgUrl}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="block"
+                                          >
+                                            <img
+                                              src={`${getUploadsBaseUrl()}${imgUrl}`}
+                                              alt={`Attachment ${idx + 1}`}
+                                              className="max-w-[200px] max-h-36 rounded-lg border border-gray-200 hover:border-primary-400 transition-colors cursor-pointer"
+                                            />
+                                          </a>
+                                        ))}
+                                      </div>
+                                    ) : null;
+                                  })()}
                                   {disc.is_solution && (
                                     <span className="inline-block mt-1 text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">✓ Solution</span>
                                   )}
@@ -2354,15 +2533,107 @@ const IdeaDetail: React.FC = () => {
                         </div>
 
                         {/* Add Discussion Form */}
-                        <form onSubmit={(e) => handleAddDiscussion(blocker.id, e)} className="flex space-x-2">
+                        <form onSubmit={(e) => handleAddDiscussion(blocker.id, e)} className="space-y-2">
+                          <div className="relative">
+                            <textarea
+                              ref={el => { blockerDiscussionInputRefs.current[blocker.id] = el; }}
+                              value={discussionMessage[blocker.id] || ''}
+                              onChange={(e) => handleBlockerDiscussionChange(blocker.id, e)}
+                              onKeyDown={(e) => handleBlockerDiscussionKeyDown(blocker.id, e)}
+                              onPaste={(e) => handleBlockerImagePaste(blocker.id, e)}
+                              placeholder="Add to discussion... Use @handle to mention someone. Paste or attach images."
+                              className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+                              rows={2}
+                            />
+                            {/* Mention dropdown */}
+                            {showBlockerMentionList[blocker.id] && getBlockerMentionOptions(blocker.id).length > 0 && (
+                              <div className="absolute bottom-full left-0 mb-1 w-64 bg-white border-2 border-blue-200 rounded-lg shadow-xl max-h-48 overflow-y-auto z-50">
+                                <div className="px-3 py-1.5 bg-blue-50 border-b border-blue-200 text-xs font-semibold text-blue-700">
+                                  Select a user to mention
+                                </div>
+                                {getBlockerMentionOptions(blocker.id).map((u, index) => (
+                                  <button
+                                    key={u.id}
+                                    type="button"
+                                    onClick={() => insertBlockerMention(blocker.id, u.handle)}
+                                    onMouseEnter={() => setSelectedBlockerMentionIndex(prev => ({ ...prev, [blocker.id]: index }))}
+                                    className={`w-full px-3 py-2 text-left flex items-center space-x-2 text-sm border-b border-gray-100 last:border-b-0 transition-colors ${
+                                      index === (selectedBlockerMentionIndex[blocker.id] || 0)
+                                        ? 'bg-blue-500 text-white'
+                                        : 'hover:bg-blue-50 text-gray-900'
+                                    }`}
+                                  >
+                                    <AtSign className="w-3.5 h-3.5 flex-shrink-0" />
+                                    <span className="font-medium">@{u.handle}</span>
+                                    <span className={`text-xs ${index === (selectedBlockerMentionIndex[blocker.id] || 0) ? 'text-blue-100' : 'text-gray-500'}`}>{u.username}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Image previews */}
+                          {(blockerDiscussionImages[blocker.id] || []).length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {(blockerDiscussionImages[blocker.id] || []).map((img, index) => (
+                                <div key={index} className="relative group">
+                                  {img.uploading ? (
+                                    <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center">
+                                      <Loader className="w-4 h-4 animate-spin text-gray-400" />
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <img
+                                        src={`${getUploadsBaseUrl()}${img.url}`}
+                                        alt="Preview"
+                                        className="w-16 h-16 object-cover rounded-lg border border-gray-200"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => removeBlockerImage(blocker.id, index)}
+                                        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                      >
+                                        <X className="w-2.5 h-2.5" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Hidden file input */}
                           <input
-                            type="text"
-                            value={discussionMessage[blocker.id] || ''}
-                            onChange={(e) => setDiscussionMessage(prev => ({ ...prev, [blocker.id]: e.target.value }))}
-                            placeholder="Add to discussion..."
-                            className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                            ref={el => { blockerImageInputRefs.current[blocker.id] = el; }}
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={(e) => handleBlockerImageSelect(blocker.id, e)}
+                            className="hidden"
                           />
-                          <button type="submit" className="btn-primary text-sm px-4 py-2">Send</button>
+
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="submit"
+                                disabled={uploadingBlockerImage[blocker.id]}
+                                className="btn-primary text-sm px-4 py-2"
+                              >
+                                {uploadingBlockerImage[blocker.id] ? (
+                                  <><Loader className="w-3.5 h-3.5 animate-spin mr-1 inline" />Uploading...</>
+                                ) : 'Send'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => blockerImageInputRefs.current[blocker.id]?.click()}
+                                className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                title="Attach image"
+                              >
+                                <Paperclip className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <span className="text-xs text-gray-400">@ mention • Ctrl+V paste image</span>
+                          </div>
                         </form>
                       </div>
                     )}
