@@ -75,6 +75,30 @@ app.use('/api/suggestions', suggestionsRoutes);
 app.use('/api/guidebook', guidebookRoutes);
 app.use('/api/public/analytics', publicAnalyticsRoutes); // External API with API key auth
 
+// Public endpoint: list all template names
+app.get('/api/public/templates/names', async (req, res) => {
+  try {
+    const { default: db } = await import('./database/db.js');
+    const templates = await db.prepare(`
+      SELECT id, flow_name, status, public_library_id
+      FROM ideas
+      ORDER BY flow_name ASC
+    `).all();
+    res.json({
+      total: templates.length,
+      templates: templates.map(t => ({
+        id: t.id,
+        name: t.flow_name,
+        status: t.status,
+        published: !!t.public_library_id,
+      })),
+    });
+  } catch (error) {
+    console.error('Error fetching template names:', error);
+    res.status(500).json({ error: 'Failed to fetch template names' });
+  }
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
